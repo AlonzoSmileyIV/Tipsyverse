@@ -52,6 +52,10 @@ const paymentCtrl = {
       if (!event || amount == null || !method) {
         return res.status(400).json({ message: "event, amount, and method are required." });
       }
+      const paymentAmount = Number(amount);
+      if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+        return res.status(400).json({ message: "Payment amount must be greater than $0.00." });
+      }
 
       const eventDoc = await Event.findById(event).select("_id").lean();
       if (!eventDoc) return res.status(404).json({ message: "Event not found" });
@@ -71,7 +75,7 @@ const paymentCtrl = {
       const doc = await Payment.create({
         event,
         paymentRequest,
-        amount,
+        amount: paymentAmount,
         method,
         reference,
         notes,

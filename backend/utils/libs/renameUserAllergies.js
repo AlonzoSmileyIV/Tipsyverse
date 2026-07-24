@@ -4,8 +4,6 @@ import { UserModel as User } from "../../models/index.js";
 export const renameUserAllergies = async (oldName, newName, session = null) => {
   if (!oldName || !newName || oldName === newName) return { added: 0, removed: 0 };
 
-  console.log('oldName: ', oldName);
-  console.log('newName: ', newName);
   // 1) Add newName where oldName exists (no duplicates thanks to $addToSet)
   const addRes = await User.updateMany(
     { "preferences.allergies": oldName },

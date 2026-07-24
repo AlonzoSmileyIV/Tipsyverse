@@ -14,6 +14,9 @@ const isEmployee = (user) => user?.role === "employee";
 const appUrl = () => process.env.ADMIN_PORTAL_URL || process.env.FRONTEND_URL || "http://localhost:3000";
 const adminTicketUrl = (ticket) => `${appUrl()}/admin/operations?ticket=${ticket._id}`;
 const customerTicketUrl = (ticket) => `${appUrl()}/settings/support?ticket=${ticket._id}`;
+const MAX_TICKET_SUBJECT_LENGTH = 120;
+const MAX_TICKET_DESCRIPTION_LENGTH = 5000;
+const MAX_TICKET_MESSAGE_LENGTH = 3000;
 
 const ticketLabel = (ticket) => ticket?.ticketNumber || "TKT-000000";
 const ticketPopulate = [
@@ -202,16 +205,30 @@ const supportTicketCtrl = {
   createTicket: async (req, res) => {
     try {
       const { category, subject, description } = req.body || {};
-      if (!subject?.trim() || !description?.trim()) {
+      const cleanSubject = String(subject || "").trim();
+      const cleanDescription = String(description || "").trim();
+      if (!cleanSubject || !cleanDescription) {
         return res.status(400).json({ success: false, message: "Subject and description are required." });
+      }
+      if (cleanSubject.length > MAX_TICKET_SUBJECT_LENGTH) {
+        return res.status(400).json({
+          success: false,
+          message: `Subject must be ${MAX_TICKET_SUBJECT_LENGTH} characters or fewer.`,
+        });
+      }
+      if (cleanDescription.length > MAX_TICKET_DESCRIPTION_LENGTH) {
+        return res.status(400).json({
+          success: false,
+          message: `Description must be ${MAX_TICKET_DESCRIPTION_LENGTH} characters or fewer.`,
+        });
       }
 
       const ticket = await SupportTicket.create({
         submittedBy: req.user.id,
         category,
         priority: "undecided",
-        subject: subject.trim(),
-        description: description.trim(),
+        subject: cleanSubject,
+        description: cleanDescription,
         attachments: cleanAttachments(req.body?.attachments, req.user.id),
       });
 
@@ -390,6 +407,12 @@ const supportTicketCtrl = {
       if (!description) {
         return res.status(400).json({ success: false, message: "Description is required." });
       }
+      if (description.length > MAX_TICKET_DESCRIPTION_LENGTH) {
+        return res.status(400).json({
+          success: false,
+          message: `Description must be ${MAX_TICKET_DESCRIPTION_LENGTH} characters or fewer.`,
+        });
+      }
       ticket.description = description;
       if (req.body?.attachments !== undefined) {
         ticket.attachments = cleanAttachments(req.body.attachments, req.user.id);
@@ -475,6 +498,12 @@ const supportTicketCtrl = {
     try {
       const message = String(req.body?.message || "").trim();
       if (!message) return res.status(400).json({ success: false, message: "Message is required." });
+      if (message.length > MAX_TICKET_MESSAGE_LENGTH) {
+        return res.status(400).json({
+          success: false,
+          message: `Message must be ${MAX_TICKET_MESSAGE_LENGTH} characters or fewer.`,
+        });
+      }
 
       const existing = await populateTicket(SupportTicket.findById(req.params.id)).lean();
       if (!existing) return res.status(404).json({ success: false, message: "Ticket not found." });

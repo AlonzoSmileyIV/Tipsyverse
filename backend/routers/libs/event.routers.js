@@ -1,11 +1,26 @@
 import { Router } from "express";
 import { eventCtrl } from "../../controllers/index.js";
-import { auth, authBartender, authEmployee, optionalAuth, uploadImage } from "../../middleware/index.js";
+import {
+  auth,
+  authBartender,
+  authEmployee,
+  createRateLimit,
+  dedupeSuccessfulRequests,
+  optionalAuth,
+  uploadImage,
+} from "../../middleware/index.js";
 
 const eventRouter = Router();
+const publicBookingLimit = createRateLimit({
+  keyPrefix: "events:create",
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  message: "Too many event requests. Please wait a few minutes and try again.",
+});
+const sensitiveActionDedupe = dedupeSuccessfulRequests({ ttlMs: 45 * 1000 });
 
 // Public/new submission (keep requireAuth if your flow needs it)
-eventRouter.post('/', optionalAuth, eventCtrl.submitRequest);
+eventRouter.post('/', publicBookingLimit, optionalAuth, sensitiveActionDedupe, eventCtrl.submitRequest);
 
 eventRouter.get('/', auth, authEmployee, eventCtrl.viewAllEvents);
 
@@ -23,11 +38,11 @@ eventRouter.post('/reminders/run', auth, authEmployee, eventCtrl.sendDueEventRem
 eventRouter.get('/:id', auth, eventCtrl.viewEventById);
 // Mutations (staff-only)
 eventRouter.patch('/:id', auth, authEmployee, eventCtrl.updateEvent);
-eventRouter.post('/:id/send-invoice', auth, authEmployee, eventCtrl.sendCurrentInvoice);
+eventRouter.post('/:id/send-invoice', auth, authEmployee, sensitiveActionDedupe, eventCtrl.sendCurrentInvoice);
 eventRouter.post('/:id/procurement-receipt', auth, authEmployee, uploadImage.single('photo'), eventCtrl.uploadProcurementReceipt);
 eventRouter.post('/:id/contact-attempts', auth, authEmployee, eventCtrl.logContactAttempt);
-eventRouter.post('/:id/send-to-assign', auth, authEmployee, eventCtrl.sendToAssign);
-eventRouter.post('/:id/assign-bartenders', auth, authEmployee, eventCtrl.assignSelectedBartenders);
+eventRouter.post('/:id/send-to-assign', auth, authEmployee, sensitiveActionDedupe, eventCtrl.sendToAssign);
+eventRouter.post('/:id/assign-bartenders', auth, authEmployee, sensitiveActionDedupe, eventCtrl.assignSelectedBartenders);
 eventRouter.post('/:id/remove-bartenders', auth, eventCtrl.removeAssignedBartenders);
 eventRouter.post('/:id/cancel', auth, eventCtrl.cancelRequest);
 

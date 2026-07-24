@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { paymentCtrl } from "../../controllers/index.js";
-import { auth } from "../../middleware/index.js";
+import { auth, dedupeSuccessfulRequests } from "../../middleware/index.js";
 
 const paymentRouter = Router();
+const paymentDedupe = dedupeSuccessfulRequests({ ttlMs: 45 * 1000 });
 
 // CREATE
-paymentRouter.post("/", auth, paymentCtrl.createPayment);
+paymentRouter.post("/", auth, paymentDedupe, paymentCtrl.createPayment);
 
 // READ
 paymentRouter.get("/", auth, paymentCtrl.viewPayments);

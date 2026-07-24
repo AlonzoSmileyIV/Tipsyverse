@@ -4443,6 +4443,12 @@ const userCtrl = {
         next.bookingRestrictionReason = String(
           next.bookingRestrictionReason || ""
         ).trim();
+        if (next.bookingRestrictionReason.length > 100) {
+          return res.status(400).json({
+            success: false,
+            message: "Booking restriction reason must be 100 characters or fewer.",
+          });
+        }
 
         if (
           next.allowedToBookEvent === false &&

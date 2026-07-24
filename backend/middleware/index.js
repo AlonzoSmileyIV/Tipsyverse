@@ -14,7 +14,9 @@ import { authBartender } from "./libs/authBartender.middleware.js";
 import { uploadExcel } from "./libs/uploadExcel.middleware.js";
 import { ensureAnonId } from "./libs/anonId.middleware.js";
 import { attachLogActivity } from "./libs/attachLogActivity.middleware.js";
+import { createRateLimit } from "./libs/rateLimit.middleware.js";
+import { dedupeSuccessfulRequests, requireIdempotencyKey } from "./libs/idempotency.middleware.js";
 import { handleImageUpload, handleVideoUpload, uploadImage, uploadVideo, cloudinary } from "./libs/cloudinary.middleware.js";
 
 
-export { auth, optionalAuth, authEmployee, authBartender, ensureAnonId, attachLogActivity, handleImageUpload, handleVideoUpload, uploadImage, uploadVideo, cloudinary, uploadExcel };
+export { auth, optionalAuth, authEmployee, authBartender, ensureAnonId, attachLogActivity, createRateLimit, dedupeSuccessfulRequests, requireIdempotencyKey, handleImageUpload, handleVideoUpload, uploadImage, uploadVideo, cloudinary, uploadExcel };

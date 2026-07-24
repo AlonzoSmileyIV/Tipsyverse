@@ -1,10 +1,36 @@
 import { Router } from "express";
 import { userCtrl } from "../../controllers/index.js";
 import { uploadImage } from "../../utils/index.js";
-import { auth, authEmployee, optionalAuth, uploadExcel } from "../../middleware/index.js";
+import {
+  auth,
+  authEmployee,
+  createRateLimit,
+  dedupeSuccessfulRequests,
+  optionalAuth,
+  uploadExcel,
+} from "../../middleware/index.js";
 
 
 const userRouter = Router();
+const authLimit = createRateLimit({
+  keyPrefix: "auth",
+  windowMs: 15 * 60 * 1000,
+  max: 25,
+  message: "Too many sign-in or account requests. Please wait a few minutes and try again.",
+});
+const passwordResetLimit = createRateLimit({
+  keyPrefix: "password-reset",
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: "Too many password reset requests. Please wait a few minutes and try again.",
+});
+const bookingEligibilityLimit = createRateLimit({
+  keyPrefix: "booking-eligibility",
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  message: "Too many booking eligibility checks. Please wait a few minutes and try again.",
+});
+const userActionDedupe = dedupeSuccessfulRequests({ ttlMs: 30 * 1000 });
 
 // -------- BULK --------
 userRouter.post('/bulk', auth, authEmployee, uploadExcel.single('file'), userCtrl.bulkEmployeeBulker);
@@ -97,20 +123,20 @@ userRouter.patch(
 
 
 // -------- AUTH --------
-userRouter.post('/login', userCtrl.login);
+userRouter.post('/login', authLimit, userCtrl.login);
 userRouter.post('/logout', optionalAuth, userCtrl.logout);
 userRouter.post('/refresh-token', userCtrl.refreshToken);
 
 
 
 // -------- CREATE --------
-userRouter.post('/register', optionalAuth, userCtrl.registerUser);
+userRouter.post('/register', authLimit, optionalAuth, userCtrl.registerUser);
 
 
 
 // -------- PASSWORD RESET --------
-userRouter.post('/forgot-password', userCtrl.forgotPassword);
-userRouter.post('/reset-password', userCtrl.resetPassword);
+userRouter.post('/forgot-password', passwordResetLimit, userCtrl.forgotPassword);
+userRouter.post('/reset-password', passwordResetLimit, userCtrl.resetPassword);
 userRouter.put('/update-password', auth, userCtrl.updatePassword);
 userRouter.patch("/me/username", auth, userCtrl.updateMyUsername);
 
@@ -121,7 +147,7 @@ userRouter.get('/', userCtrl.viewAllUsers);
 userRouter.get('/regulars', userCtrl.viewAllRegulars);
 userRouter.get('/employees', userCtrl.viewAllEmployees);
 userRouter.get('/employees/not-reporting', userCtrl.viewEmployeesNotReporting);
-userRouter.get('/booking-eligibility', userCtrl.checkBookingEligibility);
+userRouter.get('/booking-eligibility', bookingEligibilityLimit, userCtrl.checkBookingEligibility);
 userRouter.get('/:id', userCtrl.viewUser);
 
 
@@ -135,8 +161,8 @@ userRouter.post('/me/delete', auth, userCtrl.deleteMyAccount);
 
 userRouter.put('/:id', auth, userCtrl.updateUser);
 userRouter.post('/upload-image', uploadImage.single('photo'), auth, userCtrl.uploadUserPhoto);
-userRouter.post('/:id/suspend', auth, authEmployee, userCtrl.suspendUser);
-userRouter.post('/:id/unsuspend', auth, authEmployee, userCtrl.unsuspendUser);
+userRouter.post('/:id/suspend', auth, authEmployee, userActionDedupe, userCtrl.suspendUser);
+userRouter.post('/:id/unsuspend', auth, authEmployee, userActionDedupe, userCtrl.unsuspendUser);
 userRouter.put('/:id/terminate', auth, authEmployee, userCtrl.terminateEmployee);
 
 

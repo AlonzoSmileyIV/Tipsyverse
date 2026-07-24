@@ -328,7 +328,7 @@ const userSchema = new mongoose.Schema(
       state: { type: String, default: "Active" },
       isOnline: { type: Boolean, default: false },
       allowedToBookEvent: { type: Boolean, default: true },
-      bookingRestrictionReason: { type: String, default: "" },
+      bookingRestrictionReason: { type: String, trim: true, maxlength: 100, default: "" },
       reasonForSuspension: { type: String, default: null },
       suspensionExplanation: { type: String, default: null },
       suspensionIndefinite: { type: Boolean, default: false },

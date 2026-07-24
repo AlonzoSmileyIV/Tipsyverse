@@ -23,6 +23,7 @@ import {
   computeEventTotals,
   buildEventUpdatedEmail,
   handleImageUpload,
+  validateEmail,
 } from "../../utils/index.js";
 
 import mongoose from "mongoose";
@@ -30,6 +31,8 @@ import mongoose from "mongoose";
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
 const adminEventUrl = (eventId) => `${appUrl()}/admin?eventId=${eventId}`;
+const hasUsablePhone = (value) => String(value || "").replace(/\D/g, "").length >= 10;
+const requiredText = (value) => String(value || "").trim();
 
 function formatEventType(value) {
   const text = String(value || "").trim();
@@ -727,11 +730,63 @@ const eventCtrl = {
         agreements,
       } = req.body;
 
+      const missing = [];
+      if (!requiredText(type)) missing.push("event type");
+      if (!requiredText(contact?.fullName)) missing.push("main contact name");
+      if (!requiredText(contact?.email)) missing.push("main contact email");
+      if (!requiredText(contact?.phone)) missing.push("main contact phone");
+      if (!requiredText(location?.address1) && !requiredText(location?.formatted)) {
+        missing.push("venue address");
+      }
+      if (!requiredText(location?.city)) missing.push("venue city");
+      if (!requiredText(location?.state)) missing.push("venue state");
+      if (!requiredText(location?.zipcode)) missing.push("venue zip code");
+      if (!startAt) missing.push("arrival date and time");
+      if (!endAt) missing.push("leaving date and time");
+      if (!agreements?.acceptedTerms) missing.push("terms agreement");
+      if (!agreements?.customerConfirmed) missing.push("booking detail confirmation");
+
+      if (missing.length) {
+        return res.status(400).json({
+          success: false,
+          message: `Please complete: ${missing.join(", ")}.`,
+        });
+      }
+
+      if (!validateEmail(String(contact.email).trim())) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid main contact email address.",
+        });
+      }
+
+      if (!hasUsablePhone(contact.phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid main contact phone number.",
+        });
+      }
+
+      const startDate = new Date(startAt);
+      const endDate = new Date(endAt);
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter valid arrival and leaving dates.",
+        });
+      }
+      if (endDate <= startDate) {
+        return res.status(400).json({
+          success: false,
+          message: "Leaving time must be after arrival time.",
+        });
+      }
+
       // normalize contact to ContactSchema
       const contactDoc = {
-        fullName: contact?.fullName,
-        email: contact?.email,
-        phone: contact?.phone,
+        fullName: requiredText(contact?.fullName),
+        email: String(contact?.email || "").trim(),
+        phone: requiredText(contact?.phone),
         preferred: contact?.preferred || "call",
         role: "organizer",
       };

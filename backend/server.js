@@ -33,7 +33,10 @@ app.use("/temp", express.static(path.join(__dirname, "public/temp")));
 app.use(morgan("tiny"));
 
 // CORS Setup
-const allowedOrigins = ['http://localhost:3000'];
+const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const corsConfig = {
   origin(origin, cb) {
@@ -76,6 +79,31 @@ app.use((err, req, res, next) => {
 });
 
 app.use(attachLogActivity);
+
+app.get(`${api}/health`, (req, res) => {
+  const required = {
+    mongo:
+      !!process.env.MONGO_URI ||
+      !!process.env.MONGO_DEV_URI ||
+      !!process.env.MONGO_STAGING_URI ||
+      !!process.env.MONGO_PROD_URI,
+    auth: !!process.env.ACCESS_TOKEN_SECRET && !!process.env.REFRESH_TOKEN_SECRET,
+    email: !!process.env.RESEND_EMAIL_KEY && !!process.env.FROM_EMAIL,
+    cloudinary:
+      !!process.env.CLOUDINARY_CLOUD_NAME &&
+      !!process.env.CLOUDINARY_API_KEY &&
+      !!process.env.CLOUDINARY_API_SECRET,
+    frontend: !!process.env.FRONTEND_URL || !!process.env.PUBLIC_APP_URL,
+  };
+
+  res.json({
+    success: true,
+    status: "ok",
+    environment: ENVIRONMENT,
+    uptimeSeconds: Math.round(process.uptime()),
+    checks: required,
+  });
+});
 
 // Rich link previews for drink shares. Crawlers read this plain HTML, then users are redirected to the React page.
 app.get("/share/drinks/:slug", drinkCtrl.viewDrinkSharePreview);

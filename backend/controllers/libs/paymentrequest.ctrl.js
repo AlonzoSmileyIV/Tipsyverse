@@ -9,6 +9,7 @@ import {
   displayPaymentType,
   shallowDiff,
   sendEmail,
+  validateEmail,
 } from "../../utils/index.js";
 
 const isStaff = (user) => ["admin", "employee"].includes(user?.role);
@@ -168,20 +169,34 @@ const paymentRequestCtrl = {
           message: "event, provider, paymentType, and amountRequested are required.",
         });
       }
+      const requestAmount = Number(amountRequested);
+      if (!Number.isFinite(requestAmount) || requestAmount <= 0) {
+        return res.status(400).json({
+          message: "Payment request amount must be greater than $0.00.",
+        });
+      }
 
       const eventDoc = await Event.findById(event)
         .select("_id shortCode type startAt endAt location contact")
         .lean();
       if (!eventDoc) return res.status(404).json({ message: "Event not found" });
       const recipient = normalizeSentTo(sentTo, eventDoc.contact);
+      if (!recipient?.email || !validateEmail(String(recipient.email).trim())) {
+        return res.status(400).json({
+          message: "A valid recipient email is required before sending a payment request.",
+        });
+      }
 
       const doc = await PaymentRequest.create({
         event,
         provider,
         paymentType,
-        amountRequested,
+        amountRequested: requestAmount,
         providerUrl,
-        sentTo: recipient,
+        sentTo: {
+          ...recipient,
+          email: String(recipient.email).trim(),
+        },
         sentBy: req.user.id,
         status: "draft",
         sentAt: undefined,
@@ -316,6 +331,25 @@ const paymentRequestCtrl = {
         }
       }
 
+      if (Object.prototype.hasOwnProperty.call(req.body, "amountRequested")) {
+        const requestAmount = Number(req.body.amountRequested);
+        if (!Number.isFinite(requestAmount) || requestAmount <= 0) {
+          return res.status(400).json({
+            message: "Payment request amount must be greater than $0.00.",
+          });
+        }
+        doc.amountRequested = requestAmount;
+      }
+
+      if (doc.sentTo?.email) {
+        doc.sentTo.email = String(doc.sentTo.email).trim();
+        if (!validateEmail(doc.sentTo.email)) {
+          return res.status(400).json({
+            message: "A valid recipient email is required before saving a payment request.",
+          });
+        }
+      }
+
       if (doc.status === "sent" && !doc.sentAt) doc.sentAt = new Date();
       await doc.save();
 
@@ -352,6 +386,17 @@ const paymentRequestCtrl = {
         "shortCode type startAt endAt location contact"
       );
       if (!doc) return res.status(404).json({ message: "Not found" });
+      if (!doc.sentTo?.email || !validateEmail(String(doc.sentTo.email).trim())) {
+        return res.status(400).json({
+          message: "A valid recipient email is required before sending a payment request.",
+        });
+      }
+      const requestAmount = Number(doc.amountRequested);
+      if (!Number.isFinite(requestAmount) || requestAmount <= 0) {
+        return res.status(400).json({
+          message: "Payment request amount must be greater than $0.00.",
+        });
+      }
 
       const before = doc.toObject();
       const emailResult = await sendPaymentRequestEmail(doc);
