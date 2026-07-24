@@ -1,0 +1,103 @@
+$primaryColor: #7B0323;
+$secondaryColor: #2C3E50;
+$accentColor: #F4D03F;
+$backgroundColor: #fff;
+
+$red: #E74952;
+$red-light: #F28B91;
+$red-dark: #B8323B;
+
+$orange: #E9AD08;
+$orange-light: #F5C24A;
+$orange-dark: #B38506;
+
+$green: #1AAE6B;
+$green-light: #4FD89A;
+$green-dark: #12814F;
+
+$blue: #3A9BF5;
+$blue-light: #72C1FA;
+$blue-dark: #1E74C0;
+
+$purple: #AB60B8;
+$purple-light: #C98BD1;
+$purple-dark: #833E8A;
+
+$pink: #EA56FF;
+$pink-light: #F38BFF;
+$pink-dark: #B03ECC;
+
+$grey: #7D7D7D;
+$grey-light: #B0B0B0;
+$grey-dark: #5A5A5A;
+
+$black: #000000;
+$black-light: #333333;
+$black-dark: #000000;
+
+
+:root {
+    --primary-color: #{$primaryColor};
+    --secondary-color: #{$secondaryColor};
+    --accentColor: #{$accentColor};
+    --background-color: #{$backgroundColor};
+    --text-color: #{$secondaryColor};
+
+    --red: #{$red};
+    --red-light: #{$red-light};
+    --red-dark: #{$red-dark};
+
+
+    --orange: #{$orange};
+    --orange-light: #{$orange-light};
+    --orange-dark: #{$orange-dark};
+
+
+    --green: #{$green};
+    --green-light: #{$green-light};
+    --green-dark: #{$green-dark};
+
+
+    --blue: #{$blue};
+    --blue-light: #{$blue-light};
+    --blue-dark: #{$blue-dark};
+
+
+    --purple: #{$purple};
+    --purple-light: #{$purple-light};
+    --purple-dark: #{$purple-dark};
+
+    --grey: #{$grey};
+    --grey-light: #{$grey-light};
+    --grey-dark: #{$grey-dark};
+
+
+    --pink: #{$pink};
+    --pink-light: #{$pink-light};
+    --pink-dark: #{$pink-dark};
+
+    --black: #{$black};
+    --black-light: #{$black-light};
+
+    /*========== Font and typography ==========*/
+  /*.5rem = 8px | 1rem = 16px ...*/
+  --body-font: 'Open Sans', sans-serif;
+  --second-font: 'Lemon', cursive;
+  --biggest-font-size: 2.25rem;
+  --normal-font-size: .938rem;
+
+}
+
+/* Responsive typography */
+@media screen and (min-width: 1024px) {
+    :root {
+      --biggest-font-size: 3.5rem;
+      --normal-font-size: 1rem;
+    }
+  }
+  
+
+.dark{
+    --background-color: #{$secondaryColor};
+    --text-color: #{$backgroundColor};
+}

@@ -1,0 +1,131 @@
+/* ===== Google Font Import - Poppins ===== */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600&display=swap');
+@import './globalVariables.scss';
+*{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden; /* Prevent horizontal scrolling */
+}
+
+
+body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    transition: background-color 0.3s, color 0.3s;
+}
+
+
+a{
+    text-decoration: none;
+}
+
+/******* KNOWN CLASSES ******/
+.d-flex-ai-center{
+    display: flex;
+    align-items: center;
+}
+
+.MuiTypography-root{
+    font-family: 'Poppins', sans-serif !important;
+}
+
+/*=============== REUSABLE CSS CLASSES ===============*/
+.container {
+    max-width: 1024px;
+    margin-right: 1.5rem;
+    margin-left: 1.5rem;
+  }
+  
+  .main {
+    overflow: hidden; /* For the animations */
+  }
+
+  .mentions {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.mentions__mention {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.mentions__suggestions__list {
+  max-height: 200px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  z-index: 1300; /* higher than dialogs */
+}
+
+.mention-input {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 16px;
+  min-height: 80px;
+}
+
+.mention {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-weight: 500;
+  display: inline-block;
+  margin-right: 4px;
+  line-height: 1.5;
+}
+
+.pac-container { z-index: 9999 !important; }
+
+/* keep dropdown above MUI */
+
+.MuiDataGrid-root {
+  max-width: 100%;
+
+  .MuiDataGrid-columnHeader .MuiDataGrid-iconButtonContainer,
+  .MuiDataGrid-columnHeader .MuiDataGrid-menuIcon {
+    visibility: visible !important;
+    width: auto !important;
+    opacity: 1 !important;
+  }
+
+  .MuiDataGrid-columnHeader .MuiDataGrid-sortIcon,
+  .MuiDataGrid-columnHeader .MuiSvgIcon-root {
+    color: rgba(0, 0, 0, 0.62) !important;
+  }
+
+  .MuiDataGrid-columnHeader:hover .MuiDataGrid-sortIcon,
+  .MuiDataGrid-columnHeader:hover .MuiSvgIcon-root {
+    color: rgba(0, 0, 0, 0.78) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .MuiDataGrid-root {
+    overflow-x: auto !important;
+
+    .MuiDataGrid-main,
+    .MuiDataGrid-virtualScroller {
+      min-width: 640px;
+    }
+  }
+}

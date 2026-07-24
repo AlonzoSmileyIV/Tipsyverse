@@ -1,0 +1,686 @@
+// src/components/LicenseDetailForm/LicenseDetailForm.jsx
+import React, { useEffect, useState } from "react";
+import {
+  Alert,
+  Box,
+  Button,
+  Divider,
+  IconButton,
+  Stack,
+  TextField,
+  Typography,
+  MenuItem,
+  FormHelperText,
+  DialogActions,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  FormControl,
+  InputLabel,
+  Select,
+} from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import DeleteIcon from "@mui/icons-material/Delete";
+import api from "../../services/api";
+import { Visibility } from "@mui/icons-material";
+import { parseDateOnlyParts } from "../../utils/dateOnly";
+
+const US_STATES = [
+  { value: "AL", label: "Alabama" },
+  { value: "AK", label: "Alaska" },
+  { value: "AZ", label: "Arizona" },
+  { value: "AR", label: "Arkansas" },
+  { value: "CA", label: "California" },
+  { value: "CO", label: "Colorado" },
+  { value: "CT", label: "Connecticut" },
+  { value: "DE", label: "Delaware" },
+  { value: "FL", label: "Florida" },
+  { value: "GA", label: "Georgia" },
+  { value: "HI", label: "Hawaii" },
+  { value: "ID", label: "Idaho" },
+  { value: "IL", label: "Illinois" },
+  { value: "IN", label: "Indiana" },
+  { value: "IA", label: "Iowa" },
+  { value: "KS", label: "Kansas" },
+  { value: "KY", label: "Kentucky" },
+  { value: "LA", label: "Louisiana" },
+  { value: "ME", label: "Maine" },
+  { value: "MD", label: "Maryland" },
+  { value: "MA", label: "Massachusetts" },
+  { value: "MI", label: "Michigan" },
+  { value: "MN", label: "Minnesota" },
+  { value: "MS", label: "Mississippi" },
+  { value: "MO", label: "Missouri" },
+  { value: "MT", label: "Montana" },
+  { value: "NE", label: "Nebraska" },
+  { value: "NV", label: "Nevada" },
+  { value: "NH", label: "New Hampshire" },
+  { value: "NJ", label: "New Jersey" },
+  { value: "NM", label: "New Mexico" },
+  { value: "NY", label: "New York" },
+  { value: "NC", label: "North Carolina" },
+  { value: "ND", label: "North Dakota" },
+  { value: "OH", label: "Ohio" },
+  { value: "OK", label: "Oklahoma" },
+  { value: "OR", label: "Oregon" },
+  { value: "PA", label: "Pennsylvania" },
+  { value: "RI", label: "Rhode Island" },
+  { value: "SC", label: "South Carolina" },
+  { value: "SD", label: "South Dakota" },
+  { value: "TN", label: "Tennessee" },
+  { value: "TX", label: "Texas" },
+  { value: "UT", label: "Utah" },
+  { value: "VT", label: "Vermont" },
+  { value: "VA", label: "Virginia" },
+  { value: "WA", label: "Washington" },
+  { value: "WV", label: "West Virginia" },
+  { value: "WI", label: "Wisconsin" },
+  { value: "WY", label: "Wyoming" },
+];
+
+const DENY_REASONS = [
+  {
+    value: "invalid_license_number",
+    label: "License number does not match state records",
+  },
+  {
+    value: "expired_license",
+    label: "License is expired and not currently valid",
+  },
+  {
+    value: "identity_mismatch",
+    label: "Name or identity does not match the license document",
+  },
+  {
+    value: "illegible_document",
+    label: "Uploaded document is blurry, cut off, or unreadable",
+  },
+  {
+    value: "wrong_document_type",
+    label: "Wrong document type uploaded (not a server/bartender permit)",
+  },
+  {
+    value: "unrecognized_authority",
+    label: "License appears to be issued by an unrecognized authority",
+  },
+  {
+    value: "suspected_fraud",
+    label: "Document appears altered or fraudulent",
+  },
+];
+
+// Optional: map state codes -> full names (for nicer search queries)
+const STATE_NAMES = {
+  AL: "Alabama",
+  AK: "Alaska",
+  AZ: "Arizona",
+  AR: "Arkansas",
+  CA: "California",
+  CO: "Colorado",
+  CT: "Connecticut",
+  DE: "Delaware",
+  FL: "Florida",
+  GA: "Georgia",
+  HI: "Hawaii",
+  ID: "Idaho",
+  IL: "Illinois",
+  IN: "Indiana",
+  IA: "Iowa",
+  KS: "Kansas",
+  KY: "Kentucky",
+  LA: "Louisiana",
+  ME: "Maine",
+  MD: "Maryland",
+  MA: "Massachusetts",
+  MI: "Michigan",
+  MN: "Minnesota",
+  MS: "Mississippi",
+  MO: "Missouri",
+  MT: "Montana",
+  NE: "Nebraska",
+  NV: "Nevada",
+  NH: "New Hampshire",
+  NJ: "New Jersey",
+  NM: "New Mexico",
+  NY: "New York",
+  NC: "North Carolina",
+  ND: "North Dakota",
+  OH: "Ohio",
+  OK: "Oklahoma",
+  OR: "Oregon",
+  PA: "Pennsylvania",
+  RI: "Rhode Island",
+  SC: "South Carolina",
+  SD: "South Dakota",
+  TN: "Tennessee",
+  TX: "Texas",
+  UT: "Utah",
+  VT: "Vermont",
+  VA: "Virginia",
+  WA: "Washington",
+  WV: "West Virginia",
+  WI: "Wisconsin",
+  WY: "Wyoming",
+};
+
+const STATE_PORTALS = {
+  IN: "https://www.mylicense.in.gov/everification/", // Indiana ATC Permit Lookup
+  TX: "https://www.tabc.texas.gov/services/online-tools/", // Texas TABC
+  CA: "https://www.abc.ca.gov/licensing/license-lookup/", // California ABC License Lookup
+  FL: "https://www.myfloridalicense.com/wl11.asp", // Florida License Lookup
+  NY: "https://www.sla.ny.gov/brand-label-search", // NY SLA / Permit Search
+};
+
+// Build a URL where admins can search licenses for that state.
+// You can later swap this to real state portals if you want.
+function getLicenseSearchUrl(stateCode) {
+  const code = (stateCode || "").toUpperCase().trim();
+  if (!code) return null;
+
+  // 1️⃣ If we have an official portal → return it
+  if (STATE_PORTALS[code]) {
+    return STATE_PORTALS[code];
+  }
+
+  // 2️⃣ Otherwise → fallback to Google
+  const stateName = STATE_NAMES[code] || code;
+  const query = encodeURIComponent(`${stateName} bartender permit lookup`);
+  return `https://www.google.com/search?q=${query}`;
+}
+
+function getBartenderUserIdFromLicense(license) {
+  if (!license) return null;
+  return (
+    license.bartenderId ||
+    license.userId ||
+    license.user?._id ||
+    license.bartender?._id ||
+    license.ownerId ||
+    null
+  );
+}
+
+const handleOpenInspectionSite = (stateCode) => {
+  const url = getLicenseSearchUrl(stateCode);
+
+  if (url) {
+    setTimeout(() => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }, 500); // 0.5 seconds
+  }
+};
+
+const formatDateInput = (value) => {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+};
+
+const datePartsToInput = (value) => {
+  const parts = parseDateOnlyParts(value);
+  if (!parts) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${pad(parts.month)}/${pad(parts.day)}/${parts.year}`;
+};
+
+const datePartsToISODate = (parts) => {
+  if (!parts) return "";
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+};
+
+const compareDateParts = (left, right) => {
+  if (!left || !right) return 0;
+  const leftValue = left.year * 10000 + left.month * 100 + left.day;
+  const rightValue = right.year * 10000 + right.month * 100 + right.day;
+  return leftValue - rightValue;
+};
+
+function LicenseDetailForm({
+  mode = "create", // "create" | "edit"
+  initialValue = null,
+  onClose,
+  onSaved,
+  onDeleted,
+  isEmployee = false,
+  keepInputsDisabled = false,
+  disableDeleteAndSave = false,
+}) {
+  const [state, setState] = useState(initialValue?.state || "IN");
+  const [licenseNumber, setLicenseNumber] = useState(
+    initialValue?.permitNumber || initialValue?.licenseNumber || ""
+  );
+  const [expiresAt, setExpiresAt] = useState(
+    initialValue?.expiresAt ? datePartsToInput(initialValue.expiresAt) : ""
+  );
+  const [status, setStatus] = useState(initialValue?.status || "pending");
+  const [denyDialogOpen, setDenyDialogOpen] = useState(false);
+  const [denyReason, setDenyReason] = useState("");
+  const [denyReasonError, setDenyReasonError] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const isEdit = mode === "edit";
+  const isReviewStatus = ["pending", "under_review"].includes(status);
+
+  const showApproveDeny = isEmployee && isEdit && isReviewStatus;
+
+  // disable fields only when employee is actively reviewing OR parent forces it
+  const disableFields =
+    (isEmployee && isEdit && isReviewStatus) || keepInputsDisabled;
+
+  const todayParts = parseDateOnlyParts(new Date());
+  const expiresAtParts = parseDateOnlyParts(expiresAt);
+
+  const isFormValid =
+    Boolean(state) &&
+    Boolean(licenseNumber) &&
+    Boolean(expiresAtParts) &&
+    compareDateParts(expiresAtParts, todayParts) >= 0;
+
+  useEffect(() => {
+    if (!initialValue) return;
+    setState(initialValue.state || "");
+    setLicenseNumber(
+      initialValue.permitNumber || initialValue.licenseNumber || ""
+    );
+    setExpiresAt(
+      initialValue.expiresAt ? datePartsToInput(initialValue.expiresAt) : ""
+    );
+    setStatus(initialValue.status || "pending");
+  }, [initialValue]);
+
+const handleApprove = async () => {
+  if (!initialValue?.licenseId) return;
+
+  const userId = getBartenderUserIdFromLicense(initialValue);
+
+  if (!userId) {
+    setError("Missing bartender user ID for this license.");
+    return;
+  }
+
+  try {
+    setSubmitting(true);
+
+    const response = await api.patch(
+      `/users/${userId}/licenses/${initialValue.licenseId}/decision`,
+      {
+        action: "approve",
+      }
+    );
+
+    setStatus(response.data?.data?.status || "approved");
+
+    await onSaved?.();
+  } catch (e) {
+    console.error(e);
+    setError(
+      e?.response?.data?.message ||
+        "Failed to approve license. Please try again."
+    );
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+  // This is just the entry point → opens the dialog
+  const handleOpenDenyDialog = () => {
+    setDenyReason("");
+    setDenyReasonError("");
+    setDenyDialogOpen(true);
+  };
+
+  const handleCloseDenyDialog = () => {
+    if (!submitting) {
+      setDenyDialogOpen(false);
+    }
+  };
+
+  const handleConfirmDeny = async () => {
+    if (!initialValue?.licenseId) return;
+
+    if (!denyReason) {
+      setDenyReasonError("Please select a reason for denial.");
+      return;
+    }
+
+    const userId = getBartenderUserIdFromLicense(initialValue);
+    if (!userId) {
+      setError("Missing bartender user ID for this license.");
+      return;
+    }
+
+    const reasonLabel =
+      DENY_REASONS.find((r) => r.value === denyReason)?.label || denyReason;
+
+    try {
+      setSubmitting(true);
+      setDenyReasonError("");
+
+      await api.patch(
+        `/users/${userId}/licenses/${initialValue?.licenseId}/decision`,
+        {
+          action: "deny",
+          note: reasonLabel, // this goes to `decisionNote` in your backend
+        }
+      );
+
+      setDenyDialogOpen(false);
+      onSaved?.();
+    } catch (e) {
+      console.error(e);
+      setError(
+        e?.response?.data?.message ||
+          "Failed to deny license. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setError("");
+
+    const parsedExpiresAt = parseDateOnlyParts(expiresAt);
+
+    if (!state || !licenseNumber || !expiresAt) {
+      setError("State, license number, and expiration date are required.");
+      return;
+    }
+
+    if (!parsedExpiresAt) {
+      setError("Please enter a valid expiration date.");
+      return;
+    }
+
+    if (compareDateParts(parsedExpiresAt, todayParts) < 0) {
+      setError("Expiration date cannot be in the past.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const payload = {
+        state,
+        permitNumber: licenseNumber,
+        expiresAt: datePartsToISODate(parsedExpiresAt),
+      };
+
+      if (isEdit && initialValue?._id) {
+        await api.patch(`/users/me/licenses/${initialValue?._id}`, payload);
+      } else {
+        await api.post("/users/me/licenses", payload);
+      }
+
+      onSaved?.();
+    } catch (e) {
+      console.error(e);
+      setError(
+        e?.response?.data?.message ||
+          "Failed to save license. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!initialValue?._id) return;
+
+    try {
+      setSubmitting(true);
+      await api.delete(`/users/me/licenses/${initialValue?._id}`);
+      onDeleted?.();
+    } catch (e) {
+      console.error(e);
+      setError(
+        e?.response?.data?.message ||
+          "Failed to delete license. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Box sx={{ width: { xs: "100vw", sm: 420 }, p: 2 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="h6">
+          {isEdit ? "License Details" : "Add New License"}
+        </Typography>
+        <IconButton onClick={onClose} size="small">
+          <CloseIcon />
+        </IconButton>
+      </Stack>
+
+      <Divider sx={{ my: 2 }} />
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Stack spacing={2}>
+        <TextField
+          select
+          label="State"
+          disabled={disableFields}
+          value={state}
+          onChange={(e) => setState(e.target.value)}
+          fullWidth
+          size="small"
+        >
+          {US_STATES.map((s) => (
+            <MenuItem key={s.value} value={s.value}>
+              {s.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          label="License / Permit Number"
+          value={licenseNumber}
+          disabled={disableFields}
+          onChange={(e) => setLicenseNumber(e.target.value)}
+          fullWidth
+          size="small"
+        />
+
+        <TextField
+          label="Expiration Date"
+          placeholder="MM/DD/YYYY"
+          value={expiresAt}
+          disabled={disableFields}
+          onChange={(e) => {
+            setExpiresAt(formatDateInput(e.target.value));
+            setError("");
+          }}
+          fullWidth
+          size="small"
+          InputLabelProps={{ shrink: true }}
+          inputProps={{ inputMode: "numeric", maxLength: 10 }}
+          helperText="Use MM/DD/YYYY. Expiration date cannot be in the past."
+        />
+
+        {isEdit && (
+          <TextField
+            label="Status"
+            value={status}
+            size="small"
+            disabled
+            helperText="Status is managed by Tipsyverse staff."
+          />
+        )}
+      </Stack>
+
+      {/* Employee review actions */}
+      {showApproveDeny && isEmployee && (
+        <Stack direction="row" spacing={1.5} sx={{ mt: 3 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Visibility />}
+            onClick={() => handleOpenInspectionSite(state)}
+            disabled={submitting}
+          >
+            Inspect
+          </Button>
+
+          <Box sx={{ flex: 1 }} />
+
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={handleOpenDenyDialog}
+            disabled={submitting}
+          >
+            Deny
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={handleApprove}
+            disabled={submitting}
+            sx={{ backgroundColor: "var(--primary-color)" }}
+          >
+            Approve
+          </Button>
+        </Stack>
+      )}
+
+      <Stack
+        direction="row"
+        spacing={1.5}
+        sx={{ mt: 3 }}
+        justifyContent="space-between"
+        alignItems="center"
+      >
+        <Button
+          variant="outlined"
+          color="inherit"
+          onClick={onClose}
+          disabled={submitting}
+        >
+          Cancel
+        </Button>
+
+        {!showApproveDeny && !disableDeleteAndSave && (
+          <Stack direction="row" spacing={1.5}>
+            {isEdit && (
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={submitting}
+              >
+                Delete
+              </Button>
+            )}
+
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              disabled={submitting || !isFormValid}
+              sx={{ backgroundColor: "var(--primary-color)" }}
+            >
+              {isEdit ? "Save Changes" : "Add New License"}
+            </Button>
+          </Stack>
+        )}
+      </Stack>
+
+      <Dialog
+        open={denyDialogOpen}
+        onClose={handleCloseDenyDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Deny License</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Please select a reason for denying this bartender license. This note
+            may be visible to the bartender and stored in the activity log.
+          </Typography>
+
+          <FormControl fullWidth size="small" error={!!denyReasonError}>
+            <InputLabel id="deny-reason-label">Reason for denial</InputLabel>
+            <Select
+              labelId="deny-reason-label"
+              label="Reason for denial"
+              value={denyReason}
+              onChange={(e) => {
+                setDenyReason(e.target.value);
+                if (denyReasonError) setDenyReasonError("");
+              }}
+            >
+              {DENY_REASONS.map((reason) => (
+                <MenuItem key={reason.value} value={reason.value}>
+                  {reason.label}
+                </MenuItem>
+              ))}
+            </Select>
+            {denyReasonError && (
+              <FormHelperText>{denyReasonError}</FormHelperText>
+            )}
+          </FormControl>
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={handleCloseDenyDialog} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmDeny}
+            color="error"
+            variant="contained"
+            disabled={!denyReason || submitting} // ← here
+          >
+            {submitting ? "Denying..." : "Confirm Denial"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => !submitting && setDeleteDialogOpen(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Delete License</DialogTitle>
+
+        <DialogContent dividers>
+          <Typography variant="body2">
+            Are you sure you want to delete this license? This action cannot be
+            undone.
+          </Typography>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setDeleteDialogOpen(false)}
+            disabled={submitting}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            color="error"
+            variant="contained"
+            onClick={confirmDelete}
+            disabled={submitting}
+          >
+            {submitting ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}
+
+export default LicenseDetailForm;
