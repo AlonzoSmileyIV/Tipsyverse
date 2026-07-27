@@ -39,10 +39,7 @@ import {
 import { DataGrid } from "@mui/x-data-grid";
 import api from "../../services/api";
 import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
-
-const ActivityLogsTable = React.lazy(() =>
-  import("../ActivityLogsTable/ActivityLogsTable")
-);
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
 
 const stepsLabels = ["User", "Details", "Documents", "Rewards", "Activity"];
 const tabsSx = {

@@ -83,6 +83,7 @@ notificationSchema.set("toJSON", {
 
 notificationSchema.index({ "recipients.recipient": 1 });
 notificationSchema.index({ "recipients.recipient": 1, "recipients.read": 1 });
+notificationSchema.index({ "recipients.recipient": 1, createdAt: -1 });
 
 const NotificationModel = mongoose.model("Notification", notificationSchema);
 

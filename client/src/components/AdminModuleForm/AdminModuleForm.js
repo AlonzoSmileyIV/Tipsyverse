@@ -35,9 +35,9 @@ import {
   MenuItem,
 } from "@mui/material";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import * as XLSX from "xlsx";
 import api from "../../services/api"; // used to fetch course list (only here)
-import ActivityLogsTable from "../ActivityLogsTable/ActivityLogsTable";
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 // ----- WYSIWYG placeholder -----
 const Wysiwyg = ({ value, onChange, label }) => (
@@ -373,7 +373,8 @@ const AdminModuleForm = ({
 
   const handleExcelUpload = (file) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
+      const XLSX = await loadSpreadsheet();
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: "array" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -476,7 +477,8 @@ const AdminModuleForm = ({
     setParsedSectionsDraft([]);
   };
 
-  const downloadTemplateXlsx = () => {
+  const downloadTemplateXlsx = async () => {
+    const XLSX = await loadSpreadsheet();
     const headers = [
       "SectionTitle",
       "LessonContent",

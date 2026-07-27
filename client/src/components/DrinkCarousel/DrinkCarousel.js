@@ -1,28 +1,14 @@
 // components/DrinkCarousel.js
 import React, {useMemo} from "react";
-import { Box, IconButton, Typography } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import DrinkCard from "../DrinkCard/DrinkCard";
-import Carousel from "react-multi-carousel";
-import "react-multi-carousel/lib/styles.css";
+import { Navigation } from "swiper/modules";
+import { Swiper, SwiperSlide } from "swiper/react";
+import "swiper/css";
+import "swiper/css/navigation";
 import "./styles.scss";
-import { ChevronLeft, ChevronRight } from "@mui/icons-material";
 import {  useSelector } from "react-redux";
 
-
-const responsive = {
-  desktop: {
-    breakpoint: { max: 3000, min: 1024 },
-    items: 5,
-  },
-  tablet: {
-    breakpoint: { max: 1024, min: 640 },
-    items: 3,
-  },
-  mobile: {
-    breakpoint: { max: 640, min: 0 },
-    items: 1,
-  },
-};
 
 const mockDrinks = [
   {
@@ -77,37 +63,6 @@ const mockDrinks = [
   },
 ];
 
-// ⬇️ Define outside your component
-const CustomRightArrow = ({ onClick }) => (
-  <IconButton
-    onClick={onClick}
-    sx={{
-      position: "absolute",
-      right: 0,
-      top: "40%",
-      zIndex: 1,
-      backgroundColor: "rgba(0,0,0,0.1)",
-    }}
-  >
-    <ChevronRight />
-  </IconButton>
-);
-
-const CustomLeftArrow = ({ onClick }) => (
-  <IconButton
-    onClick={onClick}
-    sx={{
-      position: "absolute",
-      left: 0,
-      top: "40%",
-      zIndex: 1,
-      backgroundColor: "rgba(0,0,0,0.1)",
-    }}
-  >
-    <ChevronLeft />
-  </IconButton>
-);
-
 const DrinkCarousel = ({
   drinksData = mockDrinks,
   type = "trending",
@@ -139,23 +94,23 @@ const DrinkCarousel = ({
       <Typography variant="h4" gutterBottom textAlign="left">
         {header}
       </Typography>
-      <Carousel
-        responsive={responsive}
-        infinite={false}
-        arrows
-        //beforeChange={(nextSlide) => setCurrentSlide(nextSlide)}
-        customRightArrow={<CustomRightArrow />}
-        customLeftArrow={<CustomLeftArrow />}
+      <Swiper
+        modules={[Navigation]}
+        navigation
+        spaceBetween={16}
+        slidesPerView={1}
+        breakpoints={{ 640: { slidesPerView: 3 }, 1024: { slidesPerView: 5 } }}
       >
         {normalizedDrinks.map((drink, index) => (
-         <DrinkCard
-            key={drink._id || drink.slug || index}
-            drink={drink}
-            rank={showRank ? index + 1 : undefined}   // ✅ rank only for trending
-            userAllergies={userAllergies}
-          />
+          <SwiperSlide key={drink._id || drink.slug || index}>
+            <DrinkCard
+              drink={drink}
+              rank={showRank ? index + 1 : undefined}
+              userAllergies={userAllergies}
+            />
+          </SwiperSlide>
         ))}
-      </Carousel>
+      </Swiper>
     </Box>
   );
 };

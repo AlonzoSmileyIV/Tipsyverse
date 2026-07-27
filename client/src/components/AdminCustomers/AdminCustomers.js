@@ -41,7 +41,7 @@ import {
 } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
 import { useTheme } from "@mui/material/styles";
-import * as XLSX from "xlsx";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import { Link } from "react-router-dom";
 import moment from "moment";
 import { useDispatch, useSelector } from "react-redux";
@@ -52,9 +52,8 @@ import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
 import { formatStatus } from "../../utils/formatStatus";
-const ActivityLogsTable = React.lazy(() =>
-  import("../../components/ActivityLogsTable/ActivityLogsTable")
-);
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const todayLocalISO = (() => {
   const d = new Date();
@@ -185,7 +184,8 @@ const AdminCustomers = ({ hideHeader = false }) => {
     }, 3000);
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     if (!filteredRows.length) {
       setAlertMessage("No customers to export yet.");
       setAlertSeverity("info");
@@ -475,7 +475,7 @@ const AdminCustomers = ({ hideHeader = false }) => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       )}

@@ -97,7 +97,6 @@ const NotificationBox = ({ onClose }) => {
 
     // Emit socket event for syncing across devices
     socket.emit("notifications:updateAllReadStatus", {
-      userId: user._id,
       read: shouldMarkAsRead,
     });
   };

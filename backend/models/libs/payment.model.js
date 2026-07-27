@@ -41,5 +41,9 @@ const PaymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+PaymentSchema.index({ "stripe.paymentIntentId": 1 }, { unique: true, sparse: true });
+PaymentSchema.index({ event: 1, status: 1, receivedAt: -1 });
+PaymentSchema.index({ paymentRequest: 1, status: 1 });
+
 export const PaymentModel = mongoose.model("Payment", PaymentSchema);
 export default PaymentModel;

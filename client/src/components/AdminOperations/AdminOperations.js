@@ -38,7 +38,6 @@ import {
   FormatUnderlined,
 } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
-import * as XLSX from "xlsx";
 import { useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import api from "../../services/api";
@@ -50,6 +49,8 @@ import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminSummaryCards from "../AdminSummaryCards/AdminSummaryCards";
 import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
+import DOMPurify from "dompurify";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const moneyDate = (value) => (value ? new Date(value).toLocaleString() : "-");
 const rowId = (row) => row._id || row.id;
@@ -123,12 +124,12 @@ function RichTextNotesEditor({ value = "", onChange, maxLength = 4000 }) {
   const plainLength = (html) => {
     if (typeof window === "undefined") return String(html || "").length;
     const holder = document.createElement("div");
-    holder.innerHTML = html || "";
+    holder.innerHTML = DOMPurify.sanitize(html || "");
     return holder.textContent.length;
   };
 
   useEffect(() => {
-    const next = value || "";
+    const next = DOMPurify.sanitize(value || "");
     if (editorRef.current && editorRef.current.innerHTML !== next) {
       editorRef.current.innerHTML = next;
     }
@@ -136,7 +137,8 @@ function RichTextNotesEditor({ value = "", onChange, maxLength = 4000 }) {
   }, [value]);
 
   const emitChange = () => {
-    const next = editorRef.current?.innerHTML || "";
+    const next = DOMPurify.sanitize(editorRef.current?.innerHTML || "");
+    if (editorRef.current) editorRef.current.innerHTML = next;
     lastExternalValue.current = next;
     onChange(next);
   };
@@ -693,7 +695,8 @@ function AdminOperations() {
     setAlert({ type: "success", message: "Operations refreshed." });
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     if (tab === "reported") {
       const rowsToExport = (reportedComments?.data || []).map((comment) => ({
         Author: comment.author?.fullName || comment.author?.email || "",

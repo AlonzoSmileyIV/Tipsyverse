@@ -2,7 +2,7 @@ import { Helmet } from "react-helmet-async";
 import { useLocation } from "react-router-dom";
 
 const SITE_NAME = "Tipsyverse";
-const DEFAULT_IMAGE = "/images/tipsyverse-og.jpg";
+const DEFAULT_IMAGE = "/logo512.png";
 const DEFAULT_KEYWORDS = [
   "Tipsyverse",
   "cocktail recipes",
@@ -233,8 +233,9 @@ export default function HelmetHeader({
       {imgUrl && (
         <>
           <meta property="og:image" content={imgUrl} />
-          <meta property="og:image:width" content="1200" />
-          <meta property="og:image:height" content="630" />
+          <meta property="og:image:width" content="512" />
+          <meta property="og:image:height" content="512" />
+          <meta property="og:image:alt" content="Tipsyverse" />
         </>
       )}
 

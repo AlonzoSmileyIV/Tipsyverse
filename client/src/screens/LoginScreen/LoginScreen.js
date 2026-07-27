@@ -167,6 +167,7 @@ const LoginScreen = () => {
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                 >
@@ -179,7 +180,7 @@ const LoginScreen = () => {
         <Box display="flex" justifyContent="space-between" mt={1} mb={2}>
           <Link
             to="/forgot-password"
-            style={{ color: "var(--primary-color)", textDecoration: "none" }}
+            style={{ color: "var(--primary-color)", textDecoration: "underline" }}
           >
             Forgot Password?
           </Link>
@@ -197,7 +198,7 @@ const LoginScreen = () => {
         Don’t have an account?{" "}
         <Link
           to="/register"
-          style={{ color: "var(--primary-color)", textDecoration: "none" }}
+          style={{ color: "var(--primary-color)", textDecoration: "underline" }}
         >
           Sign Up
         </Link>

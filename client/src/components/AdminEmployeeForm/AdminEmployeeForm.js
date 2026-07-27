@@ -38,16 +38,13 @@ import {
 } from "@mui/material";
 import {
   CameraAlt,
-  Visibility,
-  VisibilityOff,
-  CheckCircle,
   Save,
   Add,
   Close as CloseIcon,
 } from "@mui/icons-material";
-import { green, red } from "@mui/material/colors";
+import { red } from "@mui/material/colors";
 import { useDispatch, useSelector } from "react-redux";
-import ActivityLogsTable from "../ActivityLogsTable/ActivityLogsTable";
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
 import { fetchAllPositions } from "../../features/positions/positionSlice";
 import api from "../../services/api";
 import dayjs from "dayjs";
@@ -297,7 +294,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
     [isView]
   );
 
-  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState("");
   const [searchDirect, setSearchDirect] = useState("");
@@ -310,7 +306,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
     fullName: "",
     email: "",
     username: "",
-    password: "",
     position: "",
     dateStarted: "",
     birthday: "",
@@ -332,7 +327,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
         fullName: employee.fullName,
         email: employee.email,
         username: employee.username || "",
-        password: "",
         birthday: employee.profile?.birthday?.split("T")[0] || "",
         bio: employee.profile?.bio || "",
         position: employee.employeeDetails?.position?._id || "",
@@ -545,20 +539,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
         "If you're going to terminate someone, the reason for termination needs to be listed.";
     }
 
-    if (isAdd) {
-      if (!formData.password) newErrors.passwordEmpty = "Password is required.";
-      if (formData.password.length < 6)
-        newErrors.passwordLength = "Password must be at least 6 characters.";
-      if (!/[A-Z]/.test(formData.password))
-        newErrors.passwordUppercase =
-          "Must include at least one uppercase letter.";
-      if (!/[a-z]/.test(formData.password))
-        newErrors.passwordLowercase =
-          "Must include at least one lowercase letter.";
-      if (!/[!@#$%^&*(),.?":{}|<>]/.test(formData.password))
-        newErrors.passwordSpecial =
-          "Must include at least one special character.";
-    }
     setErrors(newErrors);
     if (Object.keys(newErrors).length === 0) {
       setReviewDialogOpen(true);
@@ -576,7 +556,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
         fullName: formData.fullName,
         email: formData.email,
         username: formData.username.toLowerCase(),
-        password: formData.password,
         birthday: formData.birthday,
         bio: formData.bio,
         photo: formData.photo,
@@ -916,74 +895,10 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
           )}
 
           {isAdd && (
-            <>
-              <TextField
-                label="Password"
-                type={showPassword ? "text" : "password"}
-                fullWidth
-                margin="normal"
-                value={formData.password}
-                onChange={(e) => handleChange("password", e.target.value)}
-                InputProps={{
-                  endAdornment: (
-                    <IconButton onClick={() => setShowPassword(!showPassword)}>
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  ),
-                }}
-                error={
-                  hasError("passwordEmpty") ||
-                  hasError("passwordLength") ||
-                  hasError("passwordUppercase") ||
-                  hasError("passwordLowercase") ||
-                  hasError("passwordSpecial")
-                }
-                helperText={
-                  <>
-                    {hasError("passwordEmpty") && (
-                      <div>{errors.passwordEmpty}</div>
-                    )}
-                    {hasError("passwordLength") && (
-                      <div>{errors.passwordLength}</div>
-                    )}
-                    {hasError("passwordUppercase") && (
-                      <div>{errors.passwordUppercase}</div>
-                    )}
-                    {hasError("passwordLowercase") && (
-                      <div>{errors.passwordLowercase}</div>
-                    )}
-                    {hasError("passwordSpecial") && (
-                      <div>{errors.passwordSpecial}</div>
-                    )}
-                  </>
-                }
-              />
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="caption" display="block">
-                  Password must include:
-                </Typography>
-                <ul style={{ marginLeft: 20, marginTop: 4, paddingLeft: 0 }}>
-                  {passwordValidations.map((rule, idx) => (
-                    <li
-                      key={idx}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        color: rule.isValid ? green[600] : undefined,
-                      }}
-                    >
-                      {rule.isValid && (
-                        <CheckCircle
-                          fontSize="small"
-                          sx={{ color: green[600], mr: 1 }}
-                        />
-                      )}
-                      {rule.label}
-                    </li>
-                  ))}
-                </ul>
-              </Box>
-            </>
+            <Alert severity="info" sx={{ mt: 2, mb: 1 }}>
+              The employee will receive a secure, single-use link to create
+              their password. The link expires after 30 minutes.
+            </Alert>
           )}
           <TextField
             label="Birthday"
@@ -1400,8 +1315,8 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
             {isAdd && (
               <ListItem>
                 <ListItemText
-                  primary="Password"
-                  secondary={formData.password ? "●●●●●●●●" : "N/A"}
+                  primary="Account activation"
+                  secondary="A secure password-creation link will be emailed."
                 />
               </ListItem>
             )}

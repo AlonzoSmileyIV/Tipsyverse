@@ -25,13 +25,13 @@ import {
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { InfoOutlined, Paid } from "@mui/icons-material";
-import * as XLSX from "xlsx";
 import api from "../../services/api";
 import EmptyOverlay from "../EmptyOverlay/EmptyOverlay";
 import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
 import { buildSnapshotFromEvent } from "../DetailedEventForm/DetailedEventForm.pricing";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 const roundMoney = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -752,7 +752,8 @@ export default function AdminFinance() {
     setAlert({ severity: "success", message: "Finance refreshed." });
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     const worksheet = XLSX.utils.json_to_sheet(
       filteredRows.map((row) => ({
         "Event Code": row.eventLabel,

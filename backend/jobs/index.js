@@ -6,38 +6,29 @@ import tenMinuteBartender24hReminderJob from "./libs/tenMinuteBartender24hRemind
 import tenMinuteCustomer24hReminderJob from "./libs/tenMinuteCustomer24hReminder.job.js";
 import tenMinuteCheckCompletedEventsJob from "./libs/tenMinuteCheckCompletedEvents.job.js";
 import minuteEventClockInReminderJob from "./libs/minuteEventClockInReminder.job.js";
+import { startJobLeadership } from "./libs/jobLeadership.js";
+import emailOutboxRetryJob from "./libs/emailOutboxRetry.job.js";
 
-// use https://crontab.cronhub.io to view expression correctly.
-
+// This registry is the only place recurring jobs are enabled. Leadership wraps
+// the initializers so horizontally scaled API instances do not perform the
+// same scheduled work concurrently.
 const initializeScheduledJobs = () => {
-  console.log("🕒 Initializing all scheduled jobs...");
+  if (process.env.JOBS_ENABLED === "false") {
+    console.log("🕒 Scheduled jobs are disabled for this process.");
+    return () => {};
+  }
 
-  // 🗓️ Yearly
-
-  // 🗂️ Quarterly
-
-  // 📦 Monthly
-
-  // 🔁 Weekly
- 
-
-  // 📬 Daily
-  dailyDeactivatedCleanup(); // Every day at 12:00am UTC
-  dailyLicenseExpiryReminderJob(); // Everyday at 9:00am EST.
-
-  // 🧹 Hourly
-  hourlyTempFileCleanupJob(); // Every single hour 0 minutes past the hour
-  hourlyCloudinaryCleanupJob(); // Every single hour 0 minutes past the hour
-
-  // Every 10 minutes
-  tenMinuteCheckCompletedEventsJob();
-
-  // Every 15 minutes
-  tenMinuteBartender24hReminderJob();
-  tenMinuteCustomer24hReminderJob();
-
-  // 🧹 Every minute
-  minuteEventClockInReminderJob();
+  return startJobLeadership(() => [
+    dailyDeactivatedCleanup(),
+    dailyLicenseExpiryReminderJob(),
+    hourlyTempFileCleanupJob(),
+    hourlyCloudinaryCleanupJob(),
+    tenMinuteCheckCompletedEventsJob(),
+    tenMinuteBartender24hReminderJob(),
+    tenMinuteCustomer24hReminderJob(),
+    minuteEventClockInReminderJob(),
+    emailOutboxRetryJob(),
+  ]);
 };
 
 export default initializeScheduledJobs;

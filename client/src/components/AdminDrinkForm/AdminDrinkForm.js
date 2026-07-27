@@ -57,7 +57,7 @@ import {
   Tag as TagIcon,
   DragIndicator,
 } from "@mui/icons-material";
-import ActivityLogsTable from "../ActivityLogsTable/ActivityLogsTable";
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
 import { red } from "@mui/material/colors";
 import api from "../../services/api";
 import { useDispatch, useSelector } from "react-redux";

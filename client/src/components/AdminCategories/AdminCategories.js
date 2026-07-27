@@ -44,8 +44,8 @@ import {
   Close,
 } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
-import ActivityLogsTable from "../ActivityLogsTable/ActivityLogsTable";
-import * as XLSX from "xlsx";
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import { useDropzone } from "react-dropzone";
 import { fetchAllLiquors } from "../../features/liquors/liquorSlice";
 import { fetchAllMixers } from "../../features/mixers/mixerSlice";
@@ -62,6 +62,7 @@ import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminSummaryCards from "../AdminSummaryCards/AdminSummaryCards";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import { formatStatus } from "../../utils/formatStatus";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const categories = [
   "Liquors",
@@ -523,7 +524,8 @@ const AdminCategories = () => {
     },
   });
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     let data = [];
     if (selectedType === "Liquors") {
       data = liquorsData.map(({ name, description, status, brands }) => ({
@@ -994,7 +996,7 @@ const AdminCategories = () => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       </Collapse>

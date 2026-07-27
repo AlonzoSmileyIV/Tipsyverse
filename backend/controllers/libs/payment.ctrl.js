@@ -4,6 +4,12 @@ import {
   PaymentRequestModel as PaymentRequest,
 } from "../../models/index.js";
 import { actorFromReq, shallowDiff } from "../../utils/index.js";
+import Stripe from "stripe";
+
+const stripeClient = () => {
+  if (!process.env.STRIPE_SECRET_KEY) return null;
+  return new Stripe(process.env.STRIPE_SECRET_KEY);
+};
 
 const isStaff = (user) => ["admin", "employee"].includes(user?.role);
 
@@ -33,6 +39,111 @@ const populatePayment = (query) =>
     .populate("editedBy", "fullName email role");
 
 const paymentCtrl = {
+  createStripePaymentIntent: async (req, res) => {
+    try {
+      const stripe = stripeClient();
+      if (!stripe) return res.status(503).json({ message: "Card payments are unavailable." });
+      const requestDoc = await PaymentRequest.findById(req.body?.paymentRequestId).lean();
+      if (!requestDoc || requestDoc.provider !== "stripe" || requestDoc.status !== "sent") {
+        return res.status(404).json({ message: "Active Stripe payment request not found." });
+      }
+      if (!(await canViewEvent(req.user, requestDoc.event))) {
+        return res.status(403).json({ message: "Not allowed" });
+      }
+      const amount = Math.round(Number(requestDoc.amountRequested) * 100);
+      if (!Number.isSafeInteger(amount) || amount < 50) {
+        return res.status(400).json({ message: "Invalid payment request amount." });
+      }
+      const intent = await stripe.paymentIntents.create(
+        {
+          amount,
+          currency: "usd",
+          automatic_payment_methods: { enabled: true },
+          receipt_email: requestDoc.sentTo?.email || req.user?.email,
+          metadata: {
+            paymentRequestId: String(requestDoc._id),
+            eventId: String(requestDoc.event),
+          },
+        },
+        { idempotencyKey: `payment-request-${requestDoc._id}` }
+      );
+      return res.json({ clientSecret: intent.client_secret });
+    } catch (error) {
+      console.error("Stripe PaymentIntent creation failed:", error);
+      return res.status(502).json({ message: "Unable to initialize card payment." });
+    }
+  },
+
+  handleStripeWebhook: async (req, res) => {
+    const stripe = stripeClient();
+    if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
+      return res.status(503).send("Stripe webhook is not configured.");
+    }
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        req.get("stripe-signature"),
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch {
+      return res.status(400).send("Invalid webhook signature.");
+    }
+
+    try {
+      if (event.type === "payment_intent.succeeded") {
+        const intent = event.data.object;
+        const paymentRequest = await PaymentRequest.findById(
+          intent.metadata?.paymentRequestId
+        ).lean();
+        if (paymentRequest && String(paymentRequest.event) === intent.metadata?.eventId) {
+          await Payment.updateOne(
+            { "stripe.paymentIntentId": intent.id },
+            {
+              $setOnInsert: {
+                event: paymentRequest.event,
+                paymentRequest: paymentRequest._id,
+                amount: intent.amount_received / 100,
+                method: "stripe",
+                reference: intent.latest_charge || intent.id,
+                receivedAt: new Date(),
+              },
+              $set: {
+                status: "recorded",
+                "stripe.paymentIntentId": intent.id,
+                "stripe.chargeId": intent.latest_charge || "",
+                "stripe.customerId": intent.customer || "",
+              },
+            },
+            { upsert: true }
+          );
+          await PaymentRequest.updateOne(
+            { _id: paymentRequest._id },
+            { $set: { status: "completed" } }
+          );
+        }
+      }
+
+      if (event.type === "charge.refunded") {
+        const charge = event.data.object;
+        await Payment.updateOne(
+          { "stripe.chargeId": charge.id },
+          {
+            $set: {
+              status: "refunded",
+              editedAt: new Date(),
+              "stripe.refundId": charge.refunds?.data?.[0]?.id || "",
+            },
+          }
+        );
+      }
+      return res.json({ received: true });
+    } catch (error) {
+      console.error("Stripe webhook reconciliation failed:", error);
+      return res.status(500).json({ message: "Webhook reconciliation failed." });
+    }
+  },
+
   createPayment: async (req, res) => {
     try {
       if (!isStaff(req.user)) return res.status(403).json({ message: "Not allowed" });
@@ -46,11 +157,15 @@ const paymentCtrl = {
         notes,
         receivedAt,
         status = "recorded",
-        stripe,
       } = req.body;
 
       if (!event || amount == null || !method) {
         return res.status(400).json({ message: "event, amount, and method are required." });
+      }
+      if (method === "stripe") {
+        return res.status(400).json({
+          message: "Stripe payments are recorded only through verified webhooks.",
+        });
       }
       const paymentAmount = Number(amount);
       if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
@@ -82,7 +197,6 @@ const paymentCtrl = {
         receivedAt: receivedAt || new Date(),
         collectedBy: req.user.id,
         status,
-        stripe,
       });
 
       if (paymentRequest && status === "recorded") {
@@ -218,7 +332,6 @@ const paymentCtrl = {
         "notes",
         "receivedAt",
         "status",
-        "stripe",
       ];
 
       for (const field of allowed) {
@@ -311,12 +424,22 @@ const paymentCtrl = {
       if (!doc) return res.status(404).json({ message: "Not found" });
 
       const before = doc.toObject();
+      if (doc.method === "stripe") {
+        const stripe = stripeClient();
+        if (!stripe || !doc.stripe?.paymentIntentId) {
+          return res.status(503).json({ message: "Stripe refund is unavailable." });
+        }
+        const refund = await stripe.refunds.create(
+          { payment_intent: doc.stripe.paymentIntentId },
+          { idempotencyKey: `refund-payment-${doc._id}` }
+        );
+        doc.stripe.refundId = refund.id;
+      }
       doc.status = "refunded";
       doc.editedAt = new Date();
       doc.editedBy = req.user.id;
       if (req.body.notes) doc.notes = req.body.notes;
       if (!doc.stripe) doc.stripe = {};
-      if (req.body.refundId) doc.stripe.refundId = req.body.refundId;
       await doc.save();
 
       if (doc.paymentRequest) {

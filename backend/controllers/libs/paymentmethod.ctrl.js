@@ -1,40 +1,78 @@
 // controllers/paymentMethod.controller.js
 import { PaymentMethodModel as PaymentMethod } from "../../models/index.js";
 import { shallowDiff, pmLabel, actorFromReq } from "../../utils/index.js";
+import Stripe from "stripe";
+
+const stripeClient = () =>
+  process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const canManageUser = (actor, userId) =>
   String(actor.id) === String(userId) ||
   ["admin", "employee"].includes(actor.role);
 
 const paymentMethodCtrl = {
+  createSetupIntent: async (req, res) => {
+    try {
+      const stripe = stripeClient();
+      if (!stripe) return res.status(503).json({ message: "Card storage is unavailable." });
+      const customer = await stripe.customers.create({
+        email: req.user.email,
+        metadata: { userId: String(req.user.id) },
+      });
+      const intent = await stripe.setupIntents.create({
+        customer: customer.id,
+        payment_method_types: ["card"],
+        metadata: { userId: String(req.user.id) },
+      });
+      return res.json({ clientSecret: intent.client_secret });
+    } catch (error) {
+      console.error("Stripe SetupIntent creation failed:", error);
+      return res.status(502).json({ message: "Unable to initialize secure card entry." });
+    }
+  },
+
   // POST /payment-methods
   createPaymentMethod: async (req, res) => {
     try {
       const {
         ownerId,
-        provider,
-        type,
-        externalId,
-        customerId,
-        fingerprint,
-        brand,
-        last4,
-        expMonth,
-        expYear,
+        setupIntentId,
         nickname,
-        billingName,
-        billingEmail,
-        billingAddress,
         setDefault = false,
       } = req.body;
 
-      const owner = ownerId || req.user.id; // ensure this is consistent with your auth (_id vs id)
-        // console.log(req.user.id);
-        // console.log(owner);
-       // console.log('canManageUser(req.user, owner): ', canManageUser(req.user, owner));
+      const owner = ownerId || req.user.id;
       if (!canManageUser(req.user, owner)) {
         return res.status(403).json({ message: "Not allowed, cannot manage this user." });
       }
+      const stripe = stripeClient();
+      if (!stripe || !setupIntentId) {
+        return res.status(400).json({ message: "A completed Stripe SetupIntent is required." });
+      }
+      const setupIntent = await stripe.setupIntents.retrieve(setupIntentId, {
+        expand: ["payment_method"],
+      });
+      if (
+        setupIntent.status !== "succeeded" ||
+        String(setupIntent.metadata?.userId) !== String(owner) ||
+        !setupIntent.payment_method?.id
+      ) {
+        return res.status(400).json({ message: "Card verification was not completed." });
+      }
+      const stripeMethod = setupIntent.payment_method;
+      const card = stripeMethod.card || {};
+      const provider = "stripe";
+      const type = "card";
+      const externalId = stripeMethod.id;
+      const customerId = setupIntent.customer;
+      const fingerprint = card.fingerprint;
+      const brand = card.brand;
+      const last4 = card.last4;
+      const expMonth = card.exp_month;
+      const expYear = card.exp_year;
+      const billingName = stripeMethod.billing_details?.name || "";
+      const billingEmail = stripeMethod.billing_details?.email || req.user.email;
+      const billingAddress = undefined;
    
       // --- nickname handling ---
       const nick = (nickname || "").trim();

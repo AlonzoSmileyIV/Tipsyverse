@@ -36,7 +36,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import * as XLSX from "xlsx";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import { DataGrid } from "@mui/x-data-grid";
 
 import AdminEmployeeForm from "../AdminEmployeeForm/AdminEmployeeForm";
@@ -48,6 +48,7 @@ import { canEditUser, canSeeAddButton } from "../../accessControl/rbac";
 import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import { formatStatus } from "../../utils/formatStatus";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const primaryButtonSx = {
   color: "var(--primary-color)",
@@ -254,7 +255,8 @@ const AdminManageTeam = ({ hideHeader = false }) => {
     // }, 3000);
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     const data = filteredEmployeeData.map((emp) => ({
       Name: emp.fullName,
       Email: emp.email,
@@ -519,7 +521,7 @@ const AdminManageTeam = ({ hideHeader = false }) => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       )} */}
@@ -546,7 +548,7 @@ const AdminManageTeam = ({ hideHeader = false }) => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       </Collapse>

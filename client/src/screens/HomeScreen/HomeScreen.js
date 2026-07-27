@@ -21,6 +21,8 @@ import Hero from "../../components/Hero/Hero";
 import PublicLayout from "../../components/PublicLayout/PublicLayout";
 import LoadingSkeleton from "../../components/LoadingSkeleton/LoadingSkeleton";
 
+// Keep homepage merchandising policy outside the component so additions do not
+// become entangled with rendering and request lifecycle code.
 const SEASONAL_CATEGORIES = ["Fall", "Winter", "Spring", "Summer"];
 const CATEGORY_ICONS = {
   Classic: "🍸",
@@ -48,6 +50,8 @@ const getCategoryHeader = (category) => {
 };
 
 const drinkRows = (value) => {
+  // Drink endpoints were introduced with more than one response envelope.
+  // Normalize at this boundary while those contracts are consolidated.
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.data)) return value.data;
   if (Array.isArray(value?.items)) return value.items;
@@ -132,6 +136,8 @@ const HomeScreen = () => {
     useSelector((state) => state.drinks);
 
   const [showContent, setShowContent] = useState(false);
+
+  // Recompute on a full page load so only the current seasonal lane is fetched.
   const categoriesToShow = useMemo(() => {
     const currentSeason = getCurrentSeason();
     return [
@@ -144,6 +150,8 @@ const HomeScreen = () => {
   }, []);
 
   useEffect(() => {
+    // Public lanes load for everyone; recommendations require an authenticated
+    // user because the server derives them from that user's activity.
     dispatch(fetchTopTrending());
     dispatch(fetchMostRecentDrinks());
     if (loggedInUser?.user?._id) {
@@ -156,9 +164,11 @@ const HomeScreen = () => {
   }, [dispatch, loggedInUser?.user?._id, categoriesToShow]);
 
   useEffect(() => {
+    // Preserve a minimum skeleton duration to avoid a flash when cached
+    // homepage requests resolve immediately.
     const timer = setTimeout(() => {
       setShowContent(true);
-    }, 1500); // 1.5 seconds
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, []);

@@ -1,11 +1,9 @@
-//import sgMail from '@sendgrid/mail';
 import dotenv from "dotenv";
 dotenv.config();
 import { Resend } from "resend";
+import { EmailOutboxModel as EmailOutbox } from "../../models/index.js";
 
 const resend = new Resend(process.env.RESEND_EMAIL_KEY);
-
-//sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const emailTemplate = (title, content) => `
 <!DOCTYPE html>
@@ -159,7 +157,16 @@ const emailTemplate = (title, content) => `
 `;
 
 
-const sendEmail = async ({ to, cc, bcc, subject, title, html, attachments }) => {
+const sendEmail = async ({
+  to,
+  cc,
+  bcc,
+  subject,
+  title,
+  html,
+  attachments,
+  queueOnFailure = true,
+}) => {
   try {
     const msg = {
       to: to,
@@ -179,7 +186,16 @@ const sendEmail = async ({ to, cc, bcc, subject, title, html, attachments }) => 
       "❌ Email sending error:",
       error.response?.body || error.message
     );
-    return { success: false, message: "Email failed to send." };
+    if (queueOnFailure) {
+      await EmailOutbox.create({
+        payload: { to, cc, bcc, subject, title, html, attachments },
+        lastError: error.message || "Email provider error",
+        nextAttemptAt: new Date(Date.now() + 60_000),
+      }).catch((queueError) =>
+        console.error("❌ Failed to queue email retry:", queueError.message)
+      );
+    }
+    return { success: false, queued: queueOnFailure, message: "Email failed to send." };
   }
 };
 

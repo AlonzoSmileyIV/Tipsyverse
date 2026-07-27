@@ -1,4 +1,10 @@
 import axios from "axios";
+import {
+  clearAccessToken,
+  getAccessToken,
+  readPersistedSession,
+  setAccessToken,
+} from "./authSessionStore";
 
 const api = axios.create({
   baseURL: `${process.env.REACT_APP_BASE_URL}`,
@@ -6,27 +12,16 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// 1️⃣ First interceptor – uses loggedInUser.accessToken
+// Authentication transport is centralized here so feature thunks never need
+// to know how tokens are persisted or refreshed.
 api.interceptors.request.use((config) => {
-  const stored = JSON.parse(localStorage.getItem("loggedInUser") || "null");
-  const token = stored?.accessToken;
-  // console.log("[API] ->", config.method?.toUpperCase(), config.url, "token?", !!token);
+  const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// 2️⃣ Second interceptor – uses localStorage "accessToken"
-// api.interceptors.request.use((config) => {
-//   const raw = localStorage.getItem("accessToken"); // or from Redux
-//   const token = raw && JSON.parse(raw);
-//   if (token) {
-//     config.headers.Authorization = `Bearer ${token}`;
-//   }
-//   return config;
-// });
-
-
-// Avoid infinite refresh loops and allow requests to opt out of refresh
+// Only one refresh request may run at a time. Requests that fail concurrently
+// wait for its result, preventing refresh-token reuse during rotation.
 let isRefreshing = false;
 let waiters = [];
 const notifyWaiters = (token) => {
@@ -37,14 +32,19 @@ const notifyWaiters = (token) => {
 const persistRefreshedAccessToken = (accessToken, sessionStartedAt) => {
   if (!accessToken) return;
 
-  const current = JSON.parse(localStorage.getItem("loggedInUser") || "null") || {};
-  current.accessToken = accessToken;
-  if (sessionStartedAt) current.sessionStartedAt = sessionStartedAt;
-  localStorage.setItem("loggedInUser", JSON.stringify(current));
+  setAccessToken(accessToken);
+  const current = readPersistedSession() || {};
+  if (sessionStartedAt) {
+    localStorage.setItem(
+      "loggedInUser",
+      JSON.stringify({ ...current, sessionStartedAt })
+    );
+  }
   api.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
 
-  // Keep Redux synchronized with the token used by the API client. This avoids
-  // a later reducer persisting the expired token back into localStorage.
+  // The API module cannot import the Redux store without creating an
+  // infrastructure-to-feature dependency. A browser event keeps Redux
+  // synchronized without introducing that cycle.
   window.dispatchEvent(
     new CustomEvent("auth:access-token-refreshed", {
       detail: { accessToken, sessionStartedAt },
@@ -53,6 +53,7 @@ const persistRefreshedAccessToken = (accessToken, sessionStartedAt) => {
 };
 
 const forceLogoutToLogin = (message) => {
+  clearAccessToken();
   localStorage.removeItem("loggedInUser");
   if (message) localStorage.setItem("authLogoutMessage", message);
   if (window.location.pathname !== "/login") {
@@ -104,7 +105,9 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    // Treat 401 as unauthenticated; also treat 403 as unauthenticated if the message indicates token problems
+    // A normal 403 means "authenticated but forbidden" and must not trigger a
+    // refresh. Legacy endpoints sometimes return 403 for an invalid token, so
+    // only token-shaped 403 responses enter the refresh path.
     const looksLikeTokenProblem =
       msg.includes("token") ||
       msg.includes("jwt") ||
@@ -123,10 +126,9 @@ api.interceptors.response.use(
     try {
       if (!isRefreshing) {
         isRefreshing = true;
-        const current = JSON.parse(localStorage.getItem("loggedInUser") || "null") || {};
         const res = await axios.post(
           `${process.env.REACT_APP_BASE_URL}/users/refresh-token`,
-          { refreshToken: current.refreshToken || null },
+          {},
           { withCredentials: true, __isRefreshCall: true }
         );
         const accessToken = res.data?.accessToken || null;
@@ -143,8 +145,7 @@ api.interceptors.response.use(
       }
 
       // Ensure the retried request uses the new token, even if original headers were frozen
-      const stored = JSON.parse(localStorage.getItem("loggedInUser") || "null");
-      const fresh = stored?.accessToken;
+      const fresh = getAccessToken();
       if (fresh) {
         original.headers = { ...(original.headers || {}), Authorization: `Bearer ${fresh}` };
       }
@@ -156,6 +157,7 @@ api.interceptors.response.use(
       const invalidRefreshCodes = new Set([
         "REFRESH_TOKEN_MISSING",
         "REFRESH_TOKEN_INVALID",
+        "REFRESH_TOKEN_REUSED",
         "SESSION_ABSOLUTE_EXPIRED",
       ]);
       const refreshTokenIsInvalid =

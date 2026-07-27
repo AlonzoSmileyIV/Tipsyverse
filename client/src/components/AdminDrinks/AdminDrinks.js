@@ -35,7 +35,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import * as XLSX from "xlsx";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import { DataGrid } from "@mui/x-data-grid";
 import moment from "moment/moment";
 import AdminDrinkForm from "../AdminDrinkForm/AdminDrinkForm";
@@ -46,6 +46,7 @@ import { fetchAllDrinks } from "../../features/drinks/drinkSlice";
 import EmptyOverlay from "../EmptyOverlay/EmptyOverlay";
 import AdminSummaryCards from "../AdminSummaryCards/AdminSummaryCards";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const mockGlasses = [
   { id: 1, name: "Cocktail Glass", maxOunces: 8 },
@@ -278,7 +279,8 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
     },
   });
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     const data = filteredDrinksData.map(
       ({
         name,
@@ -518,7 +520,7 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       </Collapse>

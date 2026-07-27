@@ -298,10 +298,14 @@ const userSchema = new mongoose.Schema(
     },
     email: { type: String, required: true, trim: true, unique: true },
     fullName: { type: String, required: true, trim: true },
-    passwordHash: { type: String, required: true, trim: true },
+    passwordHash: { type: String, required: true, trim: true, select: false },
 
-    resetPasswordToken: { type: String, default: null },
-    resetPasswordExpires: { type: Date, default: null },
+    resetPasswordToken: { type: String, default: null, select: false },
+    resetPasswordExpires: { type: Date, default: null, select: false },
+    activationTokenHash: { type: String, default: null, select: false },
+    activationTokenExpiresAt: { type: Date, default: null, select: false },
+    activationCompletedAt: { type: Date, default: null },
+    mustSetPassword: { type: Boolean, default: false },
 
     profile: {
       photo: { type: String, default: "" },

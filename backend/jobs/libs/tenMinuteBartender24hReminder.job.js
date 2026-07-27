@@ -220,7 +220,7 @@ async function sendBartender24hReminders() {
 }
 
 const tenMinuteBartender24hReminderJob = () => {
-  cron.schedule(
+  return cron.schedule(
     "*/15 * * * *",
     async () => {
       console.log(`⏱️ Bartender 24h reminder job triggered.`);

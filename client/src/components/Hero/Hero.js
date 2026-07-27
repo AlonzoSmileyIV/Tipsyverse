@@ -7,7 +7,7 @@ import {
   Stack,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-import heroCocktailImg from "../../assets/images/hero-cocktail.png";
+import heroCocktailImg from "../../assets/images/hero-cocktail.jpg";
 import { navigateOrReload } from "../../utils/navigateOrReload";
 
 const heroSlides = [

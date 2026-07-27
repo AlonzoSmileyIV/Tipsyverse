@@ -150,7 +150,7 @@ async function sendCustomer24hReminders() {
 }
 
 const tenMinuteCustomer24hReminderJob = () => {
-  cron.schedule(
+  return cron.schedule(
     "*/15 * * * *",
     async () => {
       console.log(`⏱️ Customer 24h reminder job triggered.`);

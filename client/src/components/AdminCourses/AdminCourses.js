@@ -18,6 +18,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import {
   Add,
   ArrowDownward,
@@ -646,11 +647,7 @@ const AdminCourses = () => {
       <Collapse in={alertOpen || !!error}>
         <Box sx={{ mt: 2 }}>
           <Alert severity={alertSeverity} onClose={() => setAlertOpen(false)}>
-            <div
-              dangerouslySetInnerHTML={{
-                __html: alertMessage || error || "",
-              }}
-            />
+            <SafeHtml html={alertMessage || error || ""} />
           </Alert>
         </Box>
       </Collapse>

@@ -192,7 +192,7 @@ const paymentRequestCtrl = {
         provider,
         paymentType,
         amountRequested: requestAmount,
-        providerUrl,
+        providerUrl: provider === "stripe" ? undefined : providerUrl,
         sentTo: {
           ...recipient,
           email: String(recipient.email).trim(),
@@ -203,6 +203,10 @@ const paymentRequestCtrl = {
         expiresAt,
         emailId,
       });
+      if (provider === "stripe") {
+        doc.providerUrl = `${process.env.PUBLIC_APP_URL.replace(/\/$/, "")}/pay/${doc._id}`;
+        await doc.save();
+      }
 
       const emailResult = await sendPaymentRequestEmail(doc, eventDoc);
       if (!emailResult.success) {
