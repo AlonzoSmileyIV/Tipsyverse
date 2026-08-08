@@ -4,7 +4,14 @@ import { Resend } from "resend";
 import { EmailOutboxModel as EmailOutbox } from "../../models/index.js";
 import appendEmailButtonFallbacks from "./emailButtonFallbacks.js";
 
-const resend = new Resend(process.env.RESEND_EMAIL_KEY);
+let resend;
+const getResendClient = () => {
+  if (!process.env.RESEND_EMAIL_KEY) {
+    throw new Error("RESEND_EMAIL_KEY is not configured.");
+  }
+  if (!resend) resend = new Resend(process.env.RESEND_EMAIL_KEY);
+  return resend;
+};
 
 const emailTemplate = (title, content) => `
 <!DOCTYPE html>
@@ -179,7 +186,7 @@ const sendEmail = async ({
       html: emailTemplate(title, appendEmailButtonFallbacks(html)),
     };
 
-    await resend.emails.send(msg);
+    await getResendClient().emails.send(msg);
     console.log(`✅ Email sent to ${to}`);
     return { success: true, message: "Email sent successfully." };
   } catch (error) {
