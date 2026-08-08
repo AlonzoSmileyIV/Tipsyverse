@@ -24,7 +24,7 @@ function googleMapsLinkFromEventLocation(loc = {}) {
     : null;
 }
 
-function formatWhen(evt, timeZone = TZ) {
+function formatWhen(evt, timeZone = evt.timezone || evt.location?.timezone || TZ) {
   const s = new Date(evt.startAt);
   const e = new Date(evt.endAt);
   const dateFmt = new Intl.DateTimeFormat("en-US", {
@@ -111,6 +111,7 @@ async function sendCustomer24hReminders() {
     status: { $in: ["confirmed", "ready_to_assign", "reminder_sent", "in_progress"] },
     startAt: { $gt: now, $lte: in24h },
     customer24hReminderSentAt: null,
+    "payment.policyStatus": { $nin: ["payment_hold", "action_required"] },
     "contact.email": { $exists: true, $ne: "" },
   })
     .limit(200)

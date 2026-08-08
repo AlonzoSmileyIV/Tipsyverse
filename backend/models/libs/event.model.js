@@ -74,7 +74,15 @@ const PaymentSnapshotSchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["none", "authorized", "captured", "released", "refunded"],
+      enum: [
+        "none",
+        "authorized",
+        "captured",
+        "partially_paid",
+        "paid_in_full",
+        "released",
+        "refunded",
+      ],
       default: "none",
       index: true,
     },
@@ -96,6 +104,9 @@ const PaymentSnapshotSchema = new mongoose.Schema(
     fees: { type: Number, min: 0, default: 0 },
     gratuity: { type: Number, min: 0, default: 0 },
     total: { type: Number, min: 0, default: 0 },
+    paidTotal: { type: Number, min: 0, default: 0 },
+    balance: { type: Number, min: 0, default: 0 },
+    overpayment: { type: Number, min: 0, default: 0 },
 
     depositPct: { type: Number, min: 0, max: 1, default: 0 },
     depositAmount: { type: Number, min: 0, default: 0 },
@@ -108,6 +119,37 @@ const PaymentSnapshotSchema = new mongoose.Schema(
     authorizedAt: { type: Date },
     capturedAt: { type: Date },
     refundedAt: { type: Date },
+    balanceDueAt: { type: Date, index: true },
+    policyScheduledAt: { type: Date, default: null },
+    policyStatus: {
+      type: String,
+      enum: [
+        "not_priced",
+        "current",
+        "due_soon",
+        "due_now",
+        "past_due",
+        "payment_hold",
+        "action_required",
+        "arrangement",
+        "paid",
+        "canceled_nonpayment",
+      ],
+      default: "not_priced",
+      index: true,
+    },
+    shortNoticeFullPayment: { type: Boolean, default: false },
+    firstReminderSentAt: { type: Date, default: null },
+    pastDueWarningSentAt: { type: Date, default: null },
+    holdNoticeSentAt: { type: Date, default: null },
+    actionRequiredNoticeSentAt: { type: Date, default: null },
+    arrangementApprovedAt: { type: Date, default: null },
+    arrangementApprovedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    arrangementNotes: { type: String, trim: true, default: null },
   },
   { _id: false }
 );
@@ -185,12 +227,13 @@ const EventSchema = new mongoose.Schema(
       country: { type: String, trim: true, default: "US" },
       formatted: { type: String, trim: true },
       placeId: { type: String, trim: true },
-      point: { type: GeoPointSchema, required: true },
+      point: { type: GeoPointSchema, default: undefined },
       timezone: { type: String, trim: true },
     },
 
     startAt: { type: Date, required: true, index: true },
     endAt: { type: Date, required: true },
+    timezone: { type: String, trim: true },
     completedAt: { type: Date, default: null },
     completionEmailSentAt: { type: Date, default: null },
 
@@ -339,6 +382,17 @@ const EventSchema = new mongoose.Schema(
 );
 
 EventSchema.pre("validate", function (next) {
+  const zone =
+    this.timezone ||
+    this.location?.timezone ||
+    "America/Indiana/Indianapolis";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date());
+  } catch {
+    return next(new Error("timezone must be a valid IANA timezone"));
+  }
+  this.timezone = zone;
+  if (this.location) this.location.timezone = zone;
   if (this.startAt && this.endAt && this.endAt <= this.startAt) {
     return next(new Error("endAt must be after startAt"));
   }

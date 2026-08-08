@@ -78,11 +78,13 @@ app.options(/.*/, cors(corsConfig), (req, res) => res.sendStatus(204));
 
 // Stripe verifies the signature against the exact request bytes. Never move
 // this route below express.json(), which would make verification unreliable.
-app.post(
-  `${api}/payments/webhook`,
-  express.raw({ type: "application/json", limit: "256kb" }),
-  paymentCtrl.handleStripeWebhook
-);
+if (String(process.env.STRIPE_ENABLED).toLowerCase() === "true") {
+  app.post(
+    `${api}/payments/webhook`,
+    express.raw({ type: "application/json", limit: "256kb" }),
+    paymentCtrl.handleStripeWebhook
+  );
+}
 
 // Body + cookies AFTER CORS
 app.use(express.json({ limit: "1mb" }));

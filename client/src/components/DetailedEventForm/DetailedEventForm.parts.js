@@ -176,6 +176,7 @@ export function PaymentStatusSummary({
   paymentChipColor,
   amountPaid,
   discountedTotal,
+  overpaymentCredit = 0,
   paymentsLoading,
   paymentRequest,
   paymentRequests = [],
@@ -196,6 +197,14 @@ export function PaymentStatusSummary({
           Paid {formatMoney(amountPaid)} / {formatMoney(discountedTotal)}
         </Typography>
       </Stack>
+
+      {overpaymentCredit > 0 && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Customer credit on this event: <strong>{formatMoney(overpaymentCredit)}</strong>.
+          No refund is required to keep the event balance synchronized; refund
+          or transfer the credit only when the business decides to do so.
+        </Alert>
+      )}
 
       {paymentsLoading ? (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>

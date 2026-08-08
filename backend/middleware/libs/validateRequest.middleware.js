@@ -24,6 +24,10 @@ export const validateBody = (schema) => (req, res, next) => {
 export const validateWriteBody = (req, res, next) => {
   if (!["POST", "PUT", "PATCH"].includes(req.method)) return next();
   if (req.is("multipart/form-data")) return next();
+  // Express leaves req.body undefined when a write intentionally has no body
+  // (for example, toggle-like actions). Treat that as an empty object while
+  // continuing to reject explicit non-object JSON payloads.
+  if (req.body === undefined) req.body = {};
   return validateBody(writeBodySchema)(req, res, next);
 };
 

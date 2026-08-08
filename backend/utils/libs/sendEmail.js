@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 import { Resend } from "resend";
 import { EmailOutboxModel as EmailOutbox } from "../../models/index.js";
+import appendEmailButtonFallbacks from "./emailButtonFallbacks.js";
 
 const resend = new Resend(process.env.RESEND_EMAIL_KEY);
 
@@ -175,7 +176,7 @@ const sendEmail = async ({
       ...(attachments?.length ? { attachments } : {}),
       from: process.env.FROM_EMAIL,
       subject: subject,
-      html: emailTemplate(title, html), // Wrap content in the template
+      html: emailTemplate(title, appendEmailButtonFallbacks(html)),
     };
 
     await resend.emails.send(msg);

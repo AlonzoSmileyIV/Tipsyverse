@@ -66,7 +66,8 @@ const AdminBartenders = ({ hideHeader = false, reviewOnly = false }) => {
   const dispatch = useDispatch();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+  const is800OrLess = useMediaQuery("(max-width:800px)");
+  const isTablet = useMediaQuery("(max-width:1000px)");
 
   // UI state
   const [alert, setAlert] = useState(null);
@@ -388,7 +389,7 @@ const handleDecision = async (decision, note = "") => {
           pageSize={10}
           rowsPerPageOptions={[10, 20, 50]}
           columnVisibilityModel={{
-            bartenderStatus: !isMobile,
+            bartenderStatus: !is800OrLess,
             pendingRewardCount: !isTablet,
           }}
           disableSelectionOnClick

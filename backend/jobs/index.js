@@ -8,6 +8,7 @@ import tenMinuteCheckCompletedEventsJob from "./libs/tenMinuteCheckCompletedEven
 import minuteEventClockInReminderJob from "./libs/minuteEventClockInReminder.job.js";
 import { startJobLeadership } from "./libs/jobLeadership.js";
 import emailOutboxRetryJob from "./libs/emailOutboxRetry.job.js";
+import eventPaymentPolicyJob from "./libs/eventPaymentPolicy.job.js";
 
 // This registry is the only place recurring jobs are enabled. Leadership wraps
 // the initializers so horizontally scaled API instances do not perform the
@@ -28,6 +29,7 @@ const initializeScheduledJobs = () => {
     tenMinuteCustomer24hReminderJob(),
     minuteEventClockInReminderJob(),
     emailOutboxRetryJob(),
+    eventPaymentPolicyJob(),
   ]);
 };
 

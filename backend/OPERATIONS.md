@@ -74,8 +74,8 @@ npm run check
 Before shifting public traffic:
 
 - run a staging backup and restore drill and record its result;
-- configure the Stripe webhook endpoint, replay a signed test event, and verify
-  payment and refund reconciliation;
+- when Stripe is enabled, configure its webhook endpoint, replay a signed test
+  event, and verify payment and refund reconciliation;
 - restrict Cloudinary transformations and Google Maps browser keys in their
   provider consoles;
 - set Sentry DSNs and `APP_RELEASE`, then verify a staged frontend and backend

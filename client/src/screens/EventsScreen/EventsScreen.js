@@ -49,6 +49,12 @@ import moment from "moment";
 import api from "../../services/api";
 import { CollapseAlert } from "../../components/CollapseAlert/CollapseAlert";
 import { buildSnapshotFromEvent } from "../../components/DetailedEventForm/DetailedEventForm.pricing";
+import getCustomerPaymentStatus from "../../utils/customerPaymentStatus";
+import getEventPaymentPolicyView from "../../utils/eventPaymentPolicy";
+import {
+  formatEventTimestamp,
+  getEventTimeZone,
+} from "../../utils/timestamps";
 
 /* helpers */
 const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
@@ -207,8 +213,13 @@ function StatCard({ label, value, detail }) {
 }
 
 function EventCard({ event, onCancel, onView, onVerifyAttendance }) {
-  const balance = getEventBalance(event);
   const paidTotal = getEventPaidTotal(event);
+  const paymentTotal = getEventTotal(event);
+  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal);
+  const paymentPolicy = getEventPaymentPolicyView(event, {
+    total: paymentTotal,
+    paid: paidTotal,
+  });
   const bartenders =
     event?.pricing?.bartendersRequested ?? event?.counts?.neededBartenders ?? 1;
   const start = event?.startAt ? moment(event.startAt) : null;
@@ -244,16 +255,30 @@ function EventCard({ event, onCancel, onView, onVerifyAttendance }) {
           </Typography>
           <Typography variant="body2" sx={{ mt: 0.5 }}>
             {start?.isValid?.() && end?.isValid?.()
-              ? `${start.format("MMM D, YYYY • h:mm a")} to ${end.format("h:mm a")} ${tzAbbr(event.timezone || "")}`
+              ? `${formatEventTimestamp(event, event.startAt)} to ${formatEventTimestamp(
+                  event,
+                  event.endAt,
+                  { includeDate: false }
+                )}`
               : "Date pending"}
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1 }}>
             <Chip size="small" variant="outlined" label={`${bartenders} bartender${bartenders === 1 ? "" : "s"}`} />
-            <Chip size="small" variant="outlined" label={`Paid ${fmtMoney(paidTotal)}`} />
             <Chip
               size="small"
-              color={balance > 0 ? "warning" : "success"}
-              label={balance > 0 ? `Balance ${fmtMoney(balance)}` : "Paid in full"}
+              variant="outlined"
+              label={paidTotal > 0 ? `Paid ${fmtMoney(paidTotal)}` : "No payments yet"}
+            />
+            <Chip
+              size="small"
+              color={
+                paymentPolicy.severity === "error"
+                  ? "error"
+                  : paymentPolicy.severity === "warning"
+                  ? "warning"
+                  : paymentStatus.color
+              }
+              label={paymentPolicy.label}
             />
           </Stack>
         </Box>
@@ -357,11 +382,16 @@ export default function EventsHub() {
       } catch (err) {
         setDetailsOpen(false);
         setSelectedEvent(null);
+        setAlert({
+          message: "Event not found or you do not have permission to view it.",
+          severity: "error",
+        });
+        navigate("/my-events", { replace: true });
       }
     };
 
     run();
-  }, [eventId, tab, dispatch]);
+  }, [eventId, tab, dispatch, navigate]);
 
   const handleRefresh = () => {
     fetchAllData();
@@ -412,9 +442,11 @@ export default function EventsHub() {
     const header = [
       "Type",
       "Formatted Address",
-      "Start",
-      "End",
-      "TZ",
+      "Start UTC",
+      "End UTC",
+      "Event Start",
+      "Event End",
+      "Event Timezone",
       "Status",
     ].join(",");
     const body = filteredEvents.map((e) =>
@@ -422,12 +454,14 @@ export default function EventsHub() {
         JSON.stringify(e?.type ?? ""),
         JSON.stringify(e?.location?.formatted ?? ""),
         JSON.stringify(
-          e?.startAt ? moment(e.startAt).format("YYYY-MM-DD HH:mm") : ""
+          e?.startAt ? new Date(e.startAt).toISOString() : ""
         ),
         JSON.stringify(
-          e?.endAt ? moment(e.endAt).format("YYYY-MM-DD HH:mm") : ""
+          e?.endAt ? new Date(e.endAt).toISOString() : ""
         ),
-        JSON.stringify(tzAbbr(e?.timezone || "")),
+        JSON.stringify(formatEventTimestamp(e, e?.startAt)),
+        JSON.stringify(formatEventTimestamp(e, e?.endAt)),
+        JSON.stringify(getEventTimeZone(e)),
         JSON.stringify(e?.status ?? ""),
       ].join(",")
     );
@@ -789,7 +823,7 @@ export default function EventsHub() {
                 </Typography>
                 <Typography>
                   <strong>Start:</strong>{" "}
-                  {new Date(eventToCancel.startAt).toLocaleString()}
+                  {formatEventTimestamp(eventToCancel, eventToCancel.startAt)}
                 </Typography>
               </Box>
             )}

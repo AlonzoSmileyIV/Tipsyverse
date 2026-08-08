@@ -85,7 +85,9 @@ const imageStorage = multer.diskStorage({
 const imageFileFilter = (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (!validImageExtensions.includes(ext) || !validImageMimeTypes.has(file.mimetype)) {
-        return cb(new Error('Only image files are allowed!'), false);
+        const error = new Error('Choose a JPG, PNG, GIF, or WebP image.');
+        error.status = 400;
+        return cb(error, false);
     }
     cb(null, true);
 };
@@ -107,7 +109,9 @@ const videoStorage = multer.diskStorage({
 const videoFileFilter = (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (!validVideoExtensions.includes(ext) || !validVideoMimeTypes.has(file.mimetype)) {
-        return cb(new Error('Only video files are allowed!'), false);
+        const error = new Error('Choose an MP4, MOV, AVI, MKV, or WebM video.');
+        error.status = 400;
+        return cb(error, false);
     }
     cb(null, true);
 };

@@ -8,6 +8,10 @@ const errorHandler = (err, req, res, next) => {
   const isUploadError = err instanceof multer.MulterError;
   const status = Number(err?.status || err?.statusCode) || (isUploadError ? 400 : 500);
   const exposeMessage = status < 500 || process.env.NODE_ENV !== "production";
+  const uploadMessage =
+    err?.code === "LIMIT_FILE_SIZE"
+      ? "The uploaded file exceeds the allowed size limit."
+      : err?.message;
 
   if (status >= 500) {
     logger.error("unhandled_request_error", {
@@ -23,7 +27,7 @@ const errorHandler = (err, req, res, next) => {
 
   return res.status(status).json({
     success: false,
-    message: exposeMessage ? err?.message || "Request failed." : "Internal server error.",
+    message: exposeMessage ? uploadMessage || "Request failed." : "Internal server error.",
   });
 };
 

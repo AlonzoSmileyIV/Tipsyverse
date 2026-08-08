@@ -14,6 +14,42 @@ const uniqueList = (items = []) => {
   });
 };
 
+const REWARD_SOURCES = {
+  barTools: {
+    label: "Bar Products — professional bar tools",
+    url: "https://barproducts.com/collections/bar-tools",
+  },
+  barToolGuide: {
+    label: "WebstaurantStore — bartender tool guide and shop links",
+    url: "https://www.webstaurantstore.com/blog/5566/best-tools-for-bartenders.html",
+  },
+  apparel: {
+    label: "Custom Ink — branded shirts, hoodies, and caps",
+    url: "https://www.customink.com/products",
+  },
+  personalized: {
+    label: "Etsy — personalized bartender gear",
+    url: "https://www.etsy.com/search?q=personalized%20bartender%20gear",
+  },
+  packaging: {
+    label: "Uline — corrugated shipping and gift boxes",
+    url: "https://www.uline.com/Cls_04/Boxes-Corrugated",
+  },
+};
+
+const purchaseLinksFor = (milestone) => {
+  if (milestone === 1) {
+    return [REWARD_SOURCES.barTools, REWARD_SOURCES.barToolGuide, REWARD_SOURCES.packaging];
+  }
+  if ([50, 150].includes(milestone)) {
+    return [REWARD_SOURCES.apparel, REWARD_SOURCES.packaging];
+  }
+  if (milestone >= 200) {
+    return [REWARD_SOURCES.personalized, REWARD_SOURCES.barTools, REWARD_SOURCES.packaging];
+  }
+  return [REWARD_SOURCES.barTools, REWARD_SOURCES.barToolGuide, REWARD_SOURCES.packaging];
+};
+
 const uniqueRewardMilestones = (rewards = []) => {
   const seenMilestones = new Set();
   const seenRewards = new Set();
@@ -28,6 +64,7 @@ const uniqueRewardMilestones = (rewards = []) => {
     seenMilestones.add(milestoneKey);
     seenRewards.add(rewardKey);
     reward.items = uniqueList(reward.items || []);
+    reward.purchaseLinks = purchaseLinksFor(milestoneKey);
     return true;
   });
 };
@@ -35,103 +72,87 @@ const uniqueRewardMilestones = (rewards = []) => {
 const BARTENDER_REWARD_MILESTONES_CONFIG = [
   {
     milestone: 1,
-    reward: "Welcome Kit",
+    reward: "Starter Bar Kit",
     costRange: "Included",
-    description: "Claim this after approval so Tipsyverse knows where to send your starter kit.",
+    description: "Welcome-letter message: Congratulations, and thank you for completing your first bartending event with Tipsyverse. We are excited to have you on the team and look forward to celebrating many more milestones with you.",
     items: [
-      "Tipsyverse welcome note",
-      "Bottle opener",
-      "Bar key",
+      "Printed congratulations and welcome letter",
+      "Stainless steel bottle opener",
       "Starter pour spout set",
-      "Event-ready notepad",
-      "Black service towel",
-      "Tipsyverse stickers",
     ],
   },
   {
     milestone: 5,
-    reward: "Tipsyverse T-Shirt",
-    costRange: "$12-18",
-    items: ["Tipsyverse branded T-shirt", "Chosen size", "Care card"],
+    reward: "Service Essentials Set",
+    costRange: "$15-25",
+    items: ["Waiter's corkscrew", "Black service towel set", "Pocket order notepad"],
   },
   {
     milestone: 10,
-    reward: "Engraved Boston Shaker Tin",
-    costRange: "$15-25",
-    items: ["Weighted Boston shaker tin", "Tipsyverse engraving", "Polishing cloth"],
+    reward: "Boston Shaker Set",
+    costRange: "$20-30",
+    items: ["Weighted Boston shaker tins", "Hawthorne strainer"],
   },
   {
     milestone: 25,
-    reward: "Premium Bar Spoon + Jigger Set",
-    costRange: "$20-30",
-    items: ["Twisted bar spoon", "Japanese-style jigger", "Compact tool care guide"],
+    reward: "Precision Tool Set",
+    costRange: "$30-45",
+    items: ["Japanese-style jigger", "Weighted bar spoon", "Stainless steel garnish peeler"],
   },
   {
     milestone: 50,
-    reward: "Embroidered Polo Shirt",
-    costRange: "$25-35",
-    items: ["Tipsyverse embroidered polo", "Chosen size", "Chosen color"],
+    reward: "Tipsyverse T-Shirt + Cap Set",
+    costRange: "$35-50",
+    items: ["Tipsyverse premium T-shirt", "Tipsyverse embroidered cap"],
   },
   {
     milestone: 75,
-    reward: "Personalized Cocktail Mixing Glass",
-    costRange: "$25-40",
-    items: ["Heavy-base mixing glass", "Personalized name text", "Protective shipping box"],
+    reward: "Mixing Glass Set",
+    costRange: "$45-65",
+    items: ["Heavy-base cocktail mixing glass", "Julep strainer", "Weighted bar spoon"],
   },
   {
     milestone: 100,
-    reward: "Premium Bartender Tool Roll",
-    costRange: "$40-60",
-    items: ["Canvas or leatherette tool roll", "Tool pockets", "Tipsyverse branded tag"],
+    reward: "Bartender Tool Roll Set",
+    costRange: "$60-85",
+    items: ["Waxed-canvas bartender tool roll", "Six-piece stainless steel bar tool set"],
   },
   {
     milestone: 150,
-    reward: "Tipsyverse Hoodie",
-    costRange: "$40-60",
-    items: ["Tipsyverse branded hoodie", "Chosen size", "Care card"],
+    reward: "Tipsyverse Hoodie Workwear Set",
+    costRange: "$75-100",
+    items: ["Tipsyverse heavyweight hoodie", "Insulated stainless steel bottle"],
   },
   {
     milestone: 200,
-    reward: "Custom Leather Bar Apron",
-    costRange: "$70-120",
-    description: "Embroidered with bartender name.",
-    items: ["Leather bar apron", "Personalized embroidery", "Adjustable straps"],
+    reward: "Personalized Bar Apron Set",
+    costRange: "$100-140",
+    description: "Durable professional workwear personalized for the bartender.",
+    items: ["Personalized waxed-canvas bar apron", "Engraved stainless steel bar blade", "Premium service towel set"],
   },
   {
     milestone: 300,
-    reward: "Rolling Bartender Bag",
-    costRange: "$100-150",
-    items: ["Rolling bartender bag", "Bottle/tool compartments", "Travel ID tag"],
+    reward: "Travel Bartender Set",
+    costRange: "$140-190",
+    items: ["Structured bartender travel bag", "Removable bottle divider", "Personalized luggage tag"],
   },
   {
     milestone: 500,
-    reward: "Professional Bar Kit + Recognition Plaque",
-    costRange: "$150-250",
-    items: [
-      "Professional bartender tool kit",
-      "Recognition plaque",
-      "Tipsyverse milestone certificate",
-    ],
+    reward: "Professional Bar Kit",
+    costRange: "$200-275",
+    items: ["Premium stainless steel bar tool kit", "Heavy-duty bartender bag", "Personalized waxed-canvas apron"],
   },
   {
     milestone: 750,
-    reward: "Weekend Company Retreat Invitation",
-    costRange: "Variable",
-    items: [
-      "Company retreat invitation",
-      "Event itinerary",
-      "Travel and lodging details when available",
-    ],
+    reward: "Premium Mobile Bar Set",
+    costRange: "$275-350",
+    items: ["Rolling bartender equipment bag", "Premium weighted tool set", "Insulated bottle carrier"],
   },
   {
     milestone: 1000,
-    reward: "Custom Championship Jacket + Hall of Fame Recognition",
-    costRange: "$250+",
-    items: [
-      "Custom championship jacket",
-      "Hall of Fame recognition feature",
-      "Personal milestone announcement",
-    ],
+    reward: "Personalized Signature Professional Set",
+    costRange: "$350-450",
+    items: ["Personalized full-grain leather bar apron", "Premium leather bartender tool roll", "Engraved professional bar tool set"],
   },
 ];
 
@@ -146,7 +167,11 @@ export const getCompletedBartenderEventsCount = (assignments = []) =>
     return ["completed", "closed"].includes(event.status);
   }).length;
 
-export const buildRewardProgress = (completedEvents = 0, claims = []) => {
+export const buildRewardProgress = (
+  completedEvents = 0,
+  claims = [],
+  { includePurchaseLinks = false } = {}
+) => {
   const claimByMilestone = new Map(
     claims.map((claim) => [Number(claim.milestone), claim])
   );
@@ -154,8 +179,10 @@ export const buildRewardProgress = (completedEvents = 0, claims = []) => {
   return BARTENDER_REWARD_MILESTONES.map((item) => {
     const claim = claimByMilestone.get(item.milestone) || null;
     const unlocked = completedEvents >= item.milestone;
+    const { purchaseLinks, ...publicItem } = item;
     return {
-      ...item,
+      ...publicItem,
+      ...(includePurchaseLinks ? { purchaseLinks } : {}),
       requiresClaim: item.requiresClaim !== false,
       unlocked,
       completedEvents,

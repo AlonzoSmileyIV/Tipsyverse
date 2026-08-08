@@ -30,6 +30,9 @@ import CloseIcon from "@mui/icons-material/Close";
 import api from "../../services/api";
 import { formatStatus } from "../../utils/formatStatus";
 import { buildSnapshotFromEvent } from "../DetailedEventForm/DetailedEventForm.pricing";
+import getCustomerPaymentStatus from "../../utils/customerPaymentStatus";
+import getEventPaymentPolicyView, { formatPaymentDueDate } from "../../utils/eventPaymentPolicy";
+import { formatTimestamp, getEventTimeZone } from "../../utils/timestamps";
 
 const STATUS_COLORS = {
   submitted: "info",
@@ -160,8 +163,8 @@ function LabelVal({ label, value }) {
   );
 }
 
-function PaymentRow({ pmt }) {
-  const when = pmt.receivedAt || pmt.createdAt ? new Date(pmt.receivedAt || pmt.createdAt).toLocaleString() : "—";
+function PaymentRow({ pmt, timeZone }) {
+  const when = formatTimestamp(pmt.receivedAt || pmt.createdAt, { timeZone });
   const statusColor =
     pmt.status === "recorded"
       ? "success"
@@ -488,7 +491,7 @@ export default function ClientEventDetailsDrawer({
   };
 
   const tz =
-    evt?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    getEventTimeZone(evt);
   const recordedPayments = payments.filter(isActivePayment);
   const paidTotal = payments.length
     ? recordedPayments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
@@ -513,6 +516,11 @@ export default function ClientEventDetailsDrawer({
   const paymentTotal = getEventPaymentBaseTotal(evt);
   const balance = Math.max(0, paymentTotal - paidTotal);
   const overpayment = Math.max(0, paidTotal - paymentTotal);
+  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal);
+  const paymentPolicy = getEventPaymentPolicyView(evt, {
+    total: paymentTotal,
+    paid: paidTotal,
+  });
 
   useEffect(() => {
     if (detailsTab === "reviews" && !readyForReview) {
@@ -590,9 +598,9 @@ export default function ClientEventDetailsDrawer({
                   {evt.canceledAt && (
                     <Chip
                       size="small"
-                      label={`Canceled at ${new Date(
-                        evt.canceledAt
-                      ).toLocaleString()}`}
+                      label={`Canceled at ${formatTimestamp(evt.canceledAt, {
+                        timeZone: tz,
+                      })}`}
                       variant="outlined"
                     />
                   )}
@@ -765,7 +773,13 @@ export default function ClientEventDetailsDrawer({
                         <Typography
                           variant="h6"
                           fontWeight={800}
-                          color={balance > 0 ? "error.main" : "success.main"}
+                          color={
+                            paymentStatus.key === "pricing_pending"
+                              ? "text.secondary"
+                              : balance > 0
+                              ? "error.main"
+                              : "success.main"
+                          }
                         >
                           {fmtMoney(balance)}
                         </Typography>
@@ -788,13 +802,25 @@ export default function ClientEventDetailsDrawer({
                     </Grid>
                   </Grid>
 
-                  <Alert severity={balance > 0 ? "warning" : "success"}>
-                    {balance > 0
+                  <Alert severity={paymentStatus.severity}>
+                    {paymentStatus.key === "pricing_pending"
+                      ? "Pricing has not been confirmed yet. No payment is currently due."
+                      : balance > 0
                       ? `Current balance due: ${fmtMoney(balance)}. Contact Tipsyverse to make or discuss a payment.`
                       : overpayment > 0
                       ? `This event is paid in full. Recorded payments exceed the event total by ${fmtMoney(overpayment)}.`
                       : "This event is paid in full based on recorded payments."}
                   </Alert>
+
+                  {paymentPolicy.dueAt && paymentStatus.key !== "pricing_pending" && (
+                    <Alert severity={paymentPolicy.severity}>
+                      <strong>{paymentPolicy.label}.</strong>{" "}
+                      The remaining balance is due by {formatPaymentDueDate(paymentPolicy.dueAt, tz)}.
+                      {paymentPolicy.status === "payment_hold" || paymentPolicy.status === "action_required"
+                        ? " Bartenders remain assigned, but final instructions, optional purchases, and event changes are paused."
+                        : ""}
+                    </Alert>
+                  )}
 
                   <Divider />
 
@@ -806,7 +832,7 @@ export default function ClientEventDetailsDrawer({
                   ) : (
                     <Stack spacing={1}>
                       {displayPayments.map((pmt) => (
-                        <PaymentRow key={pmt._id} pmt={pmt} />
+                        <PaymentRow key={pmt._id} pmt={pmt} timeZone={tz} />
                       ))}
                     </Stack>
                   )}

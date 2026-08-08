@@ -5,7 +5,12 @@ import { loadStripe } from "@stripe/stripe-js";
 import { useParams } from "react-router-dom";
 import api from "../../services/api";
 
-const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || "");
+const stripeEnabled =
+  String(process.env.REACT_APP_STRIPE_ENABLED).toLowerCase() === "true";
+const stripePromise =
+  stripeEnabled && process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
+    ? loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY)
+    : null;
 
 function Checkout({ request }) {
   const stripe = useStripe();
@@ -59,6 +64,8 @@ export default function PaymentRequestScreen() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!stripeEnabled) return undefined;
+
     let active = true;
     Promise.all([
       api.get(`/payment-requests/${paymentRequestId}`),
@@ -76,6 +83,19 @@ export default function PaymentRequestScreen() {
       active = false;
     };
   }, [paymentRequestId]);
+
+  if (!stripeEnabled) {
+    return (
+      <Box sx={{ maxWidth: 620, mx: "auto", px: 2, py: 8 }}>
+        <Paper elevation={2} sx={{ p: { xs: 3, md: 5 } }}>
+          <Alert severity="info">
+            Online card payments are not available. Please contact Tipsyverse
+            for payment instructions.
+          </Alert>
+        </Paper>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ maxWidth: 620, mx: "auto", px: 2, py: 8 }}>

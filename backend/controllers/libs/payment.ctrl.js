@@ -5,9 +5,15 @@ import {
 } from "../../models/index.js";
 import { actorFromReq, shallowDiff } from "../../utils/index.js";
 import Stripe from "stripe";
+import { syncEventPaymentPolicy } from "../../utils/libs/syncEventPaymentPolicy.js";
 
 const stripeClient = () => {
-  if (!process.env.STRIPE_SECRET_KEY) return null;
+  if (
+    String(process.env.STRIPE_ENABLED).toLowerCase() !== "true" ||
+    !process.env.STRIPE_SECRET_KEY
+  ) {
+    return null;
+  }
   return new Stripe(process.env.STRIPE_SECRET_KEY);
 };
 
@@ -121,6 +127,7 @@ const paymentCtrl = {
             { _id: paymentRequest._id },
             { $set: { status: "completed" } }
           );
+          await syncEventPaymentPolicy(paymentRequest.event);
         }
       }
 
@@ -172,8 +179,31 @@ const paymentCtrl = {
         return res.status(400).json({ message: "Payment amount must be greater than $0.00." });
       }
 
-      const eventDoc = await Event.findById(event).select("_id").lean();
+      const eventDoc = await Event.findById(event)
+        .select("_id payment.total")
+        .lean();
       if (!eventDoc) return res.status(404).json({ message: "Event not found" });
+
+      if (status === "recorded") {
+        const paidRows = await Payment.aggregate([
+          { $match: { event: eventDoc._id, status: "recorded" } },
+          { $group: { _id: "$event", total: { $sum: "$amount" } } },
+        ]);
+        const billedTotal = Number(eventDoc.payment?.total) || 0;
+        const paidTotal = Number(paidRows[0]?.total) || 0;
+        const remainingBalance = Math.max(
+          0,
+          Math.round((billedTotal - paidTotal) * 100) / 100
+        );
+        if (paymentAmount > remainingBalance + 0.001) {
+          return res.status(400).json({
+            message:
+              remainingBalance > 0
+                ? `Payment cannot exceed the current balance of $${remainingBalance.toFixed(2)}.`
+                : "This event has no balance due. Existing excess payments remain recorded as customer credit.",
+          });
+        }
+      }
 
       if (paymentRequest) {
         const requestDoc = await PaymentRequest.findById(paymentRequest).select("event").lean();
@@ -198,6 +228,7 @@ const paymentCtrl = {
         collectedBy: req.user.id,
         status,
       });
+      await syncEventPaymentPolicy(event);
 
       if (paymentRequest && status === "recorded") {
         await PaymentRequest.findByIdAndUpdate(paymentRequest, {
@@ -323,6 +354,11 @@ const paymentCtrl = {
 
       const doc = await Payment.findById(req.params.id);
       if (!doc) return res.status(404).json({ message: "Not found" });
+      if (req.body.method === "stripe") {
+        return res.status(400).json({
+          message: "Stripe payments are recorded only through verified webhooks.",
+        });
+      }
 
       const before = doc.toObject();
       const allowed = [
@@ -340,9 +376,37 @@ const paymentCtrl = {
         }
       }
 
+      if (doc.status === "recorded") {
+        const [eventDoc, paidRows] = await Promise.all([
+          Event.findById(doc.event).select("payment.total").lean(),
+          Payment.aggregate([
+            {
+              $match: {
+                event: doc.event,
+                status: "recorded",
+                _id: { $ne: doc._id },
+              },
+            },
+            { $group: { _id: "$event", total: { $sum: "$amount" } } },
+          ]),
+        ]);
+        const billedTotal = Number(eventDoc?.payment?.total) || 0;
+        const otherPaidTotal = Number(paidRows[0]?.total) || 0;
+        const maximumPayment = Math.max(
+          0,
+          Math.round((billedTotal - otherPaidTotal) * 100) / 100
+        );
+        if (Number(doc.amount) > maximumPayment + 0.001) {
+          return res.status(400).json({
+            message: `Payment cannot exceed the current available balance of $${maximumPayment.toFixed(2)}.`,
+          });
+        }
+      }
+
       doc.editedAt = new Date();
       doc.editedBy = req.user.id;
       await doc.save();
+      await syncEventPaymentPolicy(doc.event);
 
       req.logActivity?.({
         action: "update",
@@ -379,6 +443,7 @@ const paymentCtrl = {
       doc.voidedAt = new Date();
       doc.voidedBy = req.user.id;
       await doc.save();
+      await syncEventPaymentPolicy(doc.event);
 
       if (doc.paymentRequest) {
         const hasOtherRecordedPayment = await Payment.exists({
@@ -441,6 +506,7 @@ const paymentCtrl = {
       if (req.body.notes) doc.notes = req.body.notes;
       if (!doc.stripe) doc.stripe = {};
       await doc.save();
+      await syncEventPaymentPolicy(doc.event);
 
       if (doc.paymentRequest) {
         const hasOtherRecordedPayment = await Payment.exists({
@@ -485,7 +551,9 @@ const paymentCtrl = {
       const doc = await Payment.findById(req.params.id);
       if (!doc) return res.status(404).json({ message: "Not found" });
 
+      const eventId = doc.event;
       await doc.deleteOne();
+      await syncEventPaymentPolicy(eventId);
       req.logActivity?.({
         action: "delete",
         target: { model: "Payment", id: req.params.id },

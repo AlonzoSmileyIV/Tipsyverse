@@ -3,6 +3,7 @@ import {
   UserModel as User,
 } from "../../models/index.js";
 import fs from "fs";
+import crypto from "crypto";
 import {
   displayLabel,
   handleImageUpload,
@@ -17,14 +18,17 @@ const customerTicketUrl = (ticket) => `${appUrl()}/settings/support?ticket=${tic
 const MAX_TICKET_SUBJECT_LENGTH = 120;
 const MAX_TICKET_DESCRIPTION_LENGTH = 5000;
 const MAX_TICKET_MESSAGE_LENGTH = 3000;
+const MAX_TICKET_NOTE_LENGTH = 4000;
+const ACTIVE_TICKET_STATUSES = ["open", "in_progress", "waiting_on_user"];
 
-const ticketLabel = (ticket) => ticket?.ticketNumber || "TKT-000000";
+const ticketLabel = (ticket) => ticket?.ticketNumber || "TKT-00000";
 const ticketPopulate = [
   { path: "submittedBy", select: "fullName email username profile.photo" },
   { path: "assignedTo", select: "fullName email username profile.photo" },
   { path: "canceledBy", select: "fullName email username" },
   { path: "reopenedBy", select: "fullName email username" },
   { path: "messages.author", select: "fullName email username profile.photo" },
+  { path: "noteEntries.author", select: "fullName email username profile.photo" },
 ];
 
 const populateTicket = (query) =>
@@ -58,6 +62,58 @@ const cleanAttachments = (value, userId) =>
       uploadedAt: item.uploadedAt || new Date(),
     }));
 
+const cleanErrorReportValue = (value, fallback) =>
+  String(value || fallback || "")
+    .trim()
+    .slice(0, 5000)
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+const errorFingerprintFrom = (errorReport) => {
+  if (!errorReport || typeof errorReport !== "object") return null;
+  const message = cleanErrorReportValue(errorReport.message);
+  const location = cleanErrorReportValue(errorReport.location)
+    .replace(/\([^)]*[/\\\\]([^/\\\\)]+):\d+:\d+\)/g, "($1)")
+    .replace(/:\d+:\d+/g, "");
+  if (!message) return null;
+
+  return crypto
+    .createHash("sha256")
+    .update(`${message}\n${location}`)
+    .digest("hex");
+};
+
+const buildAnonymousErrorTicket = (errorReport) => {
+  if (!errorReport || typeof errorReport !== "object") return null;
+
+  const message = String(errorReport.message || "").trim().slice(0, 500);
+  if (!message) return null;
+
+  const page = String(errorReport.page || "Unknown page").trim().slice(0, 300);
+  const location = String(
+    errorReport.location || "The component location was not available."
+  )
+    .trim()
+    .slice(0, 1400);
+
+  return {
+    subject: `Application error: ${message}`.slice(
+      0,
+      MAX_TICKET_SUBJECT_LENGTH
+    ),
+    description: [
+      `Error: ${message}`,
+      `Page: ${page}`,
+      "",
+      "Likely location:",
+      location,
+    ]
+      .join("\n")
+      .slice(0, 1900),
+    errorFingerprint: errorFingerprintFrom({ message, location }),
+  };
+};
+
 const uploadFilesToCloudinary = async (files = [], userId) => {
   const uploaded = [];
 
@@ -85,8 +141,8 @@ const uploadFilesToCloudinary = async (files = [], userId) => {
 
 const ensureTicketNumber = async (ticket) => {
   if (!ticket) return ticket;
-  if (/^TKT-\d{5}$/.test(ticket.ticketNumber || "")) {
-    ticket.ticketNumber = ticket.ticketNumber.replace("TKT-", "TKT-0");
+  if (/^TKT-0\d{5}$/.test(ticket.ticketNumber || "")) {
+    ticket.ticketNumber = ticket.ticketNumber.replace("TKT-0", "TKT-");
     await ticket.save();
     return ticket;
   }
@@ -202,6 +258,57 @@ const resolveMentionedEmployees = async ({ message, mentionUsers = [] }) => {
 };
 
 const supportTicketCtrl = {
+  createAnonymousErrorTicket: async (req, res) => {
+    const report = buildAnonymousErrorTicket(req.body?.errorReport);
+    if (!report?.errorFingerprint) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid application error report is required.",
+      });
+    }
+
+    try {
+      const existing = await SupportTicket.findOne({
+        errorFingerprint: report.errorFingerprint,
+        status: { $in: ACTIVE_TICKET_STATUSES },
+      }).select("ticketNumber");
+      if (existing) {
+        return res.json({
+          success: true,
+          duplicate: true,
+          message: "We’re already investigating this issue.",
+        });
+      }
+
+      await SupportTicket.create({
+        submittedBy: null,
+        submissionSource: "anonymous_error",
+        category: "technical_issue",
+        priority: "undecided",
+        subject: report.subject,
+        description: report.description,
+        errorFingerprint: report.errorFingerprint,
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: "Anonymous error report submitted.",
+      });
+    } catch (err) {
+      if (err?.code === 11000 && err?.keyPattern?.errorFingerprint) {
+        return res.json({
+          success: true,
+          duplicate: true,
+          message: "We’re already investigating this issue.",
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: "The error report could not be submitted.",
+      });
+    }
+  },
+
   createTicket: async (req, res) => {
     try {
       const { category, subject, description } = req.body || {};
@@ -223,12 +330,29 @@ const supportTicketCtrl = {
         });
       }
 
+      const errorFingerprint = errorFingerprintFrom(req.body?.errorReport);
+      if (errorFingerprint) {
+        const existing = await SupportTicket.findOne({
+          errorFingerprint,
+          status: { $in: ACTIVE_TICKET_STATUSES },
+        }).select("ticketNumber");
+        if (existing) {
+          return res.json({
+            success: true,
+            duplicate: true,
+            data: { ticketNumber: existing.ticketNumber },
+            message: "We’re already investigating this issue.",
+          });
+        }
+      }
+
       const ticket = await SupportTicket.create({
         submittedBy: req.user.id,
-        category,
+        category: errorFingerprint ? "technical_issue" : category,
         priority: "undecided",
         subject: cleanSubject,
         description: cleanDescription,
+        errorFingerprint,
         attachments: cleanAttachments(req.body?.attachments, req.user.id),
       });
 
@@ -242,6 +366,23 @@ const supportTicketCtrl = {
 
       return res.status(201).json({ success: true, data: populated, message: "Support ticket submitted." });
     } catch (err) {
+      if (err?.code === 11000 && err?.keyPattern?.errorFingerprint) {
+        const errorFingerprint = errorFingerprintFrom(req.body?.errorReport);
+        const existing = errorFingerprint
+          ? await SupportTicket.findOne({
+              errorFingerprint,
+              status: { $in: ACTIVE_TICKET_STATUSES },
+            }).select("ticketNumber")
+          : null;
+        if (existing) {
+          return res.json({
+            success: true,
+            duplicate: true,
+            data: { ticketNumber: existing.ticketNumber },
+            message: "We’re already investigating this issue.",
+          });
+        }
+      }
       return res.status(500).json({ success: false, message: err.message });
     }
   },
@@ -344,6 +485,75 @@ const supportTicketCtrl = {
       }
 
       return res.json({ success: true, data: populated, message: "Ticket updated." });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
+  addNote: async (req, res) => {
+    try {
+      const content = String(req.body?.content || "").trim();
+      if (!content) {
+        return res.status(400).json({ success: false, message: "Note content is required." });
+      }
+      if (content.length > MAX_TICKET_NOTE_LENGTH) {
+        return res.status(400).json({ success: false, message: `Each note must be ${MAX_TICKET_NOTE_LENGTH} characters or fewer.` });
+      }
+
+      const ticket = await SupportTicket.findByIdAndUpdate(
+        req.params.id,
+        { $push: { noteEntries: { author: req.user.id, content } } },
+        { new: true, runValidators: true }
+      );
+      if (!ticket) return res.status(404).json({ success: false, message: "Ticket not found." });
+
+      const populated = await populateTicket(SupportTicket.findById(ticket._id)).lean();
+      return res.status(201).json({ success: true, data: populated, message: "Ticket note added." });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
+  updateNote: async (req, res) => {
+    try {
+      const content = String(req.body?.content || "").trim();
+      if (!content) {
+        return res.status(400).json({ success: false, message: "Note content is required." });
+      }
+      if (content.length > MAX_TICKET_NOTE_LENGTH) {
+        return res.status(400).json({ success: false, message: `Each note must be ${MAX_TICKET_NOTE_LENGTH} characters or fewer.` });
+      }
+
+      const ticket = await SupportTicket.findOneAndUpdate(
+        { _id: req.params.id, "noteEntries._id": req.params.noteId },
+        {
+          $set: {
+            "noteEntries.$.content": content,
+            "noteEntries.$.updatedAt": new Date(),
+          },
+        },
+        { new: true, runValidators: true }
+      );
+      if (!ticket) return res.status(404).json({ success: false, message: "Ticket note not found." });
+
+      const populated = await populateTicket(SupportTicket.findById(ticket._id)).lean();
+      return res.json({ success: true, data: populated, message: "Ticket note updated." });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
+  deleteNote: async (req, res) => {
+    try {
+      const ticket = await SupportTicket.findOneAndUpdate(
+        { _id: req.params.id, "noteEntries._id": req.params.noteId },
+        { $pull: { noteEntries: { _id: req.params.noteId } } },
+        { new: true }
+      );
+      if (!ticket) return res.status(404).json({ success: false, message: "Ticket note not found." });
+
+      const populated = await populateTicket(SupportTicket.findById(ticket._id)).lean();
+      return res.json({ success: true, data: populated, message: "Ticket note deleted." });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }

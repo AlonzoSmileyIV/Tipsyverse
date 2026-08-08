@@ -58,7 +58,8 @@ secret store. Production additionally requires:
 - HTTPS values for `PUBLIC_APP_URL` and every `CORS_ORIGINS` entry
 - the production MongoDB URI in `MONGO_PROD_URI`
 - distinct access and refresh secrets of at least 32 characters
-- production Stripe secret and webhook signing keys
+- `STRIPE_ENABLED=false` when card processing is disabled; when enabled,
+  production Stripe secret and webhook signing keys
 - `TRUST_PROXY=1` when exactly one trusted platform proxy terminates HTTPS
 - a unique `APP_RELEASE`, normally the deployed Git SHA
 
@@ -74,7 +75,8 @@ domains, Sentry environments, or token secrets between staging and production.
 5. Run any reviewed migration as a separate one-off command.
 6. Deploy production instances with zero-downtime replacement.
 7. Wait for readiness and run authenticated smoke tests.
-8. Confirm Socket.IO, Stripe webhooks, email outbox, Sentry, and job leadership.
+8. Confirm Socket.IO, enabled payment-provider integrations, email outbox,
+   Sentry, and job leadership.
 9. Record the release SHA, operator, verification result, and rollback image.
 
 ## Rollback

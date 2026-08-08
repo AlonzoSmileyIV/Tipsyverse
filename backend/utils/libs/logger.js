@@ -7,7 +7,59 @@ const serializeError = (error) =>
       }
     : undefined;
 
+const humanize = (message) =>
+  message
+    .replaceAll("_", " ")
+    .replace(/^\w/, (character) => character.toUpperCase());
+
+const formatContextValue = (value) =>
+  typeof value === "object" && value !== null
+    ? JSON.stringify(value)
+    : String(value);
+
+const formatDevelopmentMessage = (level, message, context) => {
+  switch (message) {
+    case "database_connected":
+      return `✅ Connected to ${context.environment || "development"} database...`;
+    case "server_started":
+      return `🚀 Server running on port ${context.port}...`;
+    case "scheduled_job_leadership_acquired":
+      return "✅ Scheduled job leadership acquired...";
+    case "http_request": {
+      const icon =
+        context.status >= 500 ? "❌" : context.status >= 400 ? "⚠️" : "🌐";
+      return `${icon} ${context.method} ${context.path} — ${context.status} (${context.durationMs} ms)`;
+    }
+    default:
+      break;
+  }
+
+  const icon = {
+    debug: "🔎",
+    info: "ℹ️",
+    warn: "⚠️",
+    error: "❌",
+  }[level];
+  const error = context.error instanceof Error
+    ? serializeError(context.error)
+    : context.error;
+  const details = Object.entries(context)
+    .filter(([key, value]) => key !== "error" && value !== undefined)
+    .map(([key, value]) => `${key}: ${formatContextValue(value)}`)
+    .join(", ");
+  const errorMessage = error?.message ? `: ${error.message}` : "";
+  const stack = error?.stack ? `\n${error.stack}` : "";
+
+  return `${icon} ${humanize(message)}${errorMessage}${details ? ` (${details})` : ""}${stack}`;
+};
+
 const write = (level, message, context = {}) => {
+  if (process.env.NODE_ENV === "development") {
+    const output = formatDevelopmentMessage(level, message, context);
+    (level === "error" ? process.stderr : process.stdout).write(`${output}\n`);
+    return;
+  }
+
   const payload = {
     timestamp: new Date().toISOString(),
     level,

@@ -8,7 +8,9 @@ import api from "../../services/api";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 
-const stripePromise = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
+const stripeEnabled =
+  String(process.env.REACT_APP_STRIPE_ENABLED).toLowerCase() === "true";
+const stripePromise = stripeEnabled && process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY)
   : null;
 
@@ -105,6 +107,15 @@ const PaymentMethodsTab = ({ user }) => {
       setDeleteTarget(null);
     }
   };
+
+  if (!stripeEnabled) {
+    return (
+      <Alert severity="info">
+        Saved card payments are not currently available. Payments recorded by
+        Tipsyverse staff will still appear in your event finance history.
+      </Alert>
+    );
+  }
 
   return (
     <Stack spacing={2}>

@@ -1634,10 +1634,14 @@ const userCtrl = {
       });
 
       const nextJti = newRefreshTokenId();
+      const {
+        iat: _issuedAt,
+        exp: _expiresAt,
+        nbf: _notBefore,
+        ...refreshPayload
+      } = decoded;
       const nextRefreshToken = createRefreshToken({
-        ...decoded,
-        iat: undefined,
-        exp: undefined,
+        ...refreshPayload,
         jti: nextJti,
       });
       session.currentTokenHash = hashRefreshTokenId(nextJti);
@@ -4265,7 +4269,9 @@ const userCtrl = {
         reviews: reviewRows,
         rewards: {
           completedEvents,
-          milestones: buildRewardProgress(completedEvents, rewardClaims),
+          milestones: buildRewardProgress(completedEvents, rewardClaims, {
+            includePurchaseLinks: true,
+          }),
         },
         eligibility: {
           eligible,

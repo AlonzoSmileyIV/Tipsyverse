@@ -56,6 +56,7 @@ import {
   Spa as SpaIcon,
   Tag as TagIcon,
   DragIndicator,
+  CloudUpload,
 } from "@mui/icons-material";
 import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
 import { red } from "@mui/material/colors";
@@ -156,17 +157,24 @@ const multiselectOptions = {
   ],
 };
 
-const MAX_FILE_SIZE_MB = 10;
+const MAX_IMAGE_SIZE_MB = 2;
+const MAX_VIDEO_SIZE_MB = 50;
 
-const isFileValid = (file, type) => {
+const getFileValidationError = (file, type) => {
   const validTypes =
     type === "image"
       ? ["image/jpeg", "image/png", "image/webp"]
       : ["video/mp4", "video/webm"];
-  return (
-    validTypes.includes(file.type) &&
-    file.size <= MAX_FILE_SIZE_MB * 1024 * 1024
-  );
+  const maxSizeMb = type === "image" ? MAX_IMAGE_SIZE_MB : MAX_VIDEO_SIZE_MB;
+  if (!validTypes.includes(file.type)) {
+    return type === "image"
+      ? "Choose a JPG, PNG, or WebP image."
+      : "Choose an MP4 or WebM video.";
+  }
+  if (file.size > maxSizeMb * 1024 * 1024) {
+    return `The ${type} must be ${maxSizeMb} MB or smaller.`;
+  }
+  return "";
 };
 
 const AdminDrinkForm = ({
@@ -472,11 +480,11 @@ const AdminDrinkForm = ({
       type === "image" ? setUploadingImage : setUploadingVideo;
     setUploading(true);
 
-    if (!isFileValid(file, type)) {
+    const validationError = getFileValidationError(file, type);
+    if (validationError) {
       setErrors((prev) => ({
         ...prev,
-        [type === "image" ? "photo" : "video"]:
-          "Invalid file type or too large",
+        [type === "image" ? "photo" : "video"]: validationError,
       }));
       setUploading(false);
       return;
@@ -617,9 +625,27 @@ const AdminDrinkForm = ({
         )}
 
         {!file && (
-          <Typography sx={{ mt: 1, color: uploading ? "gray" : "var(--primary-color)" }}>
-            {uploading ? "Uploading..." : `Click or Drag a ${type} here`}
-          </Typography>
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            justifyContent="center"
+            sx={{ textAlign: "left" }}
+          >
+            <CloudUpload
+              sx={{ color: uploading ? "text.disabled" : "var(--primary-color)", fontSize: 34 }}
+            />
+            <Box>
+              <Typography fontWeight={800}>
+                {uploading ? "Uploading..." : `Click or drag an ${type} here`}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {type === "image"
+                  ? `JPG, PNG, or WebP · max ${MAX_IMAGE_SIZE_MB} MB`
+                  : `MP4 or WebM · max ${MAX_VIDEO_SIZE_MB} MB`}
+              </Typography>
+            </Box>
+          </Stack>
         )}
 
         {error && <Typography color="error">{error}</Typography>}

@@ -179,6 +179,15 @@ function AdminUsers() {
 
       <AdminSummaryCards
         cards={summaryCards}
+        sx={{
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          "@media (max-width: 1500px)": {
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          },
+          "@media (max-width: 599.95px)": {
+            gridTemplateColumns: "1fr",
+          },
+        }}
         selectedKey={tab}
         onSelect={(key) => {
           setTab(key);

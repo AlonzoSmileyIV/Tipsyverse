@@ -68,6 +68,10 @@ const termsSections = [
     body: [
       "Customers agree to pay all approved charges associated with their event, including deposits, remaining balances, additional approved charges, procurement costs, overtime, taxes, fees, and any other amounts communicated by Tipsyverse.",
       "A deposit, partial payment, or full payment may be required before Tipsyverse reserves staff, begins assignment, confirms service, or continues event planning.",
+      "Unless Tipsyverse approves different written terms, remaining event balances are due seven calendar days before the event. Events confirmed within seven days require full payment when confirmed.",
+      "Tipsyverse may send a balance reminder fourteen days before the event and a past-due warning five days before the event. At seventy-two hours before the event, an unpaid event may be placed on Payment Hold. Assigned bartenders may remain assigned while final instructions, optional purchases, and additional event changes are paused.",
+      "By forty-eight hours before the event, Tipsyverse may require either full payment, a documented staff-approved payment arrangement, or cancellation for nonpayment.",
+      "If an event is canceled for nonpayment, the deposit and already-incurred, nonrecoverable costs may be retained to the extent permitted by the booking terms and applicable law. Tipsyverse will not automatically charge the remaining balance unless the customer expressly authorized that charge.",
       "Payment records, invoices, receipts, transaction references, refunds, voids, and balances may be maintained in Tipsyverse for accounting, tax, audit, dispute, and operational purposes.",
       "Refunds, credits, cancellations, rescheduling, and transferred payments are subject to the cancellation terms communicated for the event and may depend on timing, staff commitments, expenses incurred, payment processor rules, and applicable law.",
       "Tipsyverse may suspend, delay, cancel, or decline service if required payments are not received, payment methods fail, balances remain unpaid, disputes occur, or risk concerns arise.",

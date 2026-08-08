@@ -56,7 +56,8 @@ export default function AdminBartenderLicenses({ hideHeader = false, reviewOnly 
   const dispatch = useDispatch();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+  const is800OrLess = useMediaQuery("(max-width:800px)");
+  const isTablet = useMediaQuery("(max-width:1000px)");
 
   const {
     allBartenderLicenses,
@@ -286,9 +287,9 @@ export default function AdminBartenderLicenses({ hideHeader = false, reviewOnly 
           columns={columns}
           getRowId={(row) => row._id || row.id}
           columnVisibilityModel={{
-            state: !isMobile,
+            state: !is800OrLess,
             permitNumber: !isTablet,
-            status: !isMobile,
+            status: !is800OrLess,
             expiresAt: !isTablet,
           }}
           disableRowSelectionOnClick

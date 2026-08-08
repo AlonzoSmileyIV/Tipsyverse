@@ -42,7 +42,12 @@ export default function validateRuntimeConfig(environment = process.env.NODE_ENV
     if (!isHttpsUrl(process.env.PUBLIC_APP_URL)) {
       errors.push("PUBLIC_APP_URL must use HTTPS in production");
     }
-    if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
+    const stripeEnabled =
+      String(process.env.STRIPE_ENABLED).toLowerCase() === "true";
+    if (
+      stripeEnabled &&
+      (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET)
+    ) {
       errors.push("Stripe secret and webhook signing keys are required in production");
     }
   }

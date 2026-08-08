@@ -31,6 +31,7 @@ import { useNavigate } from "react-router-dom";
 import { navigateOrReload } from "../../utils/navigateOrReload";
 import api from "../../services/api";
 import { handleUpdateUser } from "../../utils/handleUpdateUser";
+import getNotificationPath from "../../utils/getNotificationPath";
 
 const NotificationBox = ({ onClose }) => {
   const [anchorEl, setAnchorEl] = useState(null);
@@ -137,22 +138,6 @@ const NotificationBox = ({ onClose }) => {
   };
 
   const handleNavigation = (slugFromNotification, type, notification) => {
-    const slug = notification?.entity?.slug || slugFromNotification;
-
-    if (!slug) {
-      console.warn("❌ Drink not found or slug missing.");
-      return;
-    }
-
-    // 🔍 Determine root comment ID if it's a reply to a reply
-    const getTopLevelCommentId = (comment) => {
-      if (!comment) return null;
-      if (!comment.parentComment) return comment._id;
-      return getTopLevelCommentId(comment.parentComment);
-    };
-
-    const commentId = getTopLevelCommentId(notification.comment);
-
     if (
       !notification.recipients?.some(
         (r) => r.read && r.recipient?._id === user._id
@@ -162,14 +147,16 @@ const NotificationBox = ({ onClose }) => {
         toggleReadStatus({ notificationId: notification._id, read: true })
       );
     }
-    const baseSlug = notification?.slug?.replace(/^\/+/, "") || "";
-    const entitySlug = notification?.entity?.slug || "";
+    const path = getNotificationPath({
+      ...notification,
+      slug: notification?.slug || slugFromNotification,
+      type: notification?.type || type,
+    });
 
-    const commentQuery = commentId ? `?commentId=${commentId}` : "";
-
-    const path = entitySlug
-      ? `/${baseSlug}/${entitySlug}${commentQuery}`
-      : `/${baseSlug}${commentQuery}`;
+    if (!path) {
+      console.warn("❌ Notification destination is missing.");
+      return;
+    }
 
     navigateOrReload(navigate, path);
   };

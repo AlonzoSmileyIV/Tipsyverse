@@ -4,7 +4,10 @@ import { shallowDiff, pmLabel, actorFromReq } from "../../utils/index.js";
 import Stripe from "stripe";
 
 const stripeClient = () =>
-  process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+  String(process.env.STRIPE_ENABLED).toLowerCase() === "true" &&
+  process.env.STRIPE_SECRET_KEY
+    ? new Stripe(process.env.STRIPE_SECRET_KEY)
+    : null;
 
 const canManageUser = (actor, userId) =>
   String(actor.id) === String(userId) ||

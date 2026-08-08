@@ -184,7 +184,12 @@ const AdminCategories = () => {
   const dispatch = useDispatch();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+  const is650OrLess = useMediaQuery("(max-width:650px)");
+  const is750OrLess = useMediaQuery("(max-width:750px)");
+  const is800OrLess = useMediaQuery("(max-width:800px)");
+  const is1000OrLess = useMediaQuery("(max-width:1000px)");
+  const is1050OrLess = useMediaQuery("(max-width:1050px)");
+  const is1300OrLess = useMediaQuery("(max-width:1300px)");
   const [selectedType, setSelectedType] = useState("Liquors");
   const [uploadAction, setUploadAction] = useState("add");
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -521,6 +526,21 @@ const AdminCategories = () => {
     accept: {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [],
       "application/vnd.ms-excel": [],
+    },
+    maxSize: 5 * 1024 * 1024,
+    multiple: false,
+    onDropRejected: ([rejection]) => {
+      const tooLarge = rejection?.errors?.some(
+        ({ code }) => code === "file-too-large"
+      );
+      setAlertMessage(
+        tooLarge
+          ? "The Excel file must be 5 MB or smaller."
+          : "Choose an Excel spreadsheet (.xlsx or .xls)."
+      );
+      setAlertSeverity("error");
+      setAlertOpen(true);
+      setPendingFile(null);
     },
   });
 
@@ -899,13 +919,18 @@ const AdminCategories = () => {
   });
 
   const categoryColumnVisibilityModel = {
-    description: !isMobile,
-    status: !isMobile,
-    isAlcoholic: !isMobile,
-    brands: !isTablet,
-    maxOunces: !isMobile,
-    hierarchy: !isMobile,
-    department: !isTablet,
+    description:
+      selectedType === "Positions"
+        ? !is1300OrLess
+        : ["Liquors", "Mixers"].includes(selectedType)
+        ? !is1000OrLess
+        : !is800OrLess,
+    status: !is650OrLess,
+    isAlcoholic: !is650OrLess,
+    brands: !is1300OrLess,
+    maxOunces: !is650OrLess,
+    hierarchy: !is750OrLess,
+    department: !is1050OrLess,
   };
 
   const searchedRows = (() => {
@@ -1005,22 +1030,29 @@ const AdminCategories = () => {
       <Box
         {...getRootProps()}
         sx={{
-          border: "2px dashed #ccc",
-          padding: 3,
-          borderRadius: 2,
-          textAlign: "center",
+          border: "1px dashed",
+          borderColor: isDragActive ? "var(--primary-color)" : "divider",
+          padding: 2,
+          borderRadius: 1,
           cursor: "pointer",
-          backgroundColor: isDragActive ? "#f0f0f0" : "transparent",
+          backgroundColor: isDragActive
+            ? "rgba(139, 0, 38, 0.06)"
+            : "background.paper",
           mb: 2,
         }}
       >
         <input {...getInputProps()} />
-        <UploadFile fontSize="large" />
-        <Typography variant="body2">
-          {isDragActive
-            ? "Drop your Excel file here"
-            : `Drag 'n' drop Excel file here, or click to upload ${selectedType.toLowerCase()}...`}
-        </Typography>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems="center" justifyContent="center" textAlign={{ xs: "center", sm: "left" }}>
+          <UploadFile sx={{ color: "var(--primary-color)" }} />
+          <Box>
+            <Typography variant="subtitle2" fontWeight={800}>
+              {isDragActive ? "Drop the Excel file" : `Upload ${selectedType.toLowerCase()} Excel`}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Drag and drop a spreadsheet here, or click to choose a file · max 5 MB.
+            </Typography>
+          </Box>
+        </Stack>
       </Box>
 
       {/* Progress & Stages */}

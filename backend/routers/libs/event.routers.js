@@ -42,6 +42,7 @@ eventRouter.post('/:id/send-invoice', auth, authEmployee, sensitiveActionDedupe,
 eventRouter.post('/:id/procurement-receipt', auth, authEmployee, uploadImage.single('photo'), eventCtrl.uploadProcurementReceipt);
 eventRouter.post('/:id/contact-attempts', auth, authEmployee, eventCtrl.logContactAttempt);
 eventRouter.post('/:id/send-to-assign', auth, authEmployee, sensitiveActionDedupe, eventCtrl.sendToAssign);
+eventRouter.post('/:id/payment-policy/resolve', auth, authEmployee, sensitiveActionDedupe, eventCtrl.resolvePaymentPolicy);
 eventRouter.post('/:id/assign-bartenders', auth, authEmployee, sensitiveActionDedupe, eventCtrl.assignSelectedBartenders);
 eventRouter.post('/:id/remove-bartenders', auth, eventCtrl.removeAssignedBartenders);
 eventRouter.post('/:id/cancel', auth, eventCtrl.cancelRequest);

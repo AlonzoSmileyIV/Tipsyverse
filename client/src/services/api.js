@@ -20,15 +20,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Only one refresh request may run at a time. Requests that fail concurrently
-// wait for its result, preventing refresh-token reuse during rotation.
-let isRefreshing = false;
-let waiters = [];
-const notifyWaiters = (token) => {
-  waiters.forEach((resume) => resume(token));
-  waiters = [];
-};
-
 const persistRefreshedAccessToken = (accessToken, sessionStartedAt) => {
   if (!accessToken) return;
 
@@ -50,6 +41,44 @@ const persistRefreshedAccessToken = (accessToken, sessionStartedAt) => {
       detail: { accessToken, sessionStartedAt },
     })
   );
+};
+
+// Login restoration and 401 retries must share the same request. The server
+// rotates refresh tokens, so two simultaneous refreshes with the same cookie
+// would make the second request look like token reuse and revoke the session.
+let refreshRequestPromise = null;
+const refreshAccessToken = () => {
+  if (refreshRequestPromise) return refreshRequestPromise;
+
+  refreshRequestPromise = axios
+    .post(
+      `${process.env.REACT_APP_BASE_URL}/users/refresh-token`,
+      {},
+      { withCredentials: true, __isRefreshCall: true }
+    )
+    .then((res) => {
+      const accessToken = res.data?.accessToken || null;
+      persistRefreshedAccessToken(
+        accessToken,
+        res.data?.sessionStartedAt || null
+      );
+      return accessToken;
+    })
+    .finally(() => {
+      refreshRequestPromise = null;
+    });
+
+  return refreshRequestPromise;
+};
+
+export const restoreAuthentication = () => {
+  if (getAccessToken()) {
+    return Promise.resolve(getAccessToken());
+  }
+  if (!readPersistedSession()) {
+    return Promise.resolve(null);
+  }
+  return refreshAccessToken();
 };
 
 const forceLogoutToLogin = (message) => {
@@ -124,24 +153,9 @@ api.interceptors.response.use(
     original._retry = true;
 
     try {
-      if (!isRefreshing) {
-        isRefreshing = true;
-        const res = await axios.post(
-          `${process.env.REACT_APP_BASE_URL}/users/refresh-token`,
-          {},
-          { withCredentials: true, __isRefreshCall: true }
-        );
-        const accessToken = res.data?.accessToken || null;
-        const sessionStartedAt = res.data?.sessionStartedAt || null;
-
-        persistRefreshedAccessToken(accessToken, sessionStartedAt);
-        notifyWaiters(accessToken);
-      } else {
-        // wait for the in-flight refresh
-        const waitedToken = await new Promise((resolve) => waiters.push(resolve));
-        if (!waitedToken) {
-          throw new Error("Session refresh failed.");
-        }
+      const accessToken = await refreshAccessToken();
+      if (!accessToken) {
+        throw new Error("Session refresh failed.");
       }
 
       // Ensure the retried request uses the new token, even if original headers were frozen
@@ -163,8 +177,6 @@ api.interceptors.response.use(
       const refreshTokenIsInvalid =
         [401, 403].includes(refreshStatus) && invalidRefreshCodes.has(refreshCode);
 
-      notifyWaiters(null);
-
       // A network interruption or server error does not invalidate the user's
       // refresh token. Preserve the session and allow a later request to retry.
       if (refreshTokenIsInvalid) {
@@ -175,8 +187,6 @@ api.interceptors.response.use(
       }
 
       return Promise.reject(refreshErr);
-    } finally {
-      isRefreshing = false;
     }
   }
 );

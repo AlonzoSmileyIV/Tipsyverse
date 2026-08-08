@@ -169,6 +169,15 @@ const paymentRequestCtrl = {
           message: "event, provider, paymentType, and amountRequested are required.",
         });
       }
+      if (
+        provider === "stripe" &&
+        String(process.env.STRIPE_ENABLED).toLowerCase() !== "true"
+      ) {
+        return res.status(503).json({
+          message:
+            "Online card payments are unavailable. Select a manual payment provider.",
+        });
+      }
       const requestAmount = Number(amountRequested);
       if (!Number.isFinite(requestAmount) || requestAmount <= 0) {
         return res.status(400).json({
@@ -315,6 +324,15 @@ const paymentRequestCtrl = {
 
       const doc = await PaymentRequest.findById(req.params.id);
       if (!doc) return res.status(404).json({ message: "Not found" });
+      if (
+        req.body.provider === "stripe" &&
+        String(process.env.STRIPE_ENABLED).toLowerCase() !== "true"
+      ) {
+        return res.status(503).json({
+          message:
+            "Online card payments are unavailable. Select a manual payment provider.",
+        });
+      }
 
       const before = doc.toObject();
       const allowed = [
@@ -390,6 +408,15 @@ const paymentRequestCtrl = {
         "shortCode type startAt endAt location contact"
       );
       if (!doc) return res.status(404).json({ message: "Not found" });
+      if (
+        doc.provider === "stripe" &&
+        String(process.env.STRIPE_ENABLED).toLowerCase() !== "true"
+      ) {
+        return res.status(503).json({
+          message:
+            "Online card payments are unavailable. Select a manual payment provider.",
+        });
+      }
       if (!doc.sentTo?.email || !validateEmail(String(doc.sentTo.email).trim())) {
         return res.status(400).json({
           message: "A valid recipient email is required before sending a payment request.",

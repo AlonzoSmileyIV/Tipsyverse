@@ -1,6 +1,7 @@
 import {
   autoRushTier,
   buildPricingSnapshot,
+  buildSnapshotFromEvent,
   hoursBetween,
   recommendBartenders,
 } from "./DetailedEventForm.pricing";
@@ -45,4 +46,29 @@ test("pricing snapshot uses cents and includes labor, fees, and percentages", ()
   });
   expect(result.totals.flatSubtotalC).toBe(50_000);
   expect(result.totals.totalC).toBe(65_000);
+});
+
+test("confirmed staffing count is the saved pricing baseline", () => {
+  const snapshot = buildSnapshotFromEvent({
+    startAt: "2026-08-17T21:00:00.000Z",
+    endAt: "2026-08-18T01:00:00.000Z",
+    counts: { neededBartenders: 2 },
+    pricing: {
+      bartendersRequested: 1,
+      hourlyRate: 40,
+      bookingFee: 75,
+      setupHours: 0.5,
+      breakdownHours: 0.5,
+      gratuityPct: 0.18,
+      taxPct: 0.07,
+    },
+    options: { tipJarsAllowed: false },
+  });
+
+  expect(snapshot.meta.bartenders).toBe(2);
+  expect(snapshot.meta.totalHours).toBe(5);
+  expect(snapshot.lines.find((line) => line.key === "hourly")?.amountC).toBe(
+    40_000
+  );
+  expect(snapshot.totals.totalC).toBe(59_375);
 });

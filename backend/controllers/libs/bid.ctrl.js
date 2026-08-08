@@ -2,7 +2,56 @@ import {
   BidModel as Bid,
   UserModel as User,
   EventModel as Event,
+  AssignmentModel as Assignment,
 } from "../../models/index.js";
+
+const windowsOverlap = (startA, endA, startB, endB) =>
+  new Date(startA) < new Date(endB) && new Date(endA) > new Date(startB);
+
+async function addScheduleConflicts(bids, eventId) {
+  const event = await Event.findById(eventId).select("startAt endAt").lean();
+  if (!event || !bids.length) return bids;
+
+  const bartenderIds = bids
+    .map((bid) => bid.bartenderUser?._id || bid.bartenderUser)
+    .filter(Boolean);
+  const assignments = await Assignment.find({
+    bartenderUser: { $in: bartenderIds },
+    event: { $ne: event._id },
+    status: "active",
+  })
+    .populate("event", "shortCode startAt endAt status")
+    .lean();
+  const conflictsByBartender = new Map();
+
+  assignments.forEach((assignment) => {
+    const assignedEvent = assignment.event;
+    if (
+      !assignedEvent ||
+      assignedEvent.status === "canceled" ||
+      !windowsOverlap(
+        event.startAt,
+        event.endAt,
+        assignedEvent.startAt,
+        assignedEvent.endAt
+      )
+    ) return;
+    const id = String(assignment.bartenderUser);
+    const conflicts = conflictsByBartender.get(id) || [];
+    conflicts.push(assignedEvent.shortCode || "another event");
+    conflictsByBartender.set(id, conflicts);
+  });
+
+  return bids.map((bid) => {
+    const id = String(bid.bartenderUser?._id || bid.bartenderUser);
+    const conflictEvents = conflictsByBartender.get(id) || [];
+    return {
+      ...bid,
+      conflictsSchedule: conflictEvents.length > 0,
+      conflictEvents,
+    };
+  });
+}
 
 /**
  * Helper: Haversine distance in km between two lat/lngs
@@ -282,13 +331,16 @@ const bidCtrl = {
         .populate({
           path: "bartenderUser",
           select:
-            "fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible createdAt",
+            "fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible bartenderProfile.dateBartendingStarted createdAt",
         })
         .sort({ score: -1, submittedAt: 1 }) // primary sort in DB
         .lean();
 
       // Secondary fairness tiebreak in JS: less booked wins
-      const sorted = bids.sort((a, b) => {
+      const enriched = await addScheduleConflicts(bids, eventId);
+      const sorted = enriched.sort((a, b) => {
+        if (a.conflictsSchedule !== b.conflictsSchedule)
+          return a.conflictsSchedule ? 1 : -1;
         if (b.score !== a.score) return b.score - a.score;
 
         const aAssigned =
@@ -320,14 +372,17 @@ viewInterestedBidsByEventId: async (req, res) => {
     })
       .populate({
         path: "bartenderUser",
-        select:
-          "email fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible createdAt",
+          select:
+          "email fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible bartenderProfile.dateBartendingStarted createdAt",
       })
       .sort({ score: -1, submittedAt: 1 }) // primary sort in DB
       .lean();
 
     // Same fairness tiebreak in JS
-    const sorted = bids.sort((a, b) => {
+    const enriched = await addScheduleConflicts(bids, eventId);
+    const sorted = enriched.sort((a, b) => {
+      if (a.conflictsSchedule !== b.conflictsSchedule)
+        return a.conflictsSchedule ? 1 : -1;
       if (b.score !== a.score) return b.score - a.score;
 
       const aAssigned =

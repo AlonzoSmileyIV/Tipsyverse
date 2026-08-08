@@ -1323,6 +1323,40 @@ const BartenderDetailDrawer = ({
                                 )}
                               </Box>
 
+                              {reward.purchaseLinks?.length > 0 && (
+                                <Box>
+                                  <Typography variant="subtitle2" fontWeight={800}>
+                                    Purchase Sources
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Suggested vendor pages only. Confirm current price, quality,
+                                    customization, shipping, and return terms before ordering.
+                                  </Typography>
+                                  <Stack
+                                    direction="row"
+                                    spacing={1}
+                                    flexWrap="wrap"
+                                    useFlexGap
+                                    sx={{ mt: 1 }}
+                                  >
+                                    {reward.purchaseLinks.map((source) => (
+                                      <Button
+                                        key={source.url}
+                                        component="a"
+                                        href={source.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        size="small"
+                                        variant="outlined"
+                                        sx={{color:'var(--primary-color)', borderColor:'var(--primary-color)'}}
+                                      >
+                                        {source.label}
+                                      </Button>
+                                    ))}
+                                  </Stack>
+                                </Box>
+                              )}
+
                               <Box>
                                   <Typography variant="subtitle2" fontWeight={800}>
                                     Delivery Address

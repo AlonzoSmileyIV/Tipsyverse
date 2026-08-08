@@ -40,6 +40,7 @@ import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import api from "../../services/api";
 import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
+import { formatEventTimestamp, getEventTimeZone } from "../../utils/timestamps";
 
 const DetailedEventForm = lazy(() =>
   import("../DetailedEventForm/DetailedEventForm")
@@ -149,6 +150,8 @@ const getPaidTotal = (event) =>
   0;
 const getPaymentBalance = (event) =>
   Math.max(getPaymentTotal(event) - getPaidTotal(event), 0);
+const getPaymentCredit = (event) =>
+  Math.max(getPaidTotal(event) - getPaymentTotal(event), 0);
 const fmtMoney = (value) => `$${(Number(value) || 0).toFixed(2)}`;
 const getNeededBartenders = (event) =>
   Number(event?.counts?.neededBartenders) ||
@@ -207,6 +210,8 @@ const AdminEvents = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const is750OrLess = useMediaQuery("(max-width:750px)");
+  const is1000OrLess = useMediaQuery("(max-width:1000px)");
   const isTwoCardsOrLess = useMediaQuery(theme.breakpoints.down("md"));
   const isThreeCardsOrLess = useMediaQuery(theme.breakpoints.down("xl"));
 
@@ -341,9 +346,11 @@ const AdminEvents = () => {
         City: event.location?.city || "",
         State: event.location?.state || "",
         Zipcode: event.location?.zipcode || "",
-        Start: event.startAt ? moment(event.startAt).format("YYYY-MM-DD HH:mm") : "",
-        End: event.endAt ? moment(event.endAt).format("YYYY-MM-DD HH:mm") : "",
-        Timezone: tzAbbr(event.timezone || ""),
+        "Start UTC": event.startAt ? new Date(event.startAt).toISOString() : "",
+        "End UTC": event.endAt ? new Date(event.endAt).toISOString() : "",
+        "Event Start": formatEventTimestamp(event, event.startAt),
+        "Event End": formatEventTimestamp(event, event.endAt),
+        Timezone: getEventTimeZone(event),
         Status: formatLabel(event.status),
         Needed: getNeededBartenders(event),
         Accepted: getAssignedBartenders(event),
@@ -549,8 +556,8 @@ const AdminEvents = () => {
             startAt: !isTwoCardsOrLess,
             type: !isThreeCardsOrLess,
             location: !isThreeCardsOrLess,
-            status: !isMobile,
-            staffing: !isTwoCardsOrLess,
+            status: !is750OrLess,
+            staffing: !is1000OrLess,
           }}
           disableSelectionOnClick
           slots={{
@@ -591,6 +598,8 @@ const AdminEvents = () => {
                   ? "This event needs staffing attention before it is fully covered."
                   : getPaymentBalance(selected) > 0
                     ? "This event has a customer balance due. Review payment readiness before final closeout."
+                    : getPaymentCredit(selected) > 0
+                      ? "This event is overpaid. The excess is tracked as a customer credit; a refund is optional, not required."
                     : "This event is staffed or on track. Review details before making changes."
               }
               statusChip={
@@ -619,6 +628,9 @@ const AdminEvents = () => {
                 },
                 { label: "Paid", value: fmtMoney(getPaidTotal(selected)) },
                 { label: "Balance", value: fmtMoney(getPaymentBalance(selected)) },
+                ...(getPaymentCredit(selected) > 0
+                  ? [{ label: "Credit", value: fmtMoney(getPaymentCredit(selected)) }]
+                  : []),
               ]}
               lastUpdated={
                 selected.updatedAt

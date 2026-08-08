@@ -6,6 +6,7 @@ import {
   AssignmentModel as Assignment,
   UserModel as User,
   PaymentModel as Payment,
+  PaymentRequestModel as PaymentRequest,
 } from "../../models/index.js";
 
 import {
@@ -25,11 +26,28 @@ import {
   handleImageUpload,
   validateEmail,
 } from "../../utils/index.js";
+import { deriveEventPaymentPolicy } from "../../utils/libs/eventPaymentPolicy.js";
+import { syncEventPaymentPolicy } from "../../utils/libs/syncEventPaymentPolicy.js";
 
 import mongoose from "mongoose";
+import { eventAccessLevel } from "../../utils/libs/eventAccess.js";
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
+const eventTimezone = (evt = {}) =>
+  evt.timezone ||
+  evt.location?.timezone ||
+  "America/Indiana/Indianapolis";
+const formatEventDateTime = (value, evt = {}) => {
+  if (!value) return "Not provided";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not provided";
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: eventTimezone(evt),
+  }).format(date) + ` (${eventTimezone(evt)})`;
+};
 const adminEventUrl = (eventId) => `${appUrl()}/admin?eventId=${eventId}`;
 const hasUsablePhone = (value) => String(value || "").replace(/\D/g, "").length >= 10;
 const requiredText = (value) => String(value || "").trim();
@@ -170,9 +188,10 @@ async function ensureAutoBidForEvent(eventId) {
 
 
 function buildCoreEventFacts({ evt, urgent }) {
-  const when = `${new Date(evt.startAt).toLocaleString()} – ${new Date(
-    evt.endAt
-  ).toLocaleString()}`;
+  const when = `${formatEventDateTime(evt.startAt, evt)} – ${formatEventDateTime(
+    evt.endAt,
+    evt
+  )}`;
 
   const where = buildWhere(evt, urgent);
 
@@ -260,12 +279,12 @@ function formatChangeValue(value) {
   return String(value);
 }
 
-function formatDateRangeForEmail(startAt, endAt) {
+function formatDateRangeForEmail(startAt, endAt, evt = {}) {
   const start = startAt ? new Date(startAt) : null;
   const end = endAt ? new Date(endAt) : null;
   if (!start || Number.isNaN(start.getTime())) return "Not set";
-  if (!end || Number.isNaN(end.getTime())) return start.toLocaleString();
-  return `${start.toLocaleString()} - ${end.toLocaleString()}`;
+  if (!end || Number.isNaN(end.getTime())) return formatEventDateTime(start, evt);
+  return `${formatEventDateTime(start, evt)} - ${formatEventDateTime(end, evt)}`;
 }
 
 function fullLocationLine(evt = {}) {
@@ -292,8 +311,8 @@ function confirmedBartenderChangeSummary(beforeDoc = {}, afterDoc = {}) {
   const checks = [
     {
       label: "Date / time",
-      before: formatDateRangeForEmail(beforeDoc.startAt, beforeDoc.endAt),
-      after: formatDateRangeForEmail(afterDoc.startAt, afterDoc.endAt),
+      before: formatDateRangeForEmail(beforeDoc.startAt, beforeDoc.endAt, beforeDoc),
+      after: formatDateRangeForEmail(afterDoc.startAt, afterDoc.endAt, afterDoc),
     },
     {
       label: "Address",
@@ -446,7 +465,7 @@ function buildConfirmedEventUpdateEmailForBartender({ evt, changes }) {
 }
 
 const bookingPolicyEmailItems = [
-  ["Payment", "A deposit may be required to reserve your event. Remaining balances are due according to the booking payment schedule."],
+  ["Payment", "A nonrefundable deposit may be required to reserve your date. The remaining balance is due seven calendar days before the event; events confirmed within seven days require full payment at confirmation. Unpaid events may be placed on Payment Hold seventy-two hours before the event and require payment, a documented arrangement, or cancellation by forty-eight hours before the event."],
   ["Cancellation", "Cancellations and reschedules should be communicated as soon as possible. Refunds and credits are subject to the cancellation policy."],
   ["Alcohol", "Unless otherwise agreed, the client is responsible for purchasing and supplying alcohol."],
   ["Responsible Service", "Bartenders may check IDs and refuse service to anyone underage, visibly intoxicated, unsafe, or unable to provide valid identification."],
@@ -485,9 +504,10 @@ function money(n) {
 function buildCurrentInvoiceEmailHtml({ evt, totals }) {
   const eventType = formatEventType(evt.type);
   const barType = formatEventType(evt.options?.barType || "unknown");
-  const when = `${new Date(evt.startAt).toLocaleString()} - ${new Date(
-    evt.endAt
-  ).toLocaleString()}`;
+  const when = `${formatEventDateTime(evt.startAt, evt)} - ${formatEventDateTime(
+    evt.endAt,
+    evt
+  )}`;
   const where =
     evt.location?.formatted ||
     [evt.location?.address1, evt.location?.address2, evt.location?.city, evt.location?.state, evt.location?.zipcode]
@@ -577,6 +597,18 @@ const eventCtrl = {
           publicFee: evt.private === false ? evt.pricing?.publicFee || 0 : 0,
         },
       });
+      const isAssigned = req.user?.role === "bartender"
+        ? Boolean(await Assignment.exists({ event: id, bartenderUser: req.user?.id }))
+        : false;
+      const accessLevel = eventAccessLevel({ event: evt, user: req.user, isAssigned });
+      if (accessLevel === "none") {
+        return res.status(404).json({ success: false, message: "Not found" });
+      }
+
+      if (accessLevel === "masked") {
+        return res.json({ success: true, data: maskEventForBoard(evt) });
+      }
+
       const recordedPaymentRows = await Payment.aggregate([
         {
           $match: {
@@ -724,6 +756,7 @@ const eventCtrl = {
         additionalInstructions,
         startAt,
         endAt,
+        timezone,
         contact,
         location,
         options,
@@ -781,6 +814,19 @@ const eventCtrl = {
           message: "Leaving time must be after arrival time.",
         });
       }
+      const eventTimezone = requiredText(
+        timezone || location?.timezone || "America/Indiana/Indianapolis"
+      );
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: eventTimezone }).format(
+          startDate
+        );
+      } catch {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid event timezone.",
+        });
+      }
 
       // normalize contact to ContactSchema
       const contactDoc = {
@@ -827,8 +873,10 @@ const eventCtrl = {
         additionalInstructions,
         startAt,
         endAt,
+        timezone: eventTimezone,
         location: {
           ...location,
+          timezone: eventTimezone,
           point: location?.point,
         },
         options: {
@@ -886,8 +934,8 @@ const eventCtrl = {
         <h3 style="margin-top:25px;">📝 Event Summary</h3>
         <p><strong>Your Event#:</strong> ${doc.shortCode}</p>
         <p><strong>Event Type:</strong> ${eventTypeLabel}</p>
-        <p><strong>Bartender(s) need to arrive:</strong> ${new Date(startAt).toLocaleString()}</p>
-        <p><strong>Bartender(s) need to leave:</strong> ${new Date(endAt).toLocaleString()}</p>
+        <p><strong>Bartender(s) need to arrive:</strong> ${formatEventDateTime(doc.startAt, doc)}</p>
+        <p><strong>Bartender(s) need to leave:</strong> ${formatEventDateTime(doc.endAt, doc)}</p>
         <p><strong>Location:</strong> ${location.formatted}</p>
 
         ${buildBookingPolicyEmailHtml(agreements)}
@@ -931,8 +979,8 @@ const eventCtrl = {
           <p><strong>Event #:</strong> ${doc.shortCode}</p>
           <p><strong>Event Type:</strong> ${eventTypeLabel}</p>
           <p><strong>Description:</strong> ${description || "Not provided"}</p>
-          <p><strong>Starts:</strong> ${startAt ? new Date(startAt).toLocaleString() : "Not provided"}</p>
-          <p><strong>Ends:</strong> ${endAt ? new Date(endAt).toLocaleString() : "Not provided"}</p>
+          <p><strong>Starts:</strong> ${formatEventDateTime(doc.startAt, doc)}</p>
+          <p><strong>Ends:</strong> ${formatEventDateTime(doc.endAt, doc)}</p>
           <p><strong>Location:</strong> ${location?.formatted || "Not provided"}</p>
           <p><strong>Main Contact:</strong> ${contactDoc.fullName || "Not provided"}</p>
           <p><strong>Email:</strong> ${contactDoc.email || "Not provided"}</p>
@@ -1127,13 +1175,25 @@ const eventCtrl = {
         },
         {
           $addFields: {
+            "payment.total": "$recordedPaymentTotal",
             "payment.paidTotal": "$recordedPaidTotal",
             "payment.balance": {
               $max: [
                 {
                   $subtract: [
-                    { $ifNull: ["$payment.total", 0] },
+                    "$recordedPaymentTotal",
                     "$recordedPaidTotal",
+                  ],
+                },
+                0,
+              ],
+            },
+            "payment.overpayment": {
+              $max: [
+                {
+                  $subtract: [
+                    "$recordedPaidTotal",
+                    "$recordedPaymentTotal",
                   ],
                 },
                 0,
@@ -1712,6 +1772,32 @@ const eventCtrl = {
         return res.status(404).json({ success: false, message: "Not found" });
       }
 
+      const isAssigned =
+        req.user?.role === "bartender"
+          ? Boolean(
+              await Assignment.exists({
+                event: id,
+                bartenderUser: req.user.id,
+                status: "active",
+              })
+            )
+          : false;
+      const accessLevel = eventAccessLevel({
+        event: evt,
+        user: req.user,
+        isAssigned,
+      });
+
+      // Return 404 so unauthorized callers cannot use this endpoint to probe
+      // whether another customer's event ID exists.
+      if (accessLevel === "none") {
+        return res.status(404).json({ success: false, message: "Not found" });
+      }
+
+      if (accessLevel === "masked") {
+        return res.json({ success: true, data: maskEventForBoard(evt) });
+      }
+
       const recordedPaymentRows = await Payment.aggregate([
         {
           $match: {
@@ -1738,11 +1824,14 @@ const eventCtrl = {
         ) / 100;
       const paymentBalance =
         Math.max(0, Math.round((paymentTotal - paidTotal) * 100) / 100);
+      const paymentOverpayment =
+        Math.max(0, Math.round((paidTotal - paymentTotal) * 100) / 100);
       evt.recordedPaidTotal = paidTotal;
       evt.payment = {
         ...(evt.payment || {}),
         paidTotal,
         balance: paymentBalance,
+        overpayment: paymentOverpayment,
         status:
           paymentTotal > 0 && paidTotal >= paymentTotal
             ? "paid_in_full"
@@ -1751,34 +1840,7 @@ const eventCtrl = {
             : evt.payment?.status || "none",
       };
 
-      const isEmployee = [
-        "owner",
-        "ceo",
-        "executive",
-        "manager",
-        "Supervisor",
-        "it",
-        "helpdesk",
-        "admin",
-        "employee",
-      ].includes(req.user?.role);
-
-      let isAssigned = false;
-      if (!isEmployee) {
-        const assignment = await Assignment.findOne({
-          event: id,
-          bartenderUser: req.user?.id,
-        }).lean();
-        isAssigned = !!assignment;
-      }
-
-      const safe = !isEmployee && !isAssigned ? maskEventForBoard(evt) : evt;
-      // console.log("user role:", req.user?.role);
-      // console.log("isEmployee:", isEmployee);
-      // console.log("isAssigned:", isAssigned);
-      // console.log("evt.location:", evt.location);
-      // console.log("after mask, safe.location:", safe.location);
-      return res.json({ success: true, data: safe });
+      return res.json({ success: true, data: evt });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });
     }
@@ -1899,6 +1961,7 @@ const eventCtrl = {
             type: 1,
             startAt: 1,
             endAt: 1,
+            timezone: 1,
             status: 1,
             options: 1,
             shortCode: 1,
@@ -1907,6 +1970,7 @@ const eventCtrl = {
               state: "$location.state",
               zipcode: "$location.zipcode",
               formatted: "$location.formatted",
+              timezone: "$location.timezone",
             },
             pricing: {
               bartendersRequested: "$pricing.bartendersRequested",
@@ -1916,10 +1980,23 @@ const eventCtrl = {
             payment: {
               total: "$payment.total",
               paidTotal: "$recordedPaidTotal",
+              balanceDueAt: "$payment.balanceDueAt",
+              policyStatus: "$payment.policyStatus",
+              shortNoticeFullPayment: "$payment.shortNoticeFullPayment",
+              arrangementApprovedAt: "$payment.arrangementApprovedAt",
+              arrangementNotes: "$payment.arrangementNotes",
               balance: {
                 $max: [
                   {
                     $subtract: ["$payment.total", "$recordedPaidTotal"],
+                  },
+                  0,
+                ],
+              },
+              overpayment: {
+                $max: [
+                  {
+                    $subtract: ["$recordedPaidTotal", "$payment.total"],
                   },
                   0,
                 ],
@@ -2299,6 +2376,22 @@ const eventCtrl = {
           continue;
         }
 
+        if (key === "timezone") {
+          const zone = requiredText(body.timezone);
+          try {
+            new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(
+              new Date()
+            );
+          } catch {
+            return res.status(400).json({
+              success: false,
+              message: "timezone must be a valid IANA timezone",
+            });
+          }
+          patch.timezone = zone;
+          continue;
+        }
+
         if (key === "options") {
           const incomingOptions = body.options || {};
           const normalizedProcurementItems = Array.isArray(
@@ -2440,41 +2533,62 @@ const eventCtrl = {
         patch[key] = body[key];
       }
 
-      if (patch.options) {
-        const beforeProcurementCost =
-          Number(beforeDoc.options?.procurementActualCost) || 0;
-        const afterProcurementCost =
-          Number(patch.options.procurementActualCost) || 0;
-        const procurementCostDelta =
-          Math.round((afterProcurementCost - beforeProcurementCost) * 100) /
-          100;
-
-        if (procurementCostDelta !== 0) {
-          const currentPayment = evt.payment?.toObject?.() || evt.payment || {};
-          patch.payment = {
-            ...currentPayment,
-            subtotal: Math.max(
-              0,
-              Math.round(
-                ((Number(currentPayment.subtotal) || 0) +
-                  procurementCostDelta) *
-                  100
-              ) / 100
-            ),
-            total: Math.max(
-              0,
-              Math.round(
-                ((Number(currentPayment.total) || 0) + procurementCostDelta) *
-                  100
-              ) / 100
-            ),
-          };
-        }
-      }
-
       // Apply patch onto doc (so mongoose validation/hooks run)
       for (const [k, v] of Object.entries(patch)) {
         evt.set(k, v);
+      }
+
+      // Confirmed events carry a billed snapshot in payment.total. Keep any
+      // existing discount intact while moving that snapshot by the complete
+      // pricing delta from an adjustment.
+      const currentPayment = beforeDoc.payment || {};
+      const hasBilledSnapshot = Number(currentPayment.total) > 0;
+      const billingInputsChanged = [
+        "startAt",
+        "endAt",
+        "pricing",
+        "counts",
+        "private",
+        "options",
+      ].some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+
+      if (hasBilledSnapshot && billingInputsChanged) {
+        const billableTotals = (event) => {
+          const computed = computeEventTotals({
+            ...event,
+            pricing: {
+              ...(event.pricing || {}),
+              publicFee:
+                event.private === false ? event.pricing?.publicFee || 0 : 0,
+            },
+          });
+          const procurementActualCost =
+            Number(event.options?.procurementActualCost) || 0;
+          return {
+            subtotal: computed.flatSubtotal + procurementActualCost,
+            gratuity: computed.lineItems?.gratuity || 0,
+            total: computed.total + procurementActualCost,
+          };
+        };
+        const beforeBillable = billableTotals(beforeDoc);
+        const afterBillable = billableTotals(
+          evt.toObject({ depopulate: true })
+        );
+        const roundMoney = (value) =>
+          Math.max(0, Math.round((Number(value) || 0) * 100) / 100);
+
+        evt.set("payment", {
+          ...currentPayment,
+          subtotal: roundMoney(
+            (Number(currentPayment.subtotal) || 0) +
+              (afterBillable.subtotal - beforeBillable.subtotal)
+          ),
+          gratuity: roundMoney(afterBillable.gratuity),
+          total: roundMoney(
+            Number(currentPayment.total) +
+              (afterBillable.total - beforeBillable.total)
+          ),
+        });
       }
 
       // Validate temporal logic
@@ -2485,7 +2599,57 @@ const eventCtrl = {
       }
 
       // Save updates
+      if (
+        evt.payment?.policyScheduledAt &&
+        new Date(beforeDoc.startAt).getTime() !== new Date(evt.startAt).getTime()
+      ) {
+        evt.payment.balanceDueAt = null;
+      }
       await evt.save();
+
+      // Keep any still-open payment request aligned with the newly saved bill.
+      // A price decrease never creates a refund automatically: requests are
+      // capped to the remaining balance, or cancelled when nothing is due.
+      if (hasBilledSnapshot && billingInputsChanged) {
+        const paidRows = await Payment.aggregate([
+          { $match: { event: evt._id, status: "recorded" } },
+          { $group: { _id: "$event", total: { $sum: "$amount" } } },
+        ]);
+        const paidTotal = Number(paidRows[0]?.total) || 0;
+        const remainingBalance = Math.max(
+          0,
+          Math.round(((Number(evt.payment?.total) || 0) - paidTotal) * 100) /
+            100
+        );
+        if (remainingBalance <= 0) {
+          await PaymentRequest.updateMany(
+            { event: evt._id, status: { $in: ["draft", "sent"] } },
+            { $set: { status: "cancelled" } }
+          );
+        } else {
+          await PaymentRequest.updateMany(
+            {
+              event: evt._id,
+              status: { $in: ["draft", "sent"] },
+              amountRequested: { $gt: remainingBalance },
+            },
+            { $set: { amountRequested: remainingBalance } }
+          );
+        }
+      }
+      if (billingInputsChanged || evt.payment?.policyScheduledAt) {
+        const policyResult = await syncEventPaymentPolicy(evt._id);
+        if (policyResult) {
+          evt.payment.paidTotal = policyResult.paid;
+          evt.payment.balance = policyResult.balance;
+          evt.payment.overpayment = policyResult.overpayment;
+          evt.payment.status = policyResult.paymentStatus;
+          evt.payment.policyStatus = policyResult.status;
+          evt.payment.balanceDueAt = policyResult.schedule?.dueAt || null;
+          evt.payment.shortNoticeFullPayment =
+            policyResult.schedule?.shortNotice || false;
+        }
+      }
 
       // ✅ AFTER snapshot
       const afterDoc = evt.toObject({ depopulate: true });
@@ -2775,8 +2939,15 @@ const eventCtrl = {
         cancelReason === "other" && cancelReasonOther
           ? String(cancelReasonOther).trim()
           : null;
+      if (cancelReason === "nonpayment") {
+        evt.payment.policyStatus = "canceled_nonpayment";
+      }
 
       await evt.save();
+      await PaymentRequest.updateMany(
+        { event: id, status: { $in: ["draft", "sent"] } },
+        { $set: { status: "cancelled" } }
+      );
 
       // notify interested + assigned bartenders
       const [assignments, bids] = await Promise.all([
@@ -2812,6 +2983,8 @@ const eventCtrl = {
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
+        timeZone: eventTimezone(evt),
+        timeZoneName: "short",
       });
 
       // Final formatted reason
@@ -2869,6 +3042,74 @@ const eventCtrl = {
       return res.json({ success: true, data: evt });
     } catch (err) {
       return res.status(400).json({ success: false, message: err.message });
+    }
+  },
+
+  resolvePaymentPolicy: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const action = String(req.body?.action || "");
+      const notes = String(req.body?.notes || "").trim();
+
+      if (action === "cancel_nonpayment") {
+        req.body = { cancelReason: "nonpayment" };
+        return eventCtrl.cancelRequest(req, res);
+      }
+      if (!['approve_arrangement', 'remove_arrangement'].includes(action)) {
+        return res.status(400).json({
+          success: false,
+          message: "Choose approve_arrangement, remove_arrangement, or cancel_nonpayment.",
+        });
+      }
+      if (action === "approve_arrangement" && notes.length < 5) {
+        return res.status(400).json({
+          success: false,
+          message: "Document the payment arrangement before approving it.",
+        });
+      }
+
+      const event = await Event.findById(id).select("payment shortCode");
+      if (!event) {
+        return res.status(404).json({ success: false, message: "Not found" });
+      }
+      if (action === "approve_arrangement") {
+        event.payment.arrangementApprovedAt = new Date();
+        event.payment.arrangementApprovedBy = req.user?.id || req.user?._id;
+        event.payment.arrangementNotes = notes;
+        event.payment.policyStatus = "arrangement";
+      } else {
+        event.payment.arrangementApprovedAt = null;
+        event.payment.arrangementApprovedBy = null;
+        event.payment.arrangementNotes = null;
+      }
+      await event.save();
+      const policy = await syncEventPaymentPolicy(id);
+
+      await req.logActivity?.({
+        action: "update",
+        target: { model: "Event", id },
+        actor: {
+          type: "User",
+          id: req.user?.id,
+          label: {
+            fullName: req.user?.fullName,
+            email: req.user?.email,
+            role: req.user?.role,
+          },
+        },
+        summary:
+          action === "approve_arrangement"
+            ? "Approved payment arrangement"
+            : "Removed payment arrangement",
+        meta: { notes: notes || null, paymentPolicyStatus: policy?.status },
+      });
+
+      return res.json({
+        success: true,
+        data: await Event.findById(id).lean(),
+      });
+    } catch (error) {
+      return res.status(400).json({ success: false, message: error.message });
     }
   },
 
@@ -2954,6 +3195,18 @@ const eventCtrl = {
         100;
       const balanceDue =
         Math.max(0, Math.round((billedTotal - amountPaid) * 100) / 100);
+      const policyScheduledAt = new Date();
+      const paymentPolicy = deriveEventPaymentPolicy({
+        startAt: evt.startAt,
+        confirmedAt: policyScheduledAt,
+        total: billedTotal,
+        paid: amountPaid,
+        now: policyScheduledAt,
+        timeZone:
+          evt.timezone ||
+          evt.location?.timezone ||
+          "America/Indiana/Indianapolis",
+      });
 
       // 4) persist event payment snapshot + status + history
       await Event.updateOne(
@@ -2967,6 +3220,11 @@ const eventCtrl = {
               Math.round((subtotal + procurementActualCost) * 100) / 100,
             "payment.gratuity": gratuity,
             "payment.total": billedTotal, // store the discounted grand total plus receipt-backed procurement
+            "payment.policyScheduledAt": policyScheduledAt,
+            "payment.balanceDueAt": paymentPolicy.schedule?.dueAt,
+            "payment.policyStatus": paymentPolicy.status,
+            "payment.shortNoticeFullPayment":
+              paymentPolicy.schedule?.shortNotice || false,
             "pricing.bartendersRequested": computedTotals.bartenders,
             "counts.neededBartenders": computedTotals.bartenders,
             // Optional: snapshot coupon on the payment
@@ -3003,6 +3261,7 @@ const eventCtrl = {
           deposit: finalDeposit,
           amountPaid,
           balanceDue,
+          balanceDueAt: paymentPolicy.schedule?.dueAt,
           coupon: applied,
           lineItems: {
             ...lineItems,
@@ -3135,20 +3394,76 @@ const eventCtrl = {
 
     if (!bartenderIds.length) throw new Error("No bartenders found for these bids.");
 
-    // How many bartenders are needed?
-    needed = evt.pricing?.bartendersRequested ?? evt.counts?.neededBartenders ?? 0;
+    // Legacy/adjusted events can briefly have different pricing and staffing
+    // snapshots. Never let the smaller stale value reduce assignment capacity.
+    needed = Math.max(
+      1,
+      Number(evt.pricing?.bartendersRequested) || 0,
+      Number(evt.counts?.neededBartenders) || 0
+    );
+
+    const activeAssignments = await Assignment.find({
+      event: id,
+      status: "active",
+    })
+      .select("bartenderUser")
+      .session(session)
+      .lean();
+    const activeBartenderIds = new Set(
+      activeAssignments.map((assignment) => String(assignment.bartenderUser))
+    );
+    const newBartenderIds = bartenderIds.filter(
+      (bartenderId) => !activeBartenderIds.has(String(bartenderId))
+    );
+    const remainingSpots = Math.max(0, needed - activeAssignments.length);
 
     // Hard fail if they try to assign too many
-    if (needed > 0 && bartenderIds.length > needed) {
+    if (newBartenderIds.length > remainingSpots) {
       await session.abortTransaction().catch(() => {});
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: `You can only assign up to ${needed} bartender(s) for this event.`,
+        message: `You can only assign ${remainingSpots} more bartender(s) for this event (${activeAssignments.length}/${needed} currently staffed).`,
       });
     }
 
     selectedBartenderIds = bartenderIds;
+
+    // Enforce the same hard-conflict rule as the Manage Bartenders UI so a
+    // stale browser or direct API request cannot double-book someone.
+    const overlappingAssignments = await Assignment.find({
+      bartenderUser: { $in: selectedBartenderIds },
+      event: { $ne: evt._id },
+      status: "active",
+    })
+      .populate({
+        path: "event",
+        match: {
+          status: { $ne: "canceled" },
+          startAt: { $lt: evt.endAt },
+          endAt: { $gt: evt.startAt },
+        },
+        select: "shortCode startAt endAt",
+      })
+      .session(session)
+      .lean();
+    const conflicts = overlappingAssignments.filter(
+      (assignment) => assignment.event
+    );
+    if (conflicts.length) {
+      await session.abortTransaction().catch(() => {});
+      session.endSession();
+      return res.status(409).json({
+        success: false,
+        message: `Cannot assign bartender with a schedule conflict (${[
+          ...new Set(
+            conflicts.map(
+              (assignment) => assignment.event.shortCode || "another event"
+            )
+          ),
+        ].join(", ")}).`,
+      });
+    }
 
     // Create assignments
     const toInsert = [];
@@ -3309,7 +3624,7 @@ const eventCtrl = {
         entityModel: "Event",
         actor: { id: req.user?._id },
         recipients: [{ id: evt.organizer }],
-        slug: "my-events",
+        slug: `my-events/${evt._id}/attendance`,
         messageBase: `Your ${formatEventType(evt.type)} event now has ${selectedBartenderIds.length} assigned bartender(s).`,
       });
     }
@@ -3397,6 +3712,13 @@ const eventCtrl = {
       const evt = await Event.findById(id).session(session);
       if (!evt) throw new Error("Event not found");
 
+      const removedBartenders = await User.find({
+        _id: { $in: bartenderIds },
+      })
+        .select("fullName email")
+        .session(session)
+        .lean();
+
       // 🔹 Mark assignments as "removed" instead of deleting them
       const removalResult = await Assignment.updateMany(
         {
@@ -3418,22 +3740,12 @@ const eventCtrl = {
 
       if (removedCount === 0) {
         // Nothing to remove – either already removed or not assigned
-        await session.commitTransaction();
+        await session.abortTransaction().catch(() => {});
         session.endSession();
-        return res.json({
-          success: true,
-          data: {
-            assignedCount: await Assignment.countDocuments({
-              event: id,
-              status: "active",
-            }),
-            needed:
-              evt.pricing?.bartendersRequested ??
-              evt.counts?.neededBartenders ??
-              0,
-            status: evt.status,
-            message: "No active assignments were removed.",
-          },
+        return res.status(409).json({
+          success: false,
+          message:
+            "No active assignments were removed. Refresh the bartender list and try again.",
         });
       }
 
@@ -3446,8 +3758,11 @@ const eventCtrl = {
       evt.counts = { ...(evt.counts || {}), assigned: assignedCount };
 
       // How many bartenders are needed?
-      const needed =
-        evt.pricing?.bartendersRequested ?? evt.counts?.neededBartenders ?? 0;
+      const needed = Math.max(
+        1,
+        Number(evt.pricing?.bartendersRequested) || 0,
+        Number(evt.counts?.neededBartenders) || 0
+      );
 
       const hasOpenSpots = needed > assignedCount;
 
@@ -3526,9 +3841,57 @@ const eventCtrl = {
       await session.commitTransaction();
       session.endSession();
 
+      const removalReasonLabels = {
+        sick: "Marked sick",
+        no_show: "No show / unreliable",
+        client_change: "Client changed the event details",
+        schedule_conflict: "Schedule conflict",
+        other: "Other",
+        removed: "Removed by an administrator",
+      };
+      const removalReason =
+        removalReasonLabels[String(reason || "").trim()] ||
+        String(reason || "Removed by an administrator").trim();
+      const removalRecipients = removedBartenders.map((bartender) => ({
+        id: bartender._id,
+      }));
+
+      if (removalRecipients.length) {
+        await sendNotification?.({
+          type: "event_assignment_removed",
+          entity: evt._id,
+          entityId: evt._id,
+          entityModel: "Event",
+          actor: { id: req.user?.id },
+          recipients: removalRecipients,
+          slug: "bartend/schedule",
+          messageBase: `You were removed from event ${evt.shortCode}. Reason: ${removalReason}`,
+        });
+      }
+
+      for (const bartender of removedBartenders) {
+        if (!bartender.email) continue;
+        await sendEmail?.({
+          to: bartender.email,
+          subject: `Tipsyverse — Removed from event ${evt.shortCode}`,
+          title: `Assignment Removed — ${evt.shortCode}`,
+          html: `
+            <p>Hi ${escapeHtml(bartender.fullName || "Bartender")},</p>
+            <p>You have been removed from event <strong>${escapeHtml(
+              evt.shortCode || ""
+            )}</strong>.</p>
+            <p><strong>Reason:</strong> ${escapeHtml(removalReason)}</p>
+            <p>This event is no longer part of your upcoming schedule.</p>
+            <p><a href="${escapeHtml(
+              bartenderScheduleLink()
+            )}" style="display:inline-block;background:#800020;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none;">View Bartender Schedule</a></p>
+          `,
+        });
+      }
+
       return res.json({
         success: true,
-        data: { assignedCount, needed, status: evt.status },
+        data: { removedCount, assignedCount, needed, status: evt.status },
       });
     } catch (err) {
       await session.abortTransaction().catch(() => {});

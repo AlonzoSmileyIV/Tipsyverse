@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import { cloudinary } from "../../middleware/libs/cloudinary.middleware.js";
+import seedBiancaRequiredCourseProgress from "./seedQaBartenderProgress.js";
 
 import {
   PositionModel as Position,
@@ -100,6 +101,117 @@ const seedUsers = [
         email: "",
       },
     },
+  },
+];
+
+const qaSeedUsers = [
+  {
+    username: "qa.manager",
+    email: "alonzo.smiley+manager@tipsyverse.com",
+    fullName: "Maya Manager",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "employee",
+    positionName: "Operations Manager",
+    reportsToEmail: process.env.ADMIN2_SEED_EMAIL,
+    hasBartenderProfile: false,
+    bio: "Seeded manager account for hierarchy and authorization testing.",
+  },
+  {
+    username: "qa.employee",
+    email: "alonzo.smiley+employee@tipsyverse.com",
+    fullName: "Evan Employee",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "employee",
+    positionName: "Event Coordinator",
+    reportsToEmail: "alonzo.smiley+manager@tipsyverse.com",
+    hasBartenderProfile: false,
+    bio: "Seeded employee account for staff workflow testing.",
+  },
+  {
+    username: "qa.customer1",
+    email: "alonzo.smiley+customer1@tipsyverse.com",
+    fullName: "Chloe Customer",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "regular",
+    accountStatusState: "Active",
+    hasBartenderProfile: false,
+    bio: "Seeded active customer account for booking and finance-history testing.",
+  },
+  {
+    username: "qa.customer2",
+    email: "alonzo.smiley+customer2@tipsyverse.com",
+    fullName: "Cameron Customer",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "regular",
+    accountStatusState: "Active",
+    hasBartenderProfile: false,
+    bio: "Seeded second customer account for cross-account authorization testing.",
+  },
+  {
+    username: "qa.suspended",
+    email: "alonzo.smiley+suspended@tipsyverse.com",
+    fullName: "Sasha Suspended",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "regular",
+    accountStatusState: "Suspended",
+    suspensionIndefinite: true,
+    reasonForSuspension: "Seeded for suspended-account testing.",
+    hasBartenderProfile: false,
+    bio: "Seeded customer account that must remain suspended.",
+  },
+  {
+    username: "qa.deactivated",
+    email: "alonzo.smiley+deactivated@tipsyverse.com",
+    fullName: "Diana Deactivated",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "regular",
+    accountStatusState: "Deactivated",
+    deactivationReason: "Seeded for deactivated-account testing.",
+    hasBartenderProfile: false,
+    bio: "Seeded customer account that must remain deactivated.",
+  },
+  {
+    username: "qa.bartender1",
+    email: "alonzo.smiley+bartender1@tipsyverse.com",
+    fullName: "Bianca Bartender",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "bartender",
+    permitNumber: "SEED-QA-BARTENDER-001",
+    permitExpirationDate: "2030-12-31",
+    licenseStatus: "active",
+    cashApp: "$BiancaQABartender",
+    bartenderContactInfo: {
+      phone: "3175550101",
+      emergencyContact: {
+        fullName: "Morgan Contact",
+        relationship: "Friend",
+        phone: "3175550199",
+        email: "alonzo.smiley+bianca-emergency@tipsyverse.com",
+      },
+    },
+    bio: "Seeded eligible bartender account for bidding and assignment testing.",
+  },
+  {
+    username: "qa.bartender2",
+    email: "alonzo.smiley+bartender2@tipsyverse.com",
+    fullName: "Brandon Bartender",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "bartender",
+    permitNumber: "SEED-QA-BARTENDER-002",
+    permitExpirationDate: "2030-12-31",
+    licenseStatus: "active",
+    bio: "Seeded second eligible bartender for competing-bid testing.",
+  },
+  {
+    username: "qa.bartender-expired",
+    email: "alonzo.smiley+bartender-expired@tipsyverse.com",
+    fullName: "Elliot Expired",
+    password: process.env.QA_SEED_PASSWORD,
+    role: "bartender",
+    permitNumber: "SEED-QA-BARTENDER-EXPIRED",
+    permitExpirationDate: "2020-01-01",
+    licenseStatus: "expired",
+    bio: "Seeded bartender account with an expired permit.",
   },
 ];
 
@@ -591,6 +703,8 @@ function getDefaultAdultBirthday() {
 }
 
 async function uploadSeedUserImageIfExists(fileName, publicId) {
+  if (!fileName || !publicId) return {};
+
   const imagePath = path.join(DOCS_PATH, "images", fileName);
 
   if (!fs.existsSync(imagePath)) {
@@ -802,6 +916,7 @@ async function seedCoupons() {
 
 function createBartenderProfile(seed) {
   const now = new Date();
+  const licenseStatus = seed.licenseStatus || "active";
 
   return {
     status: "approved",
@@ -815,8 +930,8 @@ function createBartenderProfile(seed) {
         permitNumber: seed.permitNumber,
         expiresAt: new Date(seed.permitExpirationDate),
 
-        verified: true,
-        status: "active",
+        verified: licenseStatus === "active",
+        status: licenseStatus,
         lastStatusChangeAt: now,
       },
     ],
@@ -851,17 +966,20 @@ function createBartenderProfile(seed) {
   };
 }
 
-async function seedUsersIntoDatabase(positionMap) {
+async function seedUsersIntoDatabase(positionMap, usersToSeed) {
   console.log("🔄 Seeding users...");
 
-  for (const seed of seedUsers) {
+  for (const seed of usersToSeed) {
     const missingFields = [];
 
     if (!seed.username) missingFields.push("username");
     if (!seed.email) missingFields.push("email");
     if (!seed.fullName) missingFields.push("fullName");
     if (!seed.password) missingFields.push("password");
-    if (!seed.positionName) missingFields.push("positionName");
+    const role = seed.role || "employee";
+    if (role === "employee" && !seed.positionName) {
+      missingFields.push("positionName");
+    }
 
     if (missingFields.length > 0) {
       console.error(
@@ -872,9 +990,11 @@ async function seedUsersIntoDatabase(positionMap) {
       continue;
     }
 
-    const position = positionMap[seed.positionName];
+    const position = seed.positionName
+      ? positionMap[seed.positionName]
+      : null;
 
-    if (!position) {
+    if (seed.positionName && !position) {
       console.error(
         `⚠️ Position "${seed.positionName}" was not found for ${seed.email}.`
       );
@@ -906,19 +1026,25 @@ async function seedUsersIntoDatabase(positionMap) {
         null,
     };
 
-    const employeeDetails = {
-      position: position._id,
+    const employeeDetails =
+      role === "employee"
+        ? {
+            position: position._id,
 
-      dates: {
-        dateStarted:
-          existing?.employeeDetails?.dates?.dateStarted || new Date(),
-      },
+            dates: {
+              dateStarted:
+                existing?.employeeDetails?.dates?.dateStarted || new Date(),
+            },
 
-      employmentStatus: {
-        state: "Active",
-        isAbsent: false,
-      },
-    };
+            employmentStatus: {
+              state: "Active",
+              isAbsent: false,
+            },
+          }
+        : null;
+
+    const shouldCreateBartenderProfile =
+      seed.hasBartenderProfile ?? ["employee", "bartender"].includes(role);
 
     const userPayload = {
       username: seed.username,
@@ -929,7 +1055,7 @@ async function seedUsersIntoDatabase(positionMap) {
       profile,
 
       isSeeded: true,
-      role: "employee",
+      role,
 
       dates: {
         dateStarted: existing?.dates?.dateStarted || new Date(),
@@ -937,7 +1063,9 @@ async function seedUsersIntoDatabase(positionMap) {
 
       employeeDetails,
 
-      bartenderProfile: createBartenderProfile(seed),
+      bartenderProfile: shouldCreateBartenderProfile
+        ? createBartenderProfile(seed)
+        : null,
     };
 
     if (existing) {
@@ -947,8 +1075,20 @@ async function seedUsersIntoDatabase(positionMap) {
         existing.accountStatus = {};
       }
 
-      existing.accountStatus.state = "Active";
+      existing.accountStatus.state = seed.accountStatusState || "Active";
       existing.accountStatus.isOnline = false;
+      existing.accountStatus.reasonForSuspension =
+        seed.reasonForSuspension || null;
+      existing.accountStatus.suspensionExplanation =
+        seed.reasonForSuspension || null;
+      existing.accountStatus.suspensionIndefinite =
+        Boolean(seed.suspensionIndefinite);
+      existing.accountStatus.deactivationDateStarted =
+        seed.accountStatusState === "Deactivated"
+          ? existing.accountStatus.deactivationDateStarted || new Date()
+          : null;
+      existing.accountStatus.deactivationReason =
+        seed.deactivationReason || null;
 
       await existing.save();
 
@@ -960,8 +1100,14 @@ async function seedUsersIntoDatabase(positionMap) {
       ...userPayload,
 
       accountStatus: {
-        state: "Active",
+        state: seed.accountStatusState || "Active",
         isOnline: false,
+        reasonForSuspension: seed.reasonForSuspension || null,
+        suspensionExplanation: seed.reasonForSuspension || null,
+        suspensionIndefinite: Boolean(seed.suspensionIndefinite),
+        deactivationDateStarted:
+          seed.accountStatusState === "Deactivated" ? new Date() : null,
+        deactivationReason: seed.deactivationReason || null,
       },
 
       createdAt: new Date(),
@@ -974,6 +1120,41 @@ async function seedUsersIntoDatabase(positionMap) {
     });
 
     console.log(`✅ Created seed user: ${seed.fullName}`);
+  }
+
+  for (const seed of usersToSeed.filter((item) => item.reportsToEmail)) {
+    const employee = await User.findOne({
+      email: seed.email.toLowerCase(),
+    });
+    const manager = await User.findOne({
+      email: seed.reportsToEmail.toLowerCase(),
+    });
+
+    if (!employee || !manager) {
+      console.warn(
+        `⚠️ Could not seed reporting relationship for ${seed.email}.`
+      );
+      continue;
+    }
+
+    const previousManagerId = employee.employeeDetails?.reportTo;
+    if (
+      previousManagerId &&
+      String(previousManagerId) !== String(manager._id)
+    ) {
+      await User.updateOne(
+        { _id: previousManagerId },
+        { $pull: { "employeeDetails.directReports": employee._id } }
+      );
+    }
+
+    employee.employeeDetails.reportTo = manager._id;
+    await employee.save();
+
+    await User.updateOne(
+      { _id: manager._id },
+      { $addToSet: { "employeeDetails.directReports": employee._id } }
+    );
   }
 }
 
@@ -1036,6 +1217,13 @@ async function seedData() {
     process.exit(1);
   }
 
+  if (!process.env.QA_SEED_PASSWORD) {
+    console.error(
+      "❌ Missing QA_SEED_PASSWORD required for the seeded QA accounts."
+    );
+    process.exit(1);
+  }
+
   try {
     await mongoose.connect(mongoUri);
 
@@ -1050,7 +1238,15 @@ async function seedData() {
     });
 
     await seedCoupons();
-    await seedUsersIntoDatabase(positionMap);
+    const includeQaAccounts = ["development", "staging"].includes(env);
+    const usersToSeed = includeQaAccounts
+      ? [...seedUsers, ...qaSeedUsers]
+      : seedUsers;
+
+    await seedUsersIntoDatabase(positionMap, usersToSeed);
+    if (includeQaAccounts) {
+      await seedBiancaRequiredCourseProgress();
+    }
 
     console.log("✅ Initial Tipsyverse seed completed successfully.");
 

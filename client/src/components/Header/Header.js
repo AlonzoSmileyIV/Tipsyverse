@@ -378,27 +378,25 @@ const Header = () => {
                 </MenuItem>
               )}
               
+              {showEventsLink && <Divider sx={{ my: 0.5 }} />}
               {showEventsLink && (
-                <>
-                  <Divider sx={{ my: 0.5 }} />
-                  <MenuItem
-                    component={Link}
-                    to="/my-events"
-                    onClick={handleMenuClose}
-                    selected={pathname.startsWith("/my-events") || pathname.startsWith("/events")}
-                    sx={{
-                      textDecoration: pathname.startsWith("/my-events") || pathname.startsWith("/events")
-                        ? "underline"
-                        : "none",
-                      textUnderlineOffset: "4px",
-                      textDecorationColor: "var(--primary-color)",
-                      fontWeight: pathname.startsWith("/my-events") || pathname.startsWith("/events") ? 600 : 400,
-                    }}
-                  >
-                     <CalendarMonthOutlined sx={{ mr: 1 }} fontSize="small" />
-                    Events
-                  </MenuItem>
-                </>
+                <MenuItem
+                  component={Link}
+                  to="/my-events"
+                  onClick={handleMenuClose}
+                  selected={pathname.startsWith("/my-events") || pathname.startsWith("/events")}
+                  sx={{
+                    textDecoration: pathname.startsWith("/my-events") || pathname.startsWith("/events")
+                      ? "underline"
+                      : "none",
+                    textUnderlineOffset: "4px",
+                    textDecorationColor: "var(--primary-color)",
+                    fontWeight: pathname.startsWith("/my-events") || pathname.startsWith("/events") ? 600 : 400,
+                  }}
+                >
+                  <CalendarMonthOutlined sx={{ mr: 1 }} fontSize="small" />
+                  Events
+                </MenuItem>
               )}
               {showBartendLink && (
                 <MenuItem

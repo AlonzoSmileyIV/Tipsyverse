@@ -39,7 +39,7 @@ Before launch:
 - serve the site and API only over HTTPS;
 - restrict the Google Maps browser key by production hostname and API in Google
   Cloud Console;
-- register the production Stripe webhook URL and signing secret;
+- when Stripe is enabled, register its production webhook URL and signing secret;
 - configure the Sentry DSN and release identifier;
 - verify the CSP against the exact API, Socket.IO, Stripe, Maps, and Cloudinary
   production origins;
