@@ -23,7 +23,7 @@ const heroSlides = [
     description:
       "Request professional bartending services for weddings, parties, corporate events, and other special occasions.",
     buttonLabel: "Book an Event",
-    link: "/events/book",
+    link: "/book",
   },
   {
     heading: "Bartend With Tipsyverse",

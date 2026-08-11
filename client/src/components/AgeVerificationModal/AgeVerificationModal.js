@@ -124,7 +124,8 @@ const AgeVerificationModal = ({ open, onVerify }) => {
                 }}
               />
             }
-            label="I swear the above date is legit 🍷"
+            label="I declare that the above date is my date of birth"
+            sx={{ mb: 1 }}
           />
 
           <FormControlLabel

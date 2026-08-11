@@ -873,15 +873,15 @@ async function seedCoupons() {
 
   await Coupon.findOneAndUpdate(
     {
-      code: "FAMILY25",
+      code: "FAMILY10",
     },
     {
       $set: {
         type: "PERCENT_TOTAL",
-        value: 0.25,
+        value: 0.10,
 
         discountType: "percentage",
-        discountValue: 25,
+        discountValue: 10,
 
         minimumSubtotal: 0,
 
@@ -897,11 +897,11 @@ async function seedCoupons() {
         expiresAt: null,
 
         description:
-          "Family and friends discount — 25% off the event total.",
+          "Family and friends discount — 10% off the event total.",
       },
 
       $setOnInsert: {
-        code: "FAMILY25",
+        code: "FAMILY10",
       },
     },
     {
@@ -911,7 +911,7 @@ async function seedCoupons() {
     }
   );
 
-  console.log("✅ Seeded promo code FAMILY25");
+  console.log("✅ Seeded promo code FAMILY10");
 }
 
 function createBartenderProfile(seed) {
