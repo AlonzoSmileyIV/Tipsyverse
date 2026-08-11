@@ -11,21 +11,22 @@ import {
   sendEmail,
   validateEmail,
 } from "../../utils/index.js";
+import { eventAccessLevel } from "../../utils/libs/eventAccess.js";
+import { formatDate, formatDateTime } from "../../utils/libs/dateTime.js";
 
 const isStaff = (user) => ["admin", "employee"].includes(user?.role);
 
 const canViewEvent = async (user, eventId) => {
-  if (isStaff(user)) return true;
   const id = eventId?._id || eventId;
-  const event = await Event.findById(id).select("organizer").lean();
-  return !!event && String(event.organizer) === String(user?.id);
+  const event = await Event.findById(id).select("organizer contact status").lean();
+  return !!event && eventAccessLevel({ event, user }) === "full";
 };
 
 const canManagePaymentRequests = (user) => isStaff(user);
 
 const populatePaymentRequest = (query) =>
   query
-    .populate("event", "shortCode type status startAt endAt location contact organizer payment")
+    .populate("event", "shortCode type status startAt endAt timezone location contact organizer payment")
     .populate("sentBy", "fullName email role");
 
 const formatPaymentAmount = (amount) =>
@@ -52,8 +53,8 @@ const providerLabel = (provider) =>
     other: "payment provider",
   }[provider] || displayLabel(provider, "Payment Provider"));
 
-const formatEventDateTime = (date) =>
-  date ? new Date(date).toLocaleString("en-US") : "Not specified";
+const formatEventDateTime = (date, timeZone) =>
+  formatDateTime(date, { timeZone });
 
 const formatEventLocation = (location = {}) =>
   location.formatted ||
@@ -76,7 +77,9 @@ const buildPaymentRequestEmail = ({
   const eventCode = event?.shortCode || event?._id || "Not specified";
   const firstName = recipientName?.split(" ")[0] || "there";
   const expirationLine = expiresAt
-    ? `<p>Please complete this request by <strong>${new Date(expiresAt).toLocaleDateString("en-US")}</strong>.</p>`
+    ? `<p>Please complete this request by <strong>${formatDate(expiresAt, {
+        timeZone: event?.timezone || event?.location?.timezone,
+      })}</strong>.</p>`
     : "";
   const paymentLink = providerUrl
     ? `
@@ -92,8 +95,8 @@ const buildPaymentRequestEmail = ({
         <p>Hey ${firstName},</p>
         <p>A ${typeLabel} request has been sent to you for Tipsyverse Event <strong>${eventCode}</strong>.</p>
 
-        <p><strong>Arrival Time:</strong> ${formatEventDateTime(event?.startAt)}</p>
-        <p><strong>End Time:</strong> ${formatEventDateTime(event?.endAt)}</p>
+        <p><strong>Arrival Time:</strong> ${formatEventDateTime(event?.startAt, event?.timezone || event?.location?.timezone)}</p>
+        <p><strong>End Time:</strong> ${formatEventDateTime(event?.endAt, event?.timezone || event?.location?.timezone)}</p>
         <p><strong>Event Type:</strong> ${displayEventType(event?.type)}</p>
         <p><strong>Location:</strong> ${formatEventLocation(event?.location)}</p>
 
@@ -186,7 +189,7 @@ const paymentRequestCtrl = {
       }
 
       const eventDoc = await Event.findById(event)
-        .select("_id shortCode type startAt endAt location contact")
+        .select("_id shortCode type startAt endAt timezone location contact")
         .lean();
       if (!eventDoc) return res.status(404).json({ message: "Event not found" });
       const recipient = normalizeSentTo(sentTo, eventDoc.contact);
@@ -266,7 +269,21 @@ const paymentRequestCtrl = {
       if (eventId) filter.event = eventId;
 
       if (!isStaff(req.user)) {
-        const events = await Event.find({ organizer: req.user.id }).select("_id").lean();
+        const userId = req.user?.id || req.user?._id;
+        const userEmail = String(req.user?.email || "").trim();
+        const escapedEmail = userEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const events = await Event.find({
+          $or: [
+            ...(userId
+              ? [{ organizer: userId }, { "contact.userId": userId }]
+              : []),
+            ...(userEmail
+              ? [{ "contact.email": new RegExp(`^${escapedEmail}$`, "i") }]
+              : []),
+          ],
+        })
+          .select("_id")
+          .lean();
         if (eventId && !(await canViewEvent(req.user, eventId))) {
           return res.status(403).json({ message: "Not allowed" });
         }
@@ -405,7 +422,7 @@ const paymentRequestCtrl = {
 
       const doc = await PaymentRequest.findById(req.params.id).populate(
         "event",
-        "shortCode type startAt endAt location contact"
+        "shortCode type startAt endAt timezone location contact"
       );
       if (!doc) return res.status(404).json({ message: "Not found" });
       if (

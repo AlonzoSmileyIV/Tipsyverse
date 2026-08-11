@@ -44,7 +44,7 @@ eventRouter.post('/:id/contact-attempts', auth, authEmployee, eventCtrl.logConta
 eventRouter.post('/:id/send-to-assign', auth, authEmployee, sensitiveActionDedupe, eventCtrl.sendToAssign);
 eventRouter.post('/:id/payment-policy/resolve', auth, authEmployee, sensitiveActionDedupe, eventCtrl.resolvePaymentPolicy);
 eventRouter.post('/:id/assign-bartenders', auth, authEmployee, sensitiveActionDedupe, eventCtrl.assignSelectedBartenders);
-eventRouter.post('/:id/remove-bartenders', auth, eventCtrl.removeAssignedBartenders);
+eventRouter.post('/:id/remove-bartenders', auth, authEmployee, eventCtrl.removeAssignedBartenders);
 eventRouter.post('/:id/cancel', auth, eventCtrl.cancelRequest);
 
 export default eventRouter;

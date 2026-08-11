@@ -64,6 +64,7 @@ import {
   zonedLocalDateTimeToIso,
 } from "../../utils/timestamps";
 import { COMMON_US_TIMEZONES } from "../../utils/timezones";
+import { getRequiredBartenderCount } from "../../utils/eventSummary";
 import { fetchAssignmentsByEventId } from "../../features/assignments/assignmentSlice";
 import { parseDateOnlyParts } from "../../utils/dateOnly";
 import {
@@ -264,10 +265,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       preferred: event?.contact?.preferred || "call",
     },
     guestCount: event?.guestCount || "",
-    bartendersRequested:
-      event?.counts?.neededBartenders ||
-      event?.pricing?.bartendersRequested ||
-      1,
+    bartendersRequested: getRequiredBartenderCount(event, 1),
     barType: event?.options?.barType || "unknown",
     bartenderNotes: event?.bartenderNotes || "",
     additionalContacts: Array.isArray(event?.additionalContacts)
@@ -1107,10 +1105,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
   // Recommended bartenders (simple heuristic)
   useEffect(() => {
-    const savedBartenderCount =
-      Number(event?.counts?.neededBartenders) ||
-      Number(event?.pricing?.bartendersRequested) ||
-      0;
+    const savedBartenderCount = getRequiredBartenderCount(event);
     if (savedBartenderCount > 0) return;
     const guests = Number(form.guestCount) || 0;
     const rec = recommendBartenders(guests);

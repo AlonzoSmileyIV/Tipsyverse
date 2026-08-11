@@ -1,5 +1,6 @@
 
 import { displayEventType } from "./displayLabel.js";
+import { formatDateTime } from "./dateTime.js";
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
@@ -99,9 +100,11 @@ function buildEventUpdatedEmail({
       `
       : "";
 
-  const when = `${new Date(evt.startAt).toLocaleString()} → ${new Date(
-    evt.endAt
-  ).toLocaleString()}`;
+  const eventTimeZone =
+    evt.timezone || evt.location?.timezone || "America/Indiana/Indianapolis";
+  const when = `${formatDateTime(evt.startAt, {
+    timeZone: eventTimeZone,
+  })} → ${formatDateTime(evt.endAt, { timeZone: eventTimeZone })}`;
 
   const addr =
     evt.location?.formatted ||

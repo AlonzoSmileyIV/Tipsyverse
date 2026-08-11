@@ -4,6 +4,7 @@ import {
   EventModel as Event,
   AssignmentModel as Assignment,
 } from "../../models/index.js";
+import { canToggleBidInterest, canUpdateBid } from "../../utils/libs/bidAccess.js";
 
 const windowsOverlap = (startA, endA, startB, endB) =>
   new Date(startA) < new Date(endB) && new Date(endA) > new Date(startB);
@@ -216,6 +217,9 @@ const bidCtrl = {
    */
   toggleInterestBid: async (req, res) => {
     try {
+      if (req.user?.role !== "bartender") {
+        return res.status(403).json({ message: "Only bartenders can bid on events." });
+      }
       const bartenderUserId = req.user?.id;
       const { eventId } = req.body;
 
@@ -234,6 +238,11 @@ const bidCtrl = {
         return res
           .status(404)
           .json({ message: "Bartender or event not found." });
+      }
+      if (!canToggleBidInterest({ user: req.user, event })) {
+        return res.status(409).json({
+          message: "This event is not currently accepting bartender interest.",
+        });
       }
 
       let bid = await Bid.findOne({
@@ -465,7 +474,7 @@ viewInterestedBidsByEventId: async (req, res) => {
       const { bidId } = req.params;
       const { status } = req.body;
 
-      const bid = await BidModel.findById(bidId).populate([
+      const bid = await Bid.findById(bidId).populate([
         { path: "bartenderUser" },
         { path: "event" },
       ]);
@@ -474,10 +483,20 @@ viewInterestedBidsByEventId: async (req, res) => {
         return res.status(404).json({ message: "Bid not found." });
       }
 
-      // Optional: security check – only the same bartender or an admin can update
-      // if (!req.user.isAdmin && String(req.user._id) !== String(bid.bartenderUser._id)) {
-      //   return res.status(403).json({ message: "Not authorized to update this bid." });
-      // }
+      const access = canUpdateBid({
+        user: req.user,
+        bartenderUserId: bid.bartenderUser?._id || bid.bartenderUser,
+        status,
+        event: bid.event,
+      });
+      if (!access.isStaff && !access.ownsBid) {
+        return res.status(403).json({ message: "Not authorized to update this bid." });
+      }
+      if (!access.allowedStatus) {
+        return res.status(400).json({ message: "Invalid bid status." });
+      }
+
+      const prevStatus = bid.status;
 
       if (status) {
         bid.status = status;

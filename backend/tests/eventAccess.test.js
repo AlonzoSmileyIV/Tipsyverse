@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { eventAccessLevel } from "../utils/libs/eventAccess.js";
+import { canCancelEvent, eventAccessLevel } from "../utils/libs/eventAccess.js";
 
 const event = {
   organizer: "customer-a",
@@ -40,6 +40,42 @@ test("unassigned bartenders only receive masked access to assignable events", ()
     eventAccessLevel({
       event: { ...event, status: "confirmed" },
       user: { id: "bartender", role: "bartender" },
+    }),
+    "none"
+  );
+});
+
+test("only staff or the customer who owns an event can cancel it", () => {
+  assert.equal(
+    canCancelEvent({ event, user: { id: "customer-a", role: "regular" } }),
+    true
+  );
+  assert.equal(
+    canCancelEvent({ event, user: { id: "staff", role: "employee" } }),
+    true
+  );
+  assert.equal(
+    canCancelEvent({ event, user: { id: "customer-b", role: "regular" } }),
+    false
+  );
+  assert.equal(
+    canCancelEvent({ event, user: { id: "bartender", role: "bartender" } }),
+    false
+  );
+});
+
+test("contact-linked customers receive full access for payment requests", () => {
+  assert.equal(
+    eventAccessLevel({
+      event,
+      user: { id: "other-id", email: "customer-a@example.com", role: "regular" },
+    }),
+    "full"
+  );
+  assert.equal(
+    eventAccessLevel({
+      event,
+      user: { id: "customer-b", email: "customer-b@example.com", role: "regular" },
     }),
     "none"
   );

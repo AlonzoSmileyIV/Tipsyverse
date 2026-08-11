@@ -4,6 +4,7 @@ import {
   PaymentModel as Payment,
 } from "../../models/index.js";
 import { deriveEventPaymentPolicy } from "./eventPaymentPolicy.js";
+import { getEventPaymentTotal } from "./eventSummary.js";
 
 export const getRecordedEventPayments = async (eventId) => {
   const [row] = await Payment.aggregate([
@@ -42,7 +43,7 @@ export const syncEventPaymentPolicy = async (eventId, { now = new Date() } = {})
       "America/Indiana/Indianapolis",
   });
   const schedule = result.schedule;
-  const total = Math.round((Number(event.payment?.total) || 0) * 100) / 100;
+  const total = Math.round(getEventPaymentTotal(event) * 100) / 100;
   const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
   const overpayment = Math.max(0, Math.round((paid - total) * 100) / 100);
   const paymentStatus =

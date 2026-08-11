@@ -41,6 +41,11 @@ import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import api from "../../services/api";
 import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 import { formatEventTimestamp, getEventTimeZone } from "../../utils/timestamps";
+import {
+  getEventPaidTotal,
+  getEventPaymentTotal,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
 
 const DetailedEventForm = lazy(() =>
   import("../DetailedEventForm/DetailedEventForm")
@@ -138,25 +143,14 @@ const statusIs = (event, statuses) =>
 // Older event records use several payment field names. These accessors provide
 // one compatibility boundary for cards, filters, exports, and drawer summaries.
 const getPaymentTotal = (event) =>
-  Number(event?.payment?.total) ||
-  Number(event?.payment?.totalAfterDiscount) ||
-  Number(event?.payment?.totalAfterDiscounts) ||
-  Number(event?.pricing?.estimatedTotal) ||
-  0;
-const getPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
+  getEventPaymentTotal(event);
+const getPaidTotal = getEventPaidTotal;
 const getPaymentBalance = (event) =>
   Math.max(getPaymentTotal(event) - getPaidTotal(event), 0);
 const getPaymentCredit = (event) =>
   Math.max(getPaidTotal(event) - getPaymentTotal(event), 0);
 const fmtMoney = (value) => `$${(Number(value) || 0).toFixed(2)}`;
-const getNeededBartenders = (event) =>
-  Number(event?.counts?.neededBartenders) ||
-  Number(event?.pricing?.bartendersRequested) ||
-  0;
+const getNeededBartenders = (event) => getRequiredBartenderCount(event);
 const getAssignedBartenders = (event) => Number(event?.counts?.assigned) || 0;
 const getPendingBartenders = (event) =>
   Math.max(0, getNeededBartenders(event) - getAssignedBartenders(event));

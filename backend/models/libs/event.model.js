@@ -393,6 +393,14 @@ EventSchema.pre("validate", function (next) {
   }
   this.timezone = zone;
   if (this.location) this.location.timezone = zone;
+  const requiredBartenders = Math.max(
+    Number(this.counts?.neededBartenders) || 0,
+    Number(this.pricing?.bartendersRequested) || 0
+  );
+  this.counts = this.counts || {};
+  this.pricing = this.pricing || {};
+  this.counts.neededBartenders = requiredBartenders;
+  this.pricing.bartendersRequested = requiredBartenders;
   if (this.startAt && this.endAt && this.endAt <= this.startAt) {
     return next(new Error("endAt must be after startAt"));
   }
@@ -405,8 +413,10 @@ EventSchema.virtual("durationHours").get(function () {
 });
 
 EventSchema.virtual("openSpots").get(function () {
-  const needed =
-    this.pricing?.bartendersRequested ?? this.counts?.neededBartenders ?? 0;
+  const needed = Math.max(
+    Number(this.counts?.neededBartenders) || 0,
+    Number(this.pricing?.bartendersRequested) || 0
+  );
   const assigned = this.counts?.assigned ?? 0;
   return Math.max(0, needed - assigned);
 });

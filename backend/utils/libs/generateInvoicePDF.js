@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 import fs from "fs";
 import axios from "axios";
 import { displayEventType, displayLabel } from "./displayLabel.js";
+import { formatDate, formatDateTime } from "./dateTime.js";
 
 
 async function loadImageAsBuffer(url) {
@@ -10,6 +11,8 @@ async function loadImageAsBuffer(url) {
 }
 
 export const generateInvoicePDF = async ({ evt, totals, savePath }) => {
+  const eventTimeZone =
+    evt.timezone || evt.location?.timezone || "America/Indiana/Indianapolis";
   const {
     subtotal,
     gratuity,
@@ -56,14 +59,18 @@ export const generateInvoicePDF = async ({ evt, totals, savePath }) => {
         .text(`Event #${evt.shortCode}`)
         .text(`Client: ${evt.contact.fullName}`)
         .text(`Email: ${evt.contact.email}`)
-        .text(`Date: ${new Date().toLocaleDateString()}`);
+        .text(`Date: ${formatDate(new Date(), { timeZone: eventTimeZone })}`);
 
       doc.moveDown().moveTo(50, doc.y).lineTo(550, doc.y).strokeColor(primary).stroke();
 
       doc.moveDown().fontSize(16).fillColor(primary).text("Event Summary");
       doc.fontSize(12).fillColor("#333");
       doc.text(`Event: ${displayEventType(evt.type)}`);
-      doc.text(`Date: ${new Date(evt.startAt).toLocaleString()} – ${new Date(evt.endAt).toLocaleString()}`);
+      doc.text(
+        `Date: ${formatDateTime(evt.startAt, {
+          timeZone: eventTimeZone,
+        })} – ${formatDateTime(evt.endAt, { timeZone: eventTimeZone })}`
+      );
       doc.text(`Bar Type: ${displayEventType(evt.options?.barType)}`);
 
       doc.moveDown().fontSize(16).fillColor(primary).text("Payment Breakdown");

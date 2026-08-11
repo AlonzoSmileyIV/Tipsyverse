@@ -52,6 +52,11 @@ import { buildSnapshotFromEvent } from "../../components/DetailedEventForm/Detai
 import getCustomerPaymentStatus from "../../utils/customerPaymentStatus";
 import getEventPaymentPolicyView from "../../utils/eventPaymentPolicy";
 import {
+  getEventPaidTotal,
+  getEventPaymentTotal,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
+import {
   formatEventTimestamp,
   getEventTimeZone,
 } from "../../utils/timestamps";
@@ -141,20 +146,9 @@ const formatLabel = (value) => {
     .join(" ");
 };
 
-const getEventPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
-
 const getEventTotal = (event) => {
   const snapshotTotal = (buildSnapshotFromEvent(event)?.totals?.totalC || 0) / 100;
-  return Math.max(
-    Number(event?.payment?.total) || 0,
-    Number(event?.payment?.totalAfterDiscount) || 0,
-    Number(event?.pricing?.estimatedTotal) || 0,
-    snapshotTotal || 0
-  );
+  return getEventPaymentTotal(event, snapshotTotal);
 };
 
 const getEventBalance = (event) => {
@@ -220,8 +214,7 @@ function EventCard({ event, onCancel, onView, onVerifyAttendance }) {
     total: paymentTotal,
     paid: paidTotal,
   });
-  const bartenders =
-    event?.pricing?.bartendersRequested ?? event?.counts?.neededBartenders ?? 1;
+  const bartenders = getRequiredBartenderCount(event, 1);
   const start = event?.startAt ? moment(event.startAt) : null;
   const end = event?.endAt ? moment(event.endAt) : null;
   const now = moment();

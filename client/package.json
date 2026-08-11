@@ -18,8 +18,7 @@
     "canvas-confetti": "^1.9.3",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
-    "dompurify": "^3.4.12",
-    "draft-js": "^0.11.7",
+    "dompurify": "^3.4.13",
     "moment": "^2.30.1",
     "react": "^19.1.0",
     "react-countup": "^6.5.3",
@@ -30,7 +29,7 @@
     "react-intersection-observer": "^9.16.0",
     "react-mentions": "^4.4.10",
     "react-redux": "^9.2.0",
-    "react-router-dom": "^7.18.1",
+    "react-router-dom": "^7.18.2",
     "react-toastify": "^11.0.5",
     "recharts": "^2.15.3",
     "socket.io-client": "^4.8.3",
@@ -79,9 +78,6 @@
     "vitest": "^3.2.7"
   },
   "overrides": {
-    "draft-js": {
-      "immutable": "3.8.2"
-    },
     "react-mentions": {
       "@babel/runtime": "^7.26.10"
     }

@@ -33,6 +33,10 @@ import { buildSnapshotFromEvent } from "../DetailedEventForm/DetailedEventForm.p
 import getCustomerPaymentStatus from "../../utils/customerPaymentStatus";
 import getEventPaymentPolicyView, { formatPaymentDueDate } from "../../utils/eventPaymentPolicy";
 import { formatTimestamp, getEventTimeZone } from "../../utils/timestamps";
+import {
+  getEventPaidTotal,
+  getEventPaymentTotal,
+} from "../../utils/eventSummary";
 
 const STATUS_COLORS = {
   submitted: "info",
@@ -137,19 +141,9 @@ const getPaymentStatus = (payment) =>
   String(payment?.status || "recorded").toLowerCase();
 const isActivePayment = (payment) =>
   !["voided", "refunded"].includes(getPaymentStatus(payment));
-const getEventPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
 const getEventPaymentBaseTotal = (event) => {
   const snapshotTotal = (buildSnapshotFromEvent(event)?.totals?.totalC || 0) / 100;
-  return Math.max(
-    Number(event?.payment?.total) || 0,
-    Number(event?.payment?.totalAfterDiscount) || 0,
-    Number(event?.pricing?.estimatedTotal) || 0,
-    snapshotTotal || 0
-  );
+  return getEventPaymentTotal(event, snapshotTotal);
 };
 
 function LabelVal({ label, value }) {

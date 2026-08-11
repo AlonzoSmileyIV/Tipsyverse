@@ -39,6 +39,11 @@ import {
   getBrowserTimeZone,
   getEventTimeZone,
 } from "../../utils/timestamps";
+import {
+  getEventPaidTotal,
+  getEventPaymentTotal,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
 
 const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 const roundMoney = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -172,10 +177,7 @@ const getExpectedAssignmentPay = (assignment, fallbackEvent) => {
     (Number(pricing.setupHours) || 0) +
     (Number(pricing.breakdownHours) || 0);
   const hourlyPay = hours * (Number(pricing.hourlyRate) || 0);
-  const bartenderCount =
-    Number(event?.counts?.neededBartenders) ||
-    Number(pricing.bartendersRequested) ||
-    1;
+  const bartenderCount = getRequiredBartenderCount(event, 1);
   const subtotal =
     Number(event?.payment?.subtotal) ||
     hourlyPay * bartenderCount + (Number(pricing.bookingFee) || 0);
@@ -186,16 +188,15 @@ const getExpectedAssignmentPay = (assignment, fallbackEvent) => {
 };
 
 const getEventTotal = (event, received) => {
-  const billedTotal = Number(event?.payment?.total) || 0;
-  if (billedTotal > 0) return billedTotal;
-
   const snapshotTotal =
     Number(buildSnapshotFromEvent(event)?.totals?.totalC || 0) / 100;
-  return (
-    Math.max(Number(event?.payment?.subtotal) || 0, snapshotTotal) ||
-    Number(event?.payment?.subtotal) ||
-    Number(received) ||
-    0
+  return getEventPaymentTotal(
+    event,
+    Math.max(
+      Number(event?.payment?.subtotal) || 0,
+      snapshotTotal,
+      Number(received) || 0
+    )
   );
 };
 
@@ -212,11 +213,7 @@ const getEventId = (event) => {
 };
 const getPaymentEvent = (payment) =>
   payment?.event && typeof payment.event === "object" ? payment.event : {};
-const getRecordedPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
+const getRecordedPaidTotal = getEventPaidTotal;
 
 const buildFinanceRows = ({
   events,

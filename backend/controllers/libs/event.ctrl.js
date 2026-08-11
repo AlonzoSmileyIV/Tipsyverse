@@ -30,7 +30,11 @@ import { deriveEventPaymentPolicy } from "../../utils/libs/eventPaymentPolicy.js
 import { syncEventPaymentPolicy } from "../../utils/libs/syncEventPaymentPolicy.js";
 
 import mongoose from "mongoose";
-import { eventAccessLevel } from "../../utils/libs/eventAccess.js";
+import { canCancelEvent, eventAccessLevel } from "../../utils/libs/eventAccess.js";
+import {
+  getEventPaymentTotal,
+  getRequiredBartenderCount,
+} from "../../utils/libs/eventSummary.js";
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
@@ -196,8 +200,7 @@ function buildCoreEventFacts({ evt, urgent }) {
   const where = buildWhere(evt, urgent);
 
   const guestCount = evt?.guestCount ?? "—";
-  const bartendersCount =
-    evt?.pricing?.bartendersRequested ?? evt?.counts?.neededBartenders ?? "—";
+  const bartendersCount = getRequiredBartenderCount(evt) || "—";
 
   const description = safeText(evt?.description);
   const barType = safeText(evt?.options?.barType);
@@ -1815,13 +1818,7 @@ const eventCtrl = {
       const paidTotal =
         Math.round((Number(recordedPaymentRows[0]?.paidTotal) || 0) * 100) /
         100;
-      const paymentTotal =
-        Math.round(
-          (Number(evt.payment?.total) ||
-            Number(evt.payment?.totalAfterDiscount) ||
-            Number(evt.pricing?.estimatedTotal) ||
-            0) * 100
-        ) / 100;
+      const paymentTotal = Math.round(getEventPaymentTotal(evt) * 100) / 100;
       const paymentBalance =
         Math.max(0, Math.round((paymentTotal - paidTotal) * 100) / 100);
       const paymentOverpayment =
@@ -2923,6 +2920,10 @@ const eventCtrl = {
       if (!evt)
         return res.status(404).json({ success: false, message: "Not found" });
 
+      if (!canCancelEvent({ event: evt, user: req.user })) {
+        return res.status(404).json({ success: false, message: "Not found" });
+      }
+
       // Optional: don't double-cancel
       if (evt.status === "canceled") {
         return res
@@ -3396,11 +3397,7 @@ const eventCtrl = {
 
     // Legacy/adjusted events can briefly have different pricing and staffing
     // snapshots. Never let the smaller stale value reduce assignment capacity.
-    needed = Math.max(
-      1,
-      Number(evt.pricing?.bartendersRequested) || 0,
-      Number(evt.counts?.neededBartenders) || 0
-    );
+    needed = getRequiredBartenderCount(evt, 1);
 
     const activeAssignments = await Assignment.find({
       event: id,
@@ -3758,11 +3755,7 @@ const eventCtrl = {
       evt.counts = { ...(evt.counts || {}), assigned: assignedCount };
 
       // How many bartenders are needed?
-      const needed = Math.max(
-        1,
-        Number(evt.pricing?.bartendersRequested) || 0,
-        Number(evt.counts?.neededBartenders) || 0
-      );
+      const needed = getRequiredBartenderCount(evt, 1);
 
       const hasOpenSpots = needed > assignedCount;
 

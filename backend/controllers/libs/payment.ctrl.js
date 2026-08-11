@@ -6,6 +6,7 @@ import {
 import { actorFromReq, shallowDiff } from "../../utils/index.js";
 import Stripe from "stripe";
 import { syncEventPaymentPolicy } from "../../utils/libs/syncEventPaymentPolicy.js";
+import { getEventPaymentTotal } from "../../utils/libs/eventSummary.js";
 
 const stripeClient = () => {
   if (
@@ -189,7 +190,7 @@ const paymentCtrl = {
           { $match: { event: eventDoc._id, status: "recorded" } },
           { $group: { _id: "$event", total: { $sum: "$amount" } } },
         ]);
-        const billedTotal = Number(eventDoc.payment?.total) || 0;
+        const billedTotal = getEventPaymentTotal(eventDoc);
         const paidTotal = Number(paidRows[0]?.total) || 0;
         const remainingBalance = Math.max(
           0,
@@ -390,7 +391,7 @@ const paymentCtrl = {
             { $group: { _id: "$event", total: { $sum: "$amount" } } },
           ]),
         ]);
-        const billedTotal = Number(eventDoc?.payment?.total) || 0;
+        const billedTotal = getEventPaymentTotal(eventDoc);
         const otherPaidTotal = Number(paidRows[0]?.total) || 0;
         const maximumPayment = Math.max(
           0,

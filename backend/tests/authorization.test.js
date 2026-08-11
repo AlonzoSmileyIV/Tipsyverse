@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import userRouter from "../routers/libs/user.routers.js";
 import drinkRouter from "../routers/libs/drinks.routers.js";
+import eventRouter from "../routers/libs/event.routers.js";
+import bidRouter from "../routers/libs/bid.routers.js";
 import { authEmployee } from "../middleware/libs/authEmployee.middleware.js";
 import { UserModel } from "../models/index.js";
 
@@ -85,6 +87,28 @@ test("drink creation and media uploads require employee authorization", () => {
   for (const path of ["/create", "/upload-image", "/upload-video"]) {
     assert.deepEqual(
       middlewareNames("post", path, drinkRouter).slice(0, 2),
+      ["auth", "authEmployee"]
+    );
+  }
+});
+
+test("event staffing mutations require employee authorization", () => {
+  for (const path of ["/:id/assign-bartenders", "/:id/remove-bartenders"]) {
+    assert.deepEqual(
+      middlewareNames("post", path, eventRouter).slice(0, 2),
+      ["auth", "authEmployee"]
+    );
+  }
+});
+
+test("bid management lists require employee authorization", () => {
+  for (const path of [
+    "/event/:eventId",
+    "/event/:eventId/interested",
+    "/user/:userId",
+  ]) {
+    assert.deepEqual(
+      middlewareNames("get", path, bidRouter).slice(0, 2),
       ["auth", "authEmployee"]
     );
   }

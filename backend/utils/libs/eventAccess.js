@@ -32,3 +32,6 @@ export const eventAccessLevel = ({ event, user, isAssigned = false }) => {
   if (ASSIGNABLE_STATUSES.has(event?.status)) return "masked";
   return "none";
 };
+
+export const canCancelEvent = ({ event, user }) =>
+  eventAccessLevel({ event, user, isAssigned: false }) === "full";
