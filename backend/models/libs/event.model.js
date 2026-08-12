@@ -281,8 +281,21 @@ const EventSchema = new mongoose.Schema(
       { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     ],
     counts: {
-      neededBartenders: { type: Number, min: 0, default: 0 }, // mirror of pricing.bartendersRequested
+      recommendedBartenders: { type: Number, min: 1, default: null },
+      approvedBartenders: { type: Number, min: 1, default: null },
+      neededBartenders: { type: Number, min: 0, default: 0 }, // legacy mirror of approvedBartenders
       assigned: { type: Number, min: 0, default: 0 },
+    },
+    staffingException: {
+      active: { type: Boolean, default: false },
+      reason: { type: String, trim: true, maxlength: 1000, default: "" },
+      approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      approvedAt: { type: Date, default: null },
+      customerAcknowledgedAt: { type: Date, default: null },
     },
 
     needs: { type: [NeedSchema], default: [] },
@@ -393,14 +406,34 @@ EventSchema.pre("validate", function (next) {
   }
   this.timezone = zone;
   if (this.location) this.location.timezone = zone;
-  const requiredBartenders = Math.max(
+  const legacyRequired = Math.max(
     Number(this.counts?.neededBartenders) || 0,
-    Number(this.pricing?.bartendersRequested) || 0
+    Number(this.pricing?.bartendersRequested) || 0,
+    1
   );
+  const approvedBartenders =
+    Number(this.counts?.approvedBartenders) > 0
+      ? Number(this.counts.approvedBartenders)
+      : legacyRequired;
+  const recommendedBartenders =
+    Number(this.counts?.recommendedBartenders) > 0
+      ? Number(this.counts.recommendedBartenders)
+      : approvedBartenders;
   this.counts = this.counts || {};
   this.pricing = this.pricing || {};
-  this.counts.neededBartenders = requiredBartenders;
-  this.pricing.bartendersRequested = requiredBartenders;
+  this.counts.recommendedBartenders = recommendedBartenders;
+  this.counts.approvedBartenders = approvedBartenders;
+  this.counts.neededBartenders = approvedBartenders;
+  this.pricing.bartendersRequested = approvedBartenders;
+  const hasStaffingException = approvedBartenders < recommendedBartenders;
+  if (hasStaffingException && !String(this.staffingException?.reason || "").trim()) {
+    return next(
+      new Error(
+        "staffingException.reason is required when approved staffing is below the recommendation"
+      )
+    );
+  }
+  if (this.staffingException) this.staffingException.active = hasStaffingException;
   if (this.startAt && this.endAt && this.endAt <= this.startAt) {
     return next(new Error("endAt must be after startAt"));
   }
@@ -413,10 +446,11 @@ EventSchema.virtual("durationHours").get(function () {
 });
 
 EventSchema.virtual("openSpots").get(function () {
-  const needed = Math.max(
-    Number(this.counts?.neededBartenders) || 0,
-    Number(this.pricing?.bartendersRequested) || 0
-  );
+  const needed =
+    Number(this.counts?.approvedBartenders) ||
+    Number(this.counts?.neededBartenders) ||
+    Number(this.pricing?.bartendersRequested) ||
+    1;
   const assigned = this.counts?.assigned ?? 0;
   return Math.max(0, needed - assigned);
 });

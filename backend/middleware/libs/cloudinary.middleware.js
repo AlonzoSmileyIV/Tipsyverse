@@ -98,6 +98,22 @@ const uploadImage = multer({
     fileFilter: imageFileFilter,
 });
 
+// Compliance records remain private in MongoDB and are never uploaded to the
+// public media provider. The controller performs a second magic-byte check.
+const complianceDocumentMimeTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+const uploadComplianceDocument = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        if (!complianceDocumentMimeTypes.has(file.mimetype)) {
+            const error = new Error("Choose a PDF, JPG, or PNG verification document.");
+            error.status = 400;
+            return cb(error, false);
+        }
+        cb(null, true);
+    },
+});
+
 // ========== VIDEO MULTER MIDDLEWARE ==========
 const videoStorage = multer.diskStorage({
     destination: 'uploads/',
@@ -179,6 +195,7 @@ const handleVideoUpload = async (filePath) => {
 export {
     cloudinary,
     uploadImage,
+    uploadComplianceDocument,
     handleImageUpload,
     uploadVideo,
     handleVideoUpload,

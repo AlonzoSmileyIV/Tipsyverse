@@ -228,6 +228,7 @@ async function runLicenseExpiryPass() {
           { arrayFilters: [{ "l._id": lic._id }] }
         );
       }
+
     }
   }
 

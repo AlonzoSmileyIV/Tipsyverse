@@ -45,6 +45,21 @@ Migration utilities live in `scripts/libs/`. Run a migration directly with the
 appropriate `NODE_ENV` only after reviewing its scope and taking a database
 backup. Migrations are intentionally not invoked during application startup.
 
+The bartender-compliance migration is dry-run by default. It moves legacy
+embedded verification files to private GridFS storage and grants a clearly
+marked system grandfathering record only to already-active, verified records:
+
+```sh
+NODE_ENV=staging npm run migrate:compliance
+NODE_ENV=staging APPLY_COMPLIANCE_MIGRATION=true CONFIRM_COMPLIANCE_MIGRATION=staging npm run migrate:compliance
+```
+
+Repeat the dry run after applying; both `documentsMoved` and `grandfathered`
+must be zero. Production uses the same sequence with `production` after a
+verified backup. Configure per-state rules with
+`STATE_COMPLIANCE_POLICY_JSON`; unspecified states default to permit-optional,
+training-attestation-required, and administrative-review-required.
+
 ## Backups and restore drills
 
 Install MongoDB Database Tools on the operations host. Set

@@ -5,6 +5,7 @@ import {
   AssignmentModel as Assignment,
 } from "../../models/index.js";
 import { canToggleBidInterest, canUpdateBid } from "../../utils/libs/bidAccess.js";
+import { getPermitCompliance } from "../../utils/libs/bartenderCompliance.js";
 
 const windowsOverlap = (startA, endA, startB, endB) =>
   new Date(startA) < new Date(endB) && new Date(endA) > new Date(startB);
@@ -245,10 +246,20 @@ const bidCtrl = {
         });
       }
 
-      let bid = await Bid.findOne({
-        event: eventId,
-        bartenderUser: bartenderUserId,
-      });
+      const existingBid = await Bid.findOne({ event: eventId, bartenderUser: bartenderUserId });
+      const isTurningInterestOn = !existingBid || existingBid.status !== "interested";
+      if (isTurningInterestOn) {
+        const compliance = getPermitCompliance(bartender, event?.location?.state);
+        if (!compliance.eligible) {
+          return res.status(409).json({
+            message: "A current, verified permit matching the event state and confirmation of required server training are required before bidding.",
+            code: "STATE_PERMIT_COMPLIANCE_REQUIRED",
+            reasons: compliance.reasons,
+          });
+        }
+      }
+
+      let bid = existingBid;
 
       const now = new Date();
 

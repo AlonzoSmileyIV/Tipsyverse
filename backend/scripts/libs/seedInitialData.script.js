@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 
 import { cloudinary } from "../../middleware/libs/cloudinary.middleware.js";
 import seedBiancaRequiredCourseProgress from "./seedQaBartenderProgress.js";
+import { storeComplianceDocument } from "../../utils/libs/complianceDocumentStore.js";
 
 import {
   PositionModel as Position,
@@ -914,9 +915,36 @@ async function seedCoupons() {
   console.log("✅ Seeded promo code FAMILY10");
 }
 
-function createBartenderProfile(seed) {
+function createSeedVerificationPdf(label) {
+  const safeLabel = String(label).replace(/[()\\]/g, "");
+  const stream = `BT /F1 12 Tf 72 720 Td (${safeLabel}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "utf8");
+}
+
+function createBartenderProfile(seed, existingProfile = null) {
   const now = new Date();
   const licenseStatus = seed.licenseStatus || "active";
+  const isExpired = licenseStatus === "expired";
+  const existingLicense = existingProfile?.licenses?.find((license) => license.state === "IN");
 
   return {
     status: "approved",
@@ -933,6 +961,31 @@ function createBartenderProfile(seed) {
         verified: licenseStatus === "active",
         status: licenseStatus,
         lastStatusChangeAt: now,
+        decisionNote: "",
+        serverTraining: {
+          proofDocument: {
+            fileId: existingLicense?.serverTraining?.proofDocument?.fileId || null,
+            mimeType: existingLicense?.serverTraining?.proofDocument?.mimeType || "",
+            size: existingLicense?.serverTraining?.proofDocument?.size || 0,
+            uploadedAt: existingLicense?.serverTraining?.proofDocument?.uploadedAt || null,
+          },
+          attestedAuthenticAndCurrent: !isExpired,
+          attestedAt: !isExpired ? now : null,
+          attestedRequiredTraining: !isExpired,
+          trainingAttestedAt: !isExpired ? now : null,
+          status: isExpired ? "expired" : "verified",
+          verifiedAt: isExpired ? null : now,
+          decisionNote: isExpired ? "Seeded expired permit record for negative QA." : "",
+        },
+        verificationHistory: [
+          {
+            action: isExpired ? "expired" : "verified",
+            at: now,
+            note: isExpired
+              ? "Seeded expired compliance record for negative QA."
+              : "Seeded verified Indiana permit and server-training record.",
+          },
+        ],
       },
     ],
 
@@ -964,6 +1017,28 @@ function createBartenderProfile(seed) {
       totalExperienceYears: 1,
     },
   };
+}
+
+async function ensureSeedComplianceDocument(user, seed) {
+  const license = user.bartenderProfile?.licenses?.find((item) => item.state === "IN");
+  if (!license || license.serverTraining?.proofDocument?.fileId) return;
+  const verificationDocument = createSeedVerificationPdf(
+    `DEVELOPMENT QA ONLY - Indiana employee permit verification for ${seed.username}`
+  );
+  const fileId = await storeComplianceDocument({
+    buffer: verificationDocument,
+    mimeType: "application/pdf",
+    ownerId: user._id,
+    licenseId: license._id,
+  });
+  license.serverTraining.proofDocument = {
+    fileId,
+    mimeType: "application/pdf",
+    size: verificationDocument.length,
+    uploadedAt: new Date(),
+  };
+  user.markModified("bartenderProfile.licenses");
+  await user.save();
 }
 
 async function seedUsersIntoDatabase(positionMap, usersToSeed) {
@@ -1064,7 +1139,7 @@ async function seedUsersIntoDatabase(positionMap, usersToSeed) {
       employeeDetails,
 
       bartenderProfile: shouldCreateBartenderProfile
-        ? createBartenderProfile(seed)
+        ? createBartenderProfile(seed, existing?.bartenderProfile)
         : null,
     };
 
@@ -1091,6 +1166,7 @@ async function seedUsersIntoDatabase(positionMap, usersToSeed) {
         seed.deactivationReason || null;
 
       await existing.save();
+      if (shouldCreateBartenderProfile) await ensureSeedComplianceDocument(existing, seed);
 
       console.log(`✅ Updated seed user: ${seed.email}`);
       continue;
@@ -1112,6 +1188,7 @@ async function seedUsersIntoDatabase(positionMap, usersToSeed) {
 
       createdAt: new Date(),
     });
+    if (shouldCreateBartenderProfile) await ensureSeedComplianceDocument(userDoc, seed);
 
     await logCreate({
       model: "User",

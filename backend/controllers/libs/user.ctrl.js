@@ -32,6 +32,19 @@ import {
   getRefreshCookieOptions,
   reactivateExpiredSuspension,
 } from "../../utils/libs/accountAccess.js";
+import { getPermitCompliance } from "../../utils/libs/bartenderCompliance.js";
+import { getStateCompliancePolicy } from "../../utils/libs/stateCompliancePolicy.js";
+import {
+  deleteComplianceDocument,
+  readComplianceDocument,
+  storeComplianceDocument,
+} from "../../utils/libs/complianceDocumentStore.js";
+
+const hasValidComplianceDocumentSignature = (file) => Boolean(file?.buffer) && (
+  file.mimetype === "application/pdf" ? file.buffer.subarray(0, 5).toString() === "%PDF-" :
+  file.mimetype === "image/jpeg" ? file.buffer[0] === 0xff && file.buffer[1] === 0xd8 :
+  file.mimetype === "image/png" ? file.buffer.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])) : false
+);
 
 import {
   toLocalDateOnly,
@@ -2402,26 +2415,35 @@ const userCtrl = {
   /* ────────────────────────────────────────────────────────────── */
 
   createMyLicense: async (req, res) => {
+    let stagedDocumentId = null;
     try {
-      const { state, permitNumber, expiresAt } = req.body || {};
+      const { state, permitNumber, expiresAt, trainingProvider,
+        trainingCompletedAt, certificateNumber, attestedAuthenticAndCurrent,
+        attestedRequiredTraining } = req.body || {};
 
-      if (!state || !permitNumber || !expiresAt) {
+      if (!state) {
         return res.status(400).json({
           success: false,
-          message: "State, license number, and expiration date are required.",
+          message: "State is required.",
         });
       }
 
-      const expDate = new Date(expiresAt);
+      const policy = getStateCompliancePolicy(state);
+      if (policy.permitRequired && (!permitNumber || !expiresAt)) {
+        return res.status(400).json({ success: false,
+          message: "Permit number and expiration date are required for this state." });
+      }
+
+      const expDate = expiresAt ? new Date(expiresAt) : null;
       const today = startOfToday();
 
-      if (!(expDate instanceof Date) || isNaN(expDate.getTime())) {
+      if (expiresAt && (!(expDate instanceof Date) || isNaN(expDate.getTime()))) {
         return res
           .status(400)
           .json({ success: false, message: "Invalid expiration date." });
       }
 
-      if (expDate < today) {
+      if (expDate && expDate < today) {
         return res.status(400).json({
           success: false,
           message: "Expiration date cannot be in the past.",
@@ -2462,14 +2484,25 @@ const userCtrl = {
       }
 
       const normalizedState = String(state).toUpperCase().trim();
-      const normalizedPermit = String(permitNumber).trim().toLowerCase();
+      const trainingDate = trainingCompletedAt ? new Date(trainingCompletedAt) : null;
+      if (trainingDate && (Number.isNaN(trainingDate.getTime()) || trainingDate > new Date())) {
+        return res.status(400).json({ success: false, message: "Training completion date must be valid and not in the future." });
+      }
+      const hasValidDocument = hasValidComplianceDocumentSignature(req.file);
+      if (req.file && !hasValidDocument) return res.status(400).json({ success: false, message: "Verification document contents do not match its file type." });
+      if (String(attestedAuthenticAndCurrent) !== "true" ||
+          (policy.trainingAttestationRequired && String(attestedRequiredTraining) !== "true")) {
+        return res.status(400).json({ success: false,
+          message: "Confirm that the permit information is authentic and current and that required server training was completed." });
+      }
+      const normalizedPermit = String(permitNumber || "").trim().toLowerCase();
 
       // 🔹 Prevent duplicate (state + permitNumber)
       const hasDuplicate = (user.bartenderProfile.licenses || []).some(
         (lic) => {
           const s = (lic.state || "").toUpperCase().trim();
           const p = (lic.permitNumber || "").trim().toLowerCase();
-          return s === normalizedState && p === normalizedPermit;
+          return normalizedPermit && s === normalizedState && p === normalizedPermit;
         }
       );
 
@@ -2482,13 +2515,35 @@ const userCtrl = {
       }
 
       // 🔹 Push new license
+      const licenseId = new mongoose.Types.ObjectId();
+      if (hasValidDocument) {
+        stagedDocumentId = await storeComplianceDocument({
+          buffer: req.file.buffer,
+          mimeType: req.file.mimetype,
+          ownerId: user._id,
+          licenseId,
+        });
+      }
       user.bartenderProfile.licenses.push({
+        _id: licenseId,
         state: normalizedState,
-        permitNumber,
+        permitNumber: permitNumber || "",
         expiresAt: expDate,
         verified: false,
         status: "pending",
         decisionNote: "",
+        serverTraining: {
+          provider: trainingProvider || "",
+          completedAt: trainingCompletedAt ? new Date(trainingCompletedAt) : null,
+          certificateNumber: certificateNumber || "",
+          proofDocument: hasValidDocument ? { fileId: stagedDocumentId, mimeType: req.file.mimetype, size: req.file.size, uploadedAt: new Date() } : undefined,
+          attestedAuthenticAndCurrent: String(attestedAuthenticAndCurrent) === "true",
+          attestedAt: String(attestedAuthenticAndCurrent) === "true" ? new Date() : null,
+          attestedRequiredTraining: String(attestedRequiredTraining) === "true",
+          trainingAttestedAt: String(attestedRequiredTraining) === "true" ? new Date() : null,
+          status: "pending",
+        },
+        verificationHistory: [{ action: "submitted", at: new Date(), by: req.user.id }],
       });
 
       // Make sure Mongoose knows bartenderProfile changed
@@ -2525,11 +2580,18 @@ const userCtrl = {
         data: formatLicenseForResponse(user, latest),
       });
     } catch (err) {
+      if (stagedDocumentId) await deleteComplianceDocument(stagedDocumentId).catch(() => {});
       console.error("createMyLicense error", err);
       return res
         .status(500)
         .json({ success: false, message: "Failed to create license." });
     }
+  },
+
+  getStateCompliancePolicy: async (req, res) => {
+    const state = String(req.query.state || "").trim().toUpperCase();
+    if (!state) return res.status(400).json({ success: false, message: "State is required." });
+    return res.json({ success: true, data: getStateCompliancePolicy(state) });
   },
 
   /* ────────────────────────────────────────────────────────────── */
@@ -2566,38 +2628,36 @@ const userCtrl = {
 
       const lic = user.bartenderProfile.licenses[0];
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const status =
-        lic.status ||
-        (lic.verified
-          ? new Date(lic.expiresAt) < today
-            ? "expired"
-            : "active"
-          : "pending");
-
       return res.json({
         success: true,
-        data: {
-          id: lic._id,
-          _id: lic._id,
-          state: lic.state,
-          permitNumber: lic.permitNumber,
-          expiresAt: lic.expiresAt,
-          verified: lic.verified,
-          status,
-          userId: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          userRole: user.role,
-        },
+        data: { ...formatLicenseForResponse(user, lic), _id: lic._id, userRole: user.role },
       });
     } catch (err) {
       console.error("getLicenseById error", err);
       return res
         .status(500)
         .json({ success: false, message: "Failed to load license." });
+    }
+  },
+
+  getLicenseVerificationDocument: async (req, res) => {
+    try {
+      const { licenseId } = req.params;
+      const isStaff = req.user.role === "employee";
+      const query = isStaff
+        ? { "bartenderProfile.licenses._id": licenseId }
+        : { _id: req.user.id, "bartenderProfile.licenses._id": licenseId };
+      const user = await User.findOne(query);
+      const license = user?.bartenderProfile?.licenses?.id(licenseId);
+      const proof = license?.serverTraining?.proofDocument;
+      const document = proof?.fileId ? await readComplianceDocument(proof.fileId) : null;
+      if (!document) return res.status(404).json({ success: false, message: "Verification document not found." });
+      res.setHeader("Content-Type", document.mimeType || proof.mimeType || "application/octet-stream");
+      res.setHeader("Content-Disposition", "inline; filename=verification-document");
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(document.buffer);
+    } catch (err) {
+      return res.status(500).json({ success: false, message: "Failed to load verification document." });
     }
   },
 
@@ -2708,7 +2768,44 @@ const userCtrl = {
                   expiresAt: "$bartenderProfile.licenses.expiresAt",
                   verified: "$bartenderProfile.licenses.verified",
                   status: "$bartenderProfile.licenses.status",
+                  complianceStatus: {
+                    $switch: {
+                      branches: [
+                        { case: { $or: [
+                          { $eq: ["$bartenderProfile.licenses.status", "denied"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.status", "rejected"] },
+                        ] }, then: "rejected" },
+                        { case: { $or: [
+                          { $eq: ["$bartenderProfile.licenses.status", "expired"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.status", "expired"] },
+                          { $lte: ["$bartenderProfile.licenses.expiresAt", "$$NOW"] },
+                        ] }, then: "expired" },
+                        { case: { $and: [
+                          { $eq: ["$bartenderProfile.licenses.status", "active"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.status", "verified"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.attestedAuthenticAndCurrent", true] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.attestedRequiredTraining", true] },
+                        ] }, then: "verified" },
+                      ],
+                      default: "pending",
+                    },
+                  },
                   decisionNote: "$bartenderProfile.licenses.decisionNote",
+                  serverTraining: {
+                    provider: "$bartenderProfile.licenses.serverTraining.provider",
+                    completedAt: "$bartenderProfile.licenses.serverTraining.completedAt",
+                    certificateNumber: "$bartenderProfile.licenses.serverTraining.certificateNumber",
+                    status: "$bartenderProfile.licenses.serverTraining.status",
+                    verifiedAt: "$bartenderProfile.licenses.serverTraining.verifiedAt",
+                    hasVerificationDocument: { $and: [
+                      { $ne: ["$bartenderProfile.licenses.serverTraining.proofDocument.fileId", null] },
+                      { $ne: ["$bartenderProfile.licenses.serverTraining.proofDocument.uploadedAt", null] },
+                      { $gt: [{ $ifNull: ["$bartenderProfile.licenses.serverTraining.proofDocument.size", 0] }, 0] },
+                    ] },
+                    documentUploadedAt: "$bartenderProfile.licenses.serverTraining.proofDocument.uploadedAt",
+                    attestedRequiredTraining: "$bartenderProfile.licenses.serverTraining.attestedRequiredTraining",
+                  },
+                  verificationHistory: "$bartenderProfile.licenses.verificationHistory",
                 },
               },
             ],
@@ -2748,9 +2845,12 @@ const userCtrl = {
   /* ────────────────────────────────────────────────────────────── */
 
   updateMyLicense: async (req, res) => {
+    let stagedDocumentId = null;
     try {
       const { licenseId } = req.params;
-      const { state, permitNumber, expiresAt } = req.body || {};
+      const { state, permitNumber, expiresAt, trainingProvider,
+        trainingCompletedAt, certificateNumber, attestedAuthenticAndCurrent,
+        attestedRequiredTraining } = req.body || {};
 
       const user = await User.findById(req.user.id);
       if (!user || !user.bartenderProfile) {
@@ -2770,6 +2870,9 @@ const userCtrl = {
         return res
           .status(404)
           .json({ success: false, message: "License not found." });
+      }
+      if (req.file && !hasValidComplianceDocumentSignature(req.file)) {
+        return res.status(400).json({ success: false, message: "Verification document contents do not match its file type." });
       }
 
       if (state !== undefined) license.state = state;
@@ -2791,8 +2894,42 @@ const userCtrl = {
       license.verified = false;
       license.status = "pending";
       license.decisionNote = "";
+      if (trainingProvider !== undefined) license.serverTraining.provider = trainingProvider;
+      if (trainingCompletedAt !== undefined) license.serverTraining.completedAt = new Date(trainingCompletedAt);
+      if (certificateNumber !== undefined) license.serverTraining.certificateNumber = certificateNumber;
+      if (String(attestedAuthenticAndCurrent) === "true") {
+        license.serverTraining.attestedAuthenticAndCurrent = true;
+        license.serverTraining.attestedAt = new Date();
+      }
+      if (String(attestedRequiredTraining) === "true") {
+        license.serverTraining.attestedRequiredTraining = true;
+        license.serverTraining.trainingAttestedAt = new Date();
+      }
+      if (req.file?.buffer) {
+        stagedDocumentId = await storeComplianceDocument({ buffer: req.file.buffer,
+          mimeType: req.file.mimetype, ownerId: user._id, licenseId: license._id });
+        license.$locals.previousComplianceDocumentId = license.serverTraining.proofDocument?.fileId || null;
+        license.serverTraining.proofDocument = { fileId: stagedDocumentId, mimeType: req.file.mimetype, size: req.file.size, uploadedAt: new Date() };
+      }
+      const training = license.serverTraining;
+      const policy = getStateCompliancePolicy(license.state);
+      if (!training?.attestedAuthenticAndCurrent ||
+          (policy.trainingAttestationRequired && !training?.attestedRequiredTraining)) {
+        return res.status(400).json({ success: false,
+          message: "Confirm that the permit information is authentic and current and that required server training was completed." });
+      }
+      license.serverTraining.status = "pending";
+      license.serverTraining.verifiedAt = null;
+      license.serverTraining.verifiedBy = null;
+      license.verificationHistory.push({ action: "updated", at: new Date(), by: req.user.id });
+      if (license.verificationHistory.length > 20) license.verificationHistory.splice(0, license.verificationHistory.length - 20);
 
       await user.save();
+      if (license.$locals.previousComplianceDocumentId) {
+        await deleteComplianceDocument(license.$locals.previousComplianceDocumentId).catch((error) =>
+          console.error("Failed to remove replaced compliance document:", error.message)
+        );
+      }
 
       await req
         .logActivity({
@@ -2816,6 +2953,7 @@ const userCtrl = {
         data: formatLicenseForResponse(user, license),
       });
     } catch (err) {
+      if (stagedDocumentId) await deleteComplianceDocument(stagedDocumentId).catch(() => {});
       console.error("updateMyLicense error", err);
       return res
         .status(500)
@@ -2858,11 +2996,17 @@ const userCtrl = {
       // Capture fields for logging BEFORE removing
       const state = license.state;
       const permitNumber = license.permitNumber;
+      const complianceDocumentId = license.serverTraining?.proofDocument?.fileId;
 
       // Remove from the array
       licenses.splice(idx, 1);
 
       await user.save();
+      if (complianceDocumentId) {
+        await deleteComplianceDocument(complianceDocumentId).catch((error) =>
+          console.error("Failed to remove deleted license document:", error.message)
+        );
+      }
 
       // Activity log (best-effort, don't fail request if log fails)
       await req
@@ -2934,22 +3078,44 @@ const userCtrl = {
       const today = startOfToday();
 
       if (action === "approve") {
+        {
+          const candidate = license.toObject();
+          candidate.verified = true;
+          candidate.status = "active";
+          candidate.serverTraining.status = "verified";
+          const compliance = getPermitCompliance(
+            { bartenderProfile: { licenses: [candidate] } },
+            candidate.state
+          );
+          if (!compliance.eligible) {
+            return res.status(400).json({ success: false,
+              message: "This permit cannot be verified until its required information and attestations are current.", reasons: compliance.reasons });
+          }
+        }
         license.verified = true;
         license.status =
           license.expiresAt && new Date(license.expiresAt) < today
             ? "expired"
             : "active";
         license.decisionNote = null;
+        license.serverTraining.status = "verified";
+        license.serverTraining.verifiedAt = new Date();
+        license.serverTraining.verifiedBy = req.user.id;
+        license.serverTraining.decisionNote = "";
       } else if (action === "deny") {
         license.verified = false;
         license.status = "denied";
         if (note !== undefined) {
           license.decisionNote = note;
         }
+        license.serverTraining.status = "rejected";
+        license.serverTraining.decisionNote = note || "Rejected by administrator";
       }
 
       license.lastStatusChangeAt = new Date();
       license.lastStatusChangedBy = req.user.id;
+      license.verificationHistory.push({ action: action === "approve" ? "verified" : "rejected", at: new Date(), by: req.user.id, note: note || "" });
+      if (license.verificationHistory.length > 20) license.verificationHistory.splice(0, license.verificationHistory.length - 20);
 
       license.reminders = {
         d90SentOn: null,

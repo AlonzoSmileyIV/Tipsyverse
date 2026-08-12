@@ -5,6 +5,8 @@ import {
   canUpdateBid,
 } from "../utils/libs/bidAccess.js";
 import {
+  getApprovedBartenderCount,
+  getRecommendedBartenderCount,
   getEventPaymentTotal,
   getRequiredBartenderCount,
 } from "../utils/libs/eventSummary.js";
@@ -33,6 +35,20 @@ test("staffing uses the larger synchronized requirement for legacy mismatches", 
     }),
     3
   );
+});
+
+test("approved staffing can be lower than the recommendation", () => {
+  const event = {
+    counts: {
+      recommendedBartenders: 2,
+      approvedBartenders: 1,
+      neededBartenders: 1,
+    },
+    pricing: { bartendersRequested: 1 },
+  };
+  assert.equal(getRecommendedBartenderCount(event), 2);
+  assert.equal(getApprovedBartenderCount(event), 1);
+  assert.equal(getRequiredBartenderCount(event), 1);
 });
 
 test("only bartenders can toggle interest on assignable events", () => {

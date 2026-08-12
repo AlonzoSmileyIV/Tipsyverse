@@ -10,6 +10,7 @@ import {
   optionalAuth,
   schemas,
   uploadExcel,
+  uploadComplianceDocument,
   validateBody,
 } from "../../middleware/index.js";
 
@@ -52,15 +53,16 @@ userRouter.get(
 );
 
 // -------- BARTENDER LICENSES --------
+userRouter.get("/compliance-policy", auth, userCtrl.getStateCompliancePolicy);
 
 // Bartender: create new license
-userRouter.post("/me/licenses", auth, userCtrl.createMyLicense);
+userRouter.post("/me/licenses", auth, uploadComplianceDocument.single("verificationDocument"), userCtrl.createMyLicense);
 
 // Bartender: view ONE of their own licenses
 userRouter.get("/me/licenses/:licenseId", auth, userCtrl.getLicenseById);
 
 // Bartender: update own license
-userRouter.patch("/me/licenses/:licenseId", auth, userCtrl.updateMyLicense);
+userRouter.patch("/me/licenses/:licenseId", auth, uploadComplianceDocument.single("verificationDocument"), userCtrl.updateMyLicense);
 
 // Bartender: get current location
 userRouter.patch("/me/bartender/location", auth, userCtrl.updateCurrentLocation);
@@ -76,6 +78,7 @@ userRouter.get(
   auth, authEmployee,
   userCtrl.getLicenseById
 );
+userRouter.get("/licenses/:licenseId/verification-document", auth, userCtrl.getLicenseVerificationDocument);
 
 // Employee/Admin: view ANY bartenders info
 userRouter.get(

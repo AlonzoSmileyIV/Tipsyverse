@@ -29,9 +29,9 @@ function statusChip(status) {
   if (s === "pending" || s === "under_review") {
     color = "warning";
     label = "Pending";
-  } else if (s === "active" || s === "approved") {
+  } else if (s === "active" || s === "approved" || s === "verified") {
     color = "success";
-    label = "Active";
+    label = "Verified";
   } else if (s === "denied" || s === "rejected") {
     color = "error";
     label = "Denied";
@@ -100,7 +100,7 @@ export default function AdminBartenderLicenses({ hideHeader = false, reviewOnly 
     return (allBartenderLicenses || [])
       .filter((row) =>
         reviewOnly
-          ? ["pending", "under_review"].includes(String(row?.status || "").toLowerCase())
+          ? ["pending", "under_review"].includes(String(row?.complianceStatus || row?.status || "").toLowerCase())
           : true
       )
       .filter((row) => {
@@ -114,7 +114,7 @@ export default function AdminBartenderLicenses({ hideHeader = false, reviewOnly 
           row.state,
           row.permitNumber,
           row.licenseNumber,
-          row.status,
+          row.complianceStatus || row.status,
           row.type,
         ]
           .filter(Boolean)
@@ -185,7 +185,7 @@ export default function AdminBartenderLicenses({ hideHeader = false, reviewOnly 
       headerName: "Status",
       flex: 0.9,
       minWidth: 120,
-      renderCell: (params) => statusChip(params.row?.status),
+      renderCell: (params) => statusChip(params.row?.complianceStatus || params.row?.status),
     },
     {
       field: "expiresAt",

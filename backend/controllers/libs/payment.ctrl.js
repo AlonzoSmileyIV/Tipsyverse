@@ -377,6 +377,16 @@ const paymentCtrl = {
         }
       }
 
+      if (Object.prototype.hasOwnProperty.call(req.body, "amount")) {
+        const paymentAmount = Number(req.body.amount);
+        if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+          return res.status(400).json({
+            message: "Payment amount must be greater than $0.00.",
+          });
+        }
+        doc.amount = paymentAmount;
+      }
+
       if (doc.status === "recorded") {
         const [eventDoc, paidRows] = await Promise.all([
           Event.findById(doc.event).select("payment.total").lean(),

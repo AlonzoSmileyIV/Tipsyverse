@@ -34,8 +34,10 @@ import getCustomerPaymentStatus from "../../utils/customerPaymentStatus";
 import getEventPaymentPolicyView, { formatPaymentDueDate } from "../../utils/eventPaymentPolicy";
 import { formatTimestamp, getEventTimeZone } from "../../utils/timestamps";
 import {
+  getApprovedBartenderCount,
   getEventPaidTotal,
   getEventPaymentTotal,
+  getRecommendedBartenderCount,
 } from "../../utils/eventSummary";
 
 const STATUS_COLORS = {
@@ -682,12 +684,14 @@ export default function ClientEventDetailsDrawer({
                     </Grid>
                     <Grid item xs={12} md={4}>
                       <LabelVal
-                        label="Bartenders Needed"
-                        value={
-                          evt.pricing?.bartendersRequested ??
-                          evt.counts?.neededBartenders ??
-                          1
-                        }
+                        label="Recommended Bartenders"
+                        value={getRecommendedBartenderCount(evt, 1)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <LabelVal
+                        label="Approved Bartenders"
+                        value={getApprovedBartenderCount(evt, 1)}
                       />
                     </Grid>
                     <Grid item xs={12} md={4}>

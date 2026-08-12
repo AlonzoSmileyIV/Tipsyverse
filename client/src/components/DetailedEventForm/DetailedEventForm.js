@@ -64,7 +64,10 @@ import {
   zonedLocalDateTimeToIso,
 } from "../../utils/timestamps";
 import { COMMON_US_TIMEZONES } from "../../utils/timezones";
-import { getRequiredBartenderCount } from "../../utils/eventSummary";
+import {
+  getRecommendedBartenderCount,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
 import { fetchAssignmentsByEventId } from "../../features/assignments/assignmentSlice";
 import { parseDateOnlyParts } from "../../utils/dateOnly";
 import {
@@ -266,6 +269,11 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     },
     guestCount: event?.guestCount || "",
     bartendersRequested: getRequiredBartenderCount(event, 1),
+    recommendedBartenders: getRecommendedBartenderCount(
+      event,
+      recommendBartenders(event?.guestCount) || 1
+    ),
+    staffingExceptionReason: event?.staffingException?.reason || "",
     barType: event?.options?.barType || "unknown",
     bartenderNotes: event?.bartenderNotes || "",
     additionalContacts: Array.isArray(event?.additionalContacts)
@@ -444,9 +452,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   // how many bartenders we are trying to assign
   const totalBartendersNeeded = Math.max(
     1,
-    Number(form.bartendersRequested) || 0,
-    Number(event?.pricing?.bartendersRequested) || 0,
-    Number(event?.counts?.neededBartenders) || 0
+    Number(form.bartendersRequested) || getRequiredBartenderCount(event, 1)
   );
   const maxBartendersNeeded = Math.max(
     0,
@@ -1105,12 +1111,15 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
   // Recommended bartenders (simple heuristic)
   useEffect(() => {
-    const savedBartenderCount = getRequiredBartenderCount(event);
-    if (savedBartenderCount > 0) return;
     const guests = Number(form.guestCount) || 0;
     const rec = recommendBartenders(guests);
-    if (!bartendersTouched)
-      setForm((f) => ({ ...f, bartendersRequested: rec || 1 }));
+    setForm((current) => ({
+      ...current,
+      recommendedBartenders: rec || 1,
+      ...(!bartendersTouched && !getRequiredBartenderCount(event)
+        ? { bartendersRequested: rec || 1 }
+        : {}),
+    }));
   }, [
     event?.counts?.neededBartenders,
     event?.pricing?.bartendersRequested,
@@ -1541,7 +1550,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const applyRecommended = () => {
     const rec = recommendBartenders(form.guestCount);
     setBartendersTouched(false);
-    setField("bartendersRequested", rec || 1);
+    setForm((current) => ({
+      ...current,
+      bartendersRequested: rec || 1,
+      recommendedBartenders: rec || 1,
+      staffingExceptionReason: "",
+    }));
   };
 
   // Returns true if we have a usable location
@@ -1609,6 +1623,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     if (!(Number(form.bartendersRequested) >= 1)) {
       questions.push("Set bartenders needed");
     }
+    if (
+      Number(form.bartendersRequested) < Number(form.recommendedBartenders) &&
+      !String(form.staffingExceptionReason || "").trim()
+    ) {
+      questions.push("Explain the approved staffing exception");
+    }
     if (!form.barType || form.barType === "unknown") {
       questions.push("Select type of bar");
     }
@@ -1639,6 +1659,8 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     form.allowTipJars,
     form.barType,
     form.bartendersRequested,
+    form.recommendedBartenders,
+    form.staffingExceptionReason,
     form.contact?.email,
     form.contact?.fullName,
     form.contact?.phone,
@@ -2242,10 +2264,19 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
         setupHours: Number(calcInput.setupHours) || 0, // hours
         breakdownHours: Number(calcInput.breakdownHours) || 0,
+        bartendersRequested: Number(form.bartendersRequested) || 1,
       },
       counts: {
         ...(event?.counts || {}),
+        recommendedBartenders:
+          Number(form.recommendedBartenders) ||
+          recommendBartenders(form.guestCount) ||
+          1,
+        approvedBartenders: Number(form.bartendersRequested) || 1,
         neededBartenders: Number(form.bartendersRequested) || 1,
+      },
+      staffingException: {
+        reason: String(form.staffingExceptionReason || "").trim(),
       },
       private: !!form.private,
       bartenderNotes: form.bartenderNotes,
@@ -3191,13 +3222,13 @@ We wanted to confirm the details you entered and ask a few quick questions so we
             alignItems="center"
           >
             <TextField
-              label="Number of Bartenders"
+              label="Approved Number of Bartenders"
               type="number"
               value={form.bartendersRequested}
               onChange={(e) => onBartendersChange(e.target.value)}
-              helperText={`We recommend: ${
-                recommendBartenders(form.guestCount) || 1
-              }${bartendersTouched ? " (manual override)" : ""}`}
+              helperText={`Recommended for ${Number(form.guestCount) || 0} guests: ${
+                Number(form.recommendedBartenders) || 1
+              }${bartendersTouched ? " (approved override)" : ""}`}
             />
             {bartendersTouched && (
               <Button
@@ -3213,6 +3244,22 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               </Button>
             )}
           </Stack>
+
+          {Number(form.bartendersRequested) <
+            Number(form.recommendedBartenders) && (
+            <TextField
+              label="Staffing Exception Reason"
+              value={form.staffingExceptionReason}
+              onChange={(e) =>
+                setField("staffingExceptionReason", e.target.value)
+              }
+              multiline
+              minRows={2}
+              required
+              fullWidth
+              helperText="Document why fewer bartenders were approved. The hourly rate is unchanged; pricing uses the approved bartender count."
+            />
+          )}
 
           <TextField
             select

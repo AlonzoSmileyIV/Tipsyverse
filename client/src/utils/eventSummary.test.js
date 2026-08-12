@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  getApprovedBartenderCount,
   getEventPaymentSummary,
   getEventPaymentTotal,
+  getRecommendedBartenderCount,
   getRequiredBartenderCount,
 } from "./eventSummary";
 
@@ -33,6 +35,20 @@ describe("eventSummary", () => {
         pricing: { bartendersRequested: 1 },
       })
     ).toBe(2);
+  });
+
+  it("keeps an approved exception separate from recommended staffing", () => {
+    const event = {
+      counts: {
+        recommendedBartenders: 2,
+        approvedBartenders: 1,
+        neededBartenders: 1,
+      },
+      pricing: { bartendersRequested: 1 },
+    };
+    expect(getRecommendedBartenderCount(event)).toBe(2);
+    expect(getApprovedBartenderCount(event)).toBe(1);
+    expect(getRequiredBartenderCount(event)).toBe(1);
   });
 
   it("rounds payment summaries to currency precision", () => {

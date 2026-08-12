@@ -35,6 +35,7 @@ import {
   getEventPaymentTotal,
   getRequiredBartenderCount,
 } from "../../utils/libs/eventSummary.js";
+import { assertBartendersCompliantForEvent } from "../../utils/libs/bartenderCompliance.js";
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
@@ -55,6 +56,13 @@ const formatEventDateTime = (value, evt = {}) => {
 const adminEventUrl = (eventId) => `${appUrl()}/admin?eventId=${eventId}`;
 const hasUsablePhone = (value) => String(value || "").replace(/\D/g, "").length >= 10;
 const requiredText = (value) => String(value || "").trim();
+const recommendBartendersForGuests = (guestCount) => {
+  const guests = Number(guestCount) || 0;
+  if (guests <= 50) return 1;
+  if (guests <= 100) return 2;
+  if (guests <= 150) return 3;
+  return Math.ceil(guests / 60);
+};
 
 function formatEventType(value) {
   const text = String(value || "").trim();
@@ -917,8 +925,15 @@ const eventCtrl = {
         },
         contact: contactDoc,
         status: "submitted",
-        counts: { neededBartenders: 1, assigned: 0 },
-        pricing: { bartendersRequested: 1 }, // default; staff can update
+        counts: {
+          recommendedBartenders: recommendBartendersForGuests(guestCount),
+          approvedBartenders: recommendBartendersForGuests(guestCount),
+          neededBartenders: recommendBartendersForGuests(guestCount),
+          assigned: 0,
+        },
+        pricing: {
+          bartendersRequested: recommendBartendersForGuests(guestCount),
+        }, // approved staffing starts at the recommendation; staff can document an exception
       });
       const eventDetailsUrl = eventLink(doc, "details");
       const eventTypeLabel = formatEventType(type);
@@ -2332,6 +2347,7 @@ const eventCtrl = {
         "visibility",
         "pricing",
         "counts",
+        "staffingException",
         "private",
         "bartenderNotes",
         "internalNotes",
@@ -2507,13 +2523,6 @@ const eventCtrl = {
           if ("procurementFee" in patch.pricing)
             delete patch.pricing.procurementFee;
 
-          // keep counts in sync
-          patch.counts = {
-            ...(evt.counts?.toObject?.() || evt.counts || {}),
-            ...(patch.counts || {}),
-            neededBartenders: Number(patch.pricing.bartendersRequested) || 1,
-          };
-
           continue;
         }
 
@@ -2529,6 +2538,61 @@ const eventCtrl = {
         // default shallow set
         patch[key] = body[key];
       }
+
+      const currentCounts = evt.counts?.toObject?.() || evt.counts || {};
+      const nextGuestCount = patch.guestCount ?? evt.guestCount;
+      const recommendedBartenders = recommendBartendersForGuests(nextGuestCount);
+      const approvedBartenders = Math.max(
+        1,
+        Number(
+          patch.counts?.approvedBartenders ??
+            patch.counts?.neededBartenders ??
+            patch.pricing?.bartendersRequested ??
+            currentCounts.approvedBartenders ??
+            currentCounts.neededBartenders ??
+            evt.pricing?.bartendersRequested ??
+            1
+        ) || 1
+      );
+      const staffingExceptionReason = String(
+        body.staffingException?.reason ?? evt.staffingException?.reason ?? ""
+      ).trim();
+      const hasStaffingException = approvedBartenders < recommendedBartenders;
+      if (hasStaffingException && !staffingExceptionReason) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "A staffing exception reason is required when approved staffing is below the recommendation.",
+        });
+      }
+      patch.counts = {
+        ...currentCounts,
+        ...(patch.counts || {}),
+        recommendedBartenders,
+        approvedBartenders,
+        neededBartenders: approvedBartenders,
+      };
+      patch.pricing = {
+        ...(evt.pricing?.toObject?.() || evt.pricing || {}),
+        ...(patch.pricing || {}),
+        bartendersRequested: approvedBartenders,
+      };
+      patch.staffingException = hasStaffingException
+        ? {
+            active: true,
+            reason: staffingExceptionReason,
+            approvedBy: req.user.id,
+            approvedAt: new Date(),
+            customerAcknowledgedAt:
+              evt.staffingException?.customerAcknowledgedAt || null,
+          }
+        : {
+            active: false,
+            reason: "",
+            approvedBy: null,
+            approvedAt: null,
+            customerAcknowledgedAt: null,
+          };
 
       // Apply patch onto doc (so mongoose validation/hooks run)
       for (const [k, v] of Object.entries(patch)) {
@@ -3227,6 +3291,7 @@ const eventCtrl = {
             "payment.shortNoticeFullPayment":
               paymentPolicy.schedule?.shortNotice || false,
             "pricing.bartendersRequested": computedTotals.bartenders,
+            "counts.approvedBartenders": computedTotals.bartenders,
             "counts.neededBartenders": computedTotals.bartenders,
             // Optional: snapshot coupon on the payment
             ...(applied || coupon
@@ -3394,6 +3459,11 @@ const eventCtrl = {
     const bartenderIds = Array.from(bartenderIdSet);
 
     if (!bartenderIds.length) throw new Error("No bartenders found for these bids.");
+
+    const complianceBartenders = await User.find({ _id: { $in: bartenderIds } })
+      .select("fullName email bartenderProfile.licenses")
+      .session(session);
+    assertBartendersCompliantForEvent({ event: evt, bartenders: complianceBartenders });
 
     // Legacy/adjusted events can briefly have different pricing and staffing
     // snapshots. Never let the smaller stale value reduce assignment capacity.
@@ -3686,6 +3756,9 @@ const eventCtrl = {
   } catch (err) {
     await session.abortTransaction().catch(() => {});
     session.endSession();
+    if (err?.statusCode) {
+      return res.status(err.statusCode).json({ success: false, message: err.message, code: err.code, details: err.details });
+    }
     return res.status(400).json({ success: false, message: err.message });
   }
 },
@@ -3912,6 +3985,12 @@ const eventCtrl = {
       const evt = await Event.findById(eventId).session(session);
       if (!evt) throw new Error("Event not found");
 
+      const replacementBartender = await User.findById(replacementBartenderId)
+        .select("fullName email bartenderProfile.licenses")
+        .session(session);
+      if (!replacementBartender) throw new Error("Replacement bartender not found");
+      assertBartendersCompliantForEvent({ event: evt, bartenders: [replacementBartender] });
+
       // Find the existing assignment
       const existingAssignment = await Assignment.findOne({
         _id: assignmentId,
@@ -3997,9 +4076,11 @@ const eventCtrl = {
     } catch (err) {
       await session.abortTransaction().catch(() => {});
       session.endSession();
-      return res.status(400).json({
+      return res.status(err?.statusCode || 400).json({
         success: false,
         message: err.message || "Failed to replace bartender",
+        code: err.code,
+        details: err.details,
       });
     }
   },
