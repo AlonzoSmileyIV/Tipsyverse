@@ -60,6 +60,8 @@ secret store. Production additionally requires:
 - distinct access and refresh secrets of at least 32 characters
 - `STRIPE_ENABLED=false` when card processing is disabled; when enabled,
   production Stripe secret and webhook signing keys
+- `GOOGLE_MAPS_API_KEY` using a server-restricted Google Maps Platform key with
+  the Time Zone API enabled; keep it separate from the browser Places key
 - `TRUST_PROXY=1` when exactly one trusted platform proxy terminates HTTPS
 - a unique `APP_RELEASE`, normally the deployed Git SHA
 

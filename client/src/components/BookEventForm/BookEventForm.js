@@ -28,7 +28,10 @@ import {
 } from "../../utils/timeInput";
 import api from "../../services/api";
 import { getBrowserTimeZone, zonedLocalDateTimeToIso } from "../../utils/timestamps";
-import { COMMON_US_TIMEZONES } from "../../utils/timezones";
+import {
+  COMMON_US_TIMEZONES,
+  formatTimezoneConfirmation,
+} from "../../utils/timezones";
 
 /* ----------------------------- CONSTANTS ----------------------------- */
 
@@ -416,6 +419,10 @@ export default function BookEventForm({
     acceptedTerms: false,
     timezone: getBrowserTimeZone(),
   });
+  const [timezoneResolution, setTimezoneResolution] = useState({
+    status: "fallback",
+    source: "browser",
+  });
   const [dateInputs, setDateInputs] = useState({ startAt: "", endAt: "" });
   const [timeInputs, setTimeInputs] = useState({ startAt: "", endAt: "" });
   const [bookingEligibility, setBookingEligibility] = useState({
@@ -423,6 +430,51 @@ export default function BookEventForm({
     eligible: true,
     reason: "",
   });
+
+  useEffect(() => {
+    const latitude = Number(form.latitude);
+    const longitude = Number(form.longitude);
+    const hasCoordinates =
+      form.latitude !== null &&
+      form.latitude !== "" &&
+      form.longitude !== null &&
+      form.longitude !== "" &&
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude);
+
+    if (!hasCoordinates) {
+      const browserTimezone = getBrowserTimeZone();
+      setForm((current) =>
+        current.timezone === browserTimezone
+          ? current
+          : { ...current, timezone: browserTimezone }
+      );
+      setTimezoneResolution({ status: "fallback", source: "browser" });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setTimezoneResolution({ status: "resolving", source: "address" });
+    api
+      .get("/events/timezone", {
+        params: { lat: latitude, lng: longitude },
+        signal: controller.signal,
+      })
+      .then(({ data }) => {
+        const timezone = data?.data?.timezone;
+        if (!timezone) throw new Error("Timezone unavailable");
+        setForm((current) => ({ ...current, timezone }));
+        setTimezoneResolution({ status: "resolved", source: "address" });
+      })
+      .catch((error) => {
+        if (error?.code === "ERR_CANCELED") return;
+        const browserTimezone = getBrowserTimeZone();
+        setForm((current) => ({ ...current, timezone: browserTimezone }));
+        setTimezoneResolution({ status: "fallback", source: "browser" });
+      });
+
+    return () => controller.abort();
+  }, [form.latitude, form.longitude]);
 
   // memoize initialData fields into a stable object to satisfy exhaustive-deps
   // replace your current initialShape useMemo with these two blocks:
@@ -1026,15 +1078,37 @@ export default function BookEventForm({
                 fullWidth
                 label="Event Timezone"
                 value={form.timezone}
-                onChange={update("timezone")}
-                helperText="Times are saved and displayed in the venue's timezone."
+                onChange={(event) => {
+                  update("timezone")(event);
+                  setTimezoneResolution({ status: "confirmed", source: "manual" });
+                }}
+                helperText="Confirm this timezone before continuing. Times are stored as UTC and displayed in the venue timezone."
               >
+                {!COMMON_US_TIMEZONES.some(([value]) => value === form.timezone) && (
+                  <MenuItem value={form.timezone}>
+                    {formatTimezoneConfirmation(form.timezone)} ({form.timezone})
+                  </MenuItem>
+                )}
                 {COMMON_US_TIMEZONES.map(([value, label]) => (
                   <MenuItem key={value} value={value}>
                     {label} ({value})
                   </MenuItem>
                 ))}
               </TextField>
+              <Alert
+                severity={
+                  timezoneResolution.status === "resolved" ? "success" : "info"
+                }
+              >
+                Event timezone: {formatTimezoneConfirmation(form.timezone)}. {" "}
+                {timezoneResolution.status === "resolving"
+                  ? "Checking the selected venue…"
+                  : timezoneResolution.source === "address"
+                    ? "Detected from the selected venue."
+                    : timezoneResolution.source === "manual"
+                      ? "Manually confirmed."
+                      : "Suggested from your browser because venue coordinates are unavailable. Please confirm or change it."}
+              </Alert>
             </Stack>
           )}
 
@@ -1051,6 +1125,10 @@ export default function BookEventForm({
               <ReviewRow
                 label="When"
                 value={formatWhen(form.startAt, form.endAt)}
+              />
+              <ReviewRow
+                label="Event timezone"
+                value={`${formatTimezoneConfirmation(form.timezone)} (${form.timezone})`}
               />
               <ReviewRow
                 label="Where"

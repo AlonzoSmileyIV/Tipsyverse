@@ -18,9 +18,16 @@ const publicBookingLimit = createRateLimit({
   message: "Too many event requests. Please wait a few minutes and try again.",
 });
 const sensitiveActionDedupe = dedupeSuccessfulRequests({ ttlMs: 45 * 1000 });
+const timezoneLookupLimit = createRateLimit({
+  keyPrefix: "events:timezone",
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many timezone lookups. Please wait a moment and try again.",
+});
 
 // Public/new submission (keep requireAuth if your flow needs it)
 eventRouter.post('/', publicBookingLimit, optionalAuth, sensitiveActionDedupe, eventCtrl.submitRequest);
+eventRouter.get('/timezone', timezoneLookupLimit, eventCtrl.resolveVenueTimezone);
 
 eventRouter.get('/', auth, authEmployee, eventCtrl.viewAllEvents);
 

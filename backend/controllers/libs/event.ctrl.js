@@ -36,6 +36,7 @@ import {
   getRequiredBartenderCount,
 } from "../../utils/libs/eventSummary.js";
 import { assertBartendersCompliantForEvent } from "../../utils/libs/bartenderCompliance.js";
+import { resolveVenueTimezone } from "../../utils/libs/resolveVenueTimezone.js";
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
@@ -587,6 +588,22 @@ function buildCurrentInvoiceEmailHtml({ evt, totals }) {
 
 
 const eventCtrl = {
+  resolveVenueTimezone: async (req, res) => {
+    try {
+      const data = await resolveVenueTimezone({
+        latitude: req.query.lat,
+        longitude: req.query.lng,
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      const configurationError = error.message.includes("not configured");
+      return res.status(configurationError ? 503 : 400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  },
+
   sendCurrentInvoice: async (req, res) => {
     try {
       const { id } = req.params;
