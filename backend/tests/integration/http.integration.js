@@ -16,6 +16,9 @@ process.env.API_URL = "/api/v1";
 process.env.ACCESS_TOKEN_SECRET = "integration-access-secret-at-least-32-characters";
 process.env.REFRESH_TOKEN_SECRET =
   "integration-refresh-secret-at-least-32-characters";
+// Integration tests must never deliver real email, even when a developer's
+// local environment contains valid provider credentials.
+process.env.RESEND_EMAIL_KEY = "";
 
 const { app } = await import("../../server.js");
 const {
@@ -122,6 +125,60 @@ test("event persistence synchronizes both staffing requirement fields", async ()
   assert.equal(saved.counts.approvedBartenders, 1);
   assert.equal(saved.counts.neededBartenders, 1);
   assert.equal(saved.pricing.bartendersRequested, 1);
+});
+
+const bookingPayload = (overrides = {}) => ({
+  type: "birthday",
+  description: "Integration booking",
+  startAt: "2027-09-12T21:00:00.000Z",
+  endAt: "2027-09-13T01:00:00.000Z",
+  timezone: "America/Indiana/Indianapolis",
+  contact: {
+    fullName: owner.fullName,
+    email: owner.email,
+    phone: "+13175550100",
+    preferred: "email",
+  },
+  location: {
+    address1: "100 Booking Test Way",
+    city: "Indianapolis",
+    state: "IN",
+    zipcode: "46204",
+    country: "US",
+    formatted: "100 Booking Test Way, Indianapolis, IN 46204",
+  },
+  agreements: { acceptedTerms: true, customerConfirmed: true },
+  ...overrides,
+});
+
+test("booking without a guest count succeeds with safe initial staffing", async () => {
+  const response = await request(app)
+    .post("/api/v1/events")
+    .set("Authorization", `Bearer ${tokenFor(owner)}`)
+    .send(bookingPayload())
+    .expect(201);
+
+  assert.equal(response.body.data.guestCount, undefined);
+  assert.equal(response.body.data.counts.recommendedBartenders, 1);
+  assert.equal(response.body.data.counts.approvedBartenders, 1);
+  assert.equal(response.body.data.pricing.bartendersRequested, 1);
+});
+
+test("booking uses a supplied guest count for initial staffing", async () => {
+  const response = await request(app)
+    .post("/api/v1/events")
+    .set("Authorization", `Bearer ${tokenFor(owner)}`)
+    .send(bookingPayload({
+      guestCount: 100,
+      startAt: "2027-09-14T21:00:00.000Z",
+      endAt: "2027-09-15T01:00:00.000Z",
+    }))
+    .expect(201);
+
+  assert.equal(response.body.data.guestCount, 100);
+  assert.equal(response.body.data.counts.recommendedBartenders, 2);
+  assert.equal(response.body.data.counts.approvedBartenders, 2);
+  assert.equal(response.body.data.pricing.bartendersRequested, 2);
 });
 
 test("staff can approve fewer bartenders than recommended with a documented reason", async () => {

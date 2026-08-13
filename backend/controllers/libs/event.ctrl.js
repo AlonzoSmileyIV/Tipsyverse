@@ -768,6 +768,7 @@ const eventCtrl = {
         startAt,
         endAt,
         timezone,
+        guestCount,
         contact,
         location,
         options,
@@ -828,6 +829,19 @@ const eventCtrl = {
       const eventTimezone = requiredText(
         timezone || location?.timezone || "America/Indiana/Indianapolis"
       );
+      const normalizedGuestCount =
+        guestCount === undefined || guestCount === null || guestCount === ""
+          ? undefined
+          : Number(guestCount);
+      if (
+        normalizedGuestCount !== undefined &&
+        (!Number.isInteger(normalizedGuestCount) || normalizedGuestCount < 1)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Guest count must be a positive whole number.",
+        });
+      }
       try {
         new Intl.DateTimeFormat("en-US", { timeZone: eventTimezone }).format(
           startDate
@@ -882,6 +896,7 @@ const eventCtrl = {
         type,
         description,
         additionalInstructions,
+        guestCount: normalizedGuestCount,
         startAt,
         endAt,
         timezone: eventTimezone,
@@ -926,13 +941,13 @@ const eventCtrl = {
         contact: contactDoc,
         status: "submitted",
         counts: {
-          recommendedBartenders: recommendBartendersForGuests(guestCount),
-          approvedBartenders: recommendBartendersForGuests(guestCount),
-          neededBartenders: recommendBartendersForGuests(guestCount),
+          recommendedBartenders: recommendBartendersForGuests(normalizedGuestCount),
+          approvedBartenders: recommendBartendersForGuests(normalizedGuestCount),
+          neededBartenders: recommendBartendersForGuests(normalizedGuestCount),
           assigned: 0,
         },
         pricing: {
-          bartendersRequested: recommendBartendersForGuests(guestCount),
+          bartendersRequested: recommendBartendersForGuests(normalizedGuestCount),
         }, // approved staffing starts at the recommendation; staff can document an exception
       });
       const eventDetailsUrl = eventLink(doc, "details");
