@@ -16,7 +16,8 @@
     "db:backup:verify": "node scripts/libs/verifyBackup.script.js",
     "db:restore-drill": "NODE_ENV=staging node scripts/libs/restoreDatabase.script.js",
     "verify:staging": "NODE_ENV=staging node scripts/libs/stagingVerify.script.js",
-    "migrate:compliance": "node scripts/libs/migrateBartenderCompliance.script.js"
+    "migrate:compliance": "node scripts/libs/migrateBartenderCompliance.script.js",
+    "migrate:event-timezones": "node scripts/libs/migrateEventTimezones.script.js"
   },
   "author": "",
   "type": "module",

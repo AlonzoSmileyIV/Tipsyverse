@@ -3185,6 +3185,11 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               }}
               helperText="All event times and deadlines use this venue timezone."
             >
+              {!COMMON_US_TIMEZONES.some(([value]) => value === form.timezone) && (
+                <MenuItem value={form.timezone}>
+                  {form.timezone}
+                </MenuItem>
+              )}
               {COMMON_US_TIMEZONES.map(([value, label]) => (
                 <MenuItem key={value} value={value}>
                   {label} ({value})

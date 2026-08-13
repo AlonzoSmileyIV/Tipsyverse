@@ -44,6 +44,12 @@ const eventTimezone = (evt = {}) =>
   evt.timezone ||
   evt.location?.timezone ||
   "America/Indiana/Indianapolis";
+const ensureEventTimezone = (evt = {}) => {
+  const timezone = eventTimezone(evt);
+  evt.timezone = timezone;
+  evt.location = { ...(evt.location || {}), timezone };
+  return evt;
+};
 const formatEventDateTime = (value, evt = {}) => {
   if (!value) return "Not provided";
   const date = new Date(value);
@@ -636,6 +642,8 @@ const eventCtrl = {
       if (accessLevel === "masked") {
         return res.json({ success: true, data: maskEventForBoard(evt) });
       }
+
+      ensureEventTimezone(evt);
 
       const recordedPaymentRows = await Payment.aggregate([
         {
@@ -1847,6 +1855,8 @@ const eventCtrl = {
       if (accessLevel === "masked") {
         return res.json({ success: true, data: maskEventForBoard(evt) });
       }
+
+      ensureEventTimezone(evt);
 
       const recordedPaymentRows = await Payment.aggregate([
         {
