@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { Box, CircularProgress } from "@mui/material";
 import {
   Navigate,
@@ -7,59 +7,62 @@ import {
   useLocation,
 } from "react-router-dom";
 import AccessDenied from "../../components/AccessDenied/AccessDenied";
+import lazyWithRetry from "../../utils/lazyWithRetry";
 
-const HomeScreen = lazy(() => import("../../screens/HomeScreen/HomeScreen"));
-const DrinksScreen = lazy(() => import("../../screens/DrinksScreen/DrinksScreen"));
-const DrinkDetailScreen = lazy(() =>
+const route = (key, importer) => lazyWithRetry(importer, key);
+
+const HomeScreen = route("home", () => import("../../screens/HomeScreen/HomeScreen"));
+const DrinksScreen = route("drinks", () => import("../../screens/DrinksScreen/DrinksScreen"));
+const DrinkDetailScreen = route("drink-detail", () =>
   import("../../screens/DrinkDetailScreen/DrinkDetailScreen")
 );
-const EventsScreen = lazy(() => import("../../screens/EventsScreen/EventsScreen"));
-const BartenderScreen = lazy(() =>
+const EventsScreen = route("events", () => import("../../screens/EventsScreen/EventsScreen"));
+const BartenderScreen = route("bartender", () =>
   import("../../screens/BartenderScreen/BartenderScreen")
 );
-const BookEventScreen = lazy(() =>
+const BookEventScreen = route("book-event", () =>
   import("../../screens/BookEventScreen/BookEventScreen")
 );
-const MyLearningCoursesScreen = lazy(() =>
+const MyLearningCoursesScreen = route("learning", () =>
   import("../../screens/MyLearningCoursesScreen/MyLearningCoursesScreen")
 );
-const LearningCourseScreen = lazy(() =>
+const LearningCourseScreen = route("learning-course", () =>
   import("../../screens/LearningCourseScreen/LearningCourseScreen")
 );
-const AboutUsScreen = lazy(() => import("../../screens/AboutUsScreen/AboutUsScreen"));
-const PrivacyPolicyScreen = lazy(() =>
+const AboutUsScreen = route("about", () => import("../../screens/AboutUsScreen/AboutUsScreen"));
+const PrivacyPolicyScreen = route("privacy", () =>
   import("../../screens/PrivacyPolicyScreen/PrivacyPolicyScreen")
 );
-const TermsConditionsScreen = lazy(() =>
+const TermsConditionsScreen = route("terms", () =>
   import("../../screens/TermsConditionsScreen/TermsConditionsScreen")
 );
-const ContactUsScreen = lazy(() =>
+const ContactUsScreen = route("contact", () =>
   import("../../screens/ContactUsScreen/ContactUsScreen")
 );
-const LoginScreen = lazy(() => import("../../screens/LoginScreen/LoginScreen"));
-const RegistrationScreen = lazy(() =>
+const LoginScreen = route("login", () => import("../../screens/LoginScreen/LoginScreen"));
+const RegistrationScreen = route("registration", () =>
   import("../../screens/RegistrationScreen/RegistrationScreen")
 );
-const ForgotPasswordScreen = lazy(() =>
+const ForgotPasswordScreen = route("forgot-password", () =>
   import("../../screens/ForgotPasswordScreen/ForgotPasswordScreen")
 );
-const ResetPasswordScreen = lazy(() =>
+const ResetPasswordScreen = route("reset-password", () =>
   import("../../screens/ResetPasswordScreen/ResetPasswordScreen")
 );
-const AccountActivationScreen = lazy(() =>
+const AccountActivationScreen = route("account-activation", () =>
   import("../../screens/AccountActivationScreen/AccountActivationScreen")
 );
-const UserSettingsScreen = lazy(() =>
+const UserSettingsScreen = route("user-settings", () =>
   import("../../screens/UserSettingsScreen/UserSettingsScreen")
 );
-const AdminSettingsScreen = lazy(() =>
+const AdminSettingsScreen = route("admin", () =>
   import("../../screens/AdminSettingsScreen/AdminSettingsScreen")
 );
-const NotFoundScreen = lazy(() =>
+const NotFoundScreen = route("not-found", () =>
   import("../../screens/NotFoundScreen/NotFoundScreen")
 );
-const FAQScreen = lazy(() => import("../../screens/FAQScreen/FAQScreen"));
-const PaymentRequestScreen = lazy(() =>
+const FAQScreen = route("faq", () => import("../../screens/FAQScreen/FAQScreen"));
+const PaymentRequestScreen = route("payment-request", () =>
   import("../../screens/PaymentRequestScreen/PaymentRequestScreen")
 );
 
