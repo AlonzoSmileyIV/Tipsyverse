@@ -20,6 +20,7 @@ import Statistics from "../../components/Statistics/Statistics";
 import Hero from "../../components/Hero/Hero";
 import PublicLayout from "../../components/PublicLayout/PublicLayout";
 import LoadingSkeleton from "../../components/LoadingSkeleton/LoadingSkeleton";
+import EventServicesPromo from "../../components/EventServicesPromo/EventServicesPromo";
 
 // Keep homepage merchandising policy outside the component so additions do not
 // become entangled with rendering and request lifecycle code.
@@ -185,15 +186,17 @@ const HomeScreen = () => {
   return (
     <PublicLayout>
       <HelmetHeader
-        title="Tipsyverse | Discover Cocktails"
-        description="Find trending cocktail recipes, share your creations, and sip your way through inspiration."
-        keywords="cocktail recipes, trending drinks, mixology, tipsyverse"
+        title="Tipsyverse | Book Event Bartenders, Learn, and Discover Cocktails"
+        description="Book professional bartending services, take practical bartending courses, and discover cocktail inspiration with Tipsyverse."
+        keywords="event bartenders, bartender booking, bartending courses, cocktail recipes, tipsyverse"
       />
       {isLoading ? (
         <LoadingSkeleton />
       ) : (
         <>
           <Hero />
+
+          <EventServicesPromo />
 
           {showBartenderCoursePromo && (
             <BartenderCoursePromo onStart={handleStartBartenderCourse} />

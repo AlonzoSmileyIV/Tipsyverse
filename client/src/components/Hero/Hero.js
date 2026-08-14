@@ -10,27 +10,27 @@ import { useNavigate } from "react-router-dom";
 import heroCocktailImg from "../../assets/images/hero-cocktail.jpg";
 import { navigateOrReload } from "../../utils/navigateOrReload";
 
-const heroSlides = [
+export const heroSlides = [
   {
-    heading: "Discover, Create, and Share Cocktail Recipes",
+    heading: "Professional Bartending for Your Next Event",
     description:
-      "Explore trending cocktails, save your favorites, and discover new drinks for every occasion.",
-    buttonLabel: "Explore Our Drinks",
-    link: "/drinks",
-  },
-  {
-    heading: "Bring the Tipsyverse Experience to Your Event",
-    description:
-      "Request professional bartending services for weddings, parties, corporate events, and other special occasions.",
-    buttonLabel: "Book an Event",
+      "Tell us about your wedding, birthday, corporate event, or celebration. We’ll help plan the bar and provide professional bartending service.",
+    buttonLabel: "Book Your Event",
     link: "/book",
   },
   {
-    heading: "Bartend With Tipsyverse",
+    heading: "Learn Bartending With Tipsyverse",
     description:
-      "Complete training, build your experience, apply for events, and grow with a professional bartending team.",
-    buttonLabel: "Become a Bartender",
-    link: "/bartend",
+      "Take practical courses in responsible alcohol service, state laws, guest safety, and essential cocktail skills.",
+    buttonLabel: "Take a Course",
+    link: "/learn",
+  },
+  {
+    heading: "Discover Cocktails for Every Occasion",
+    description:
+      "Explore trending cocktails, save your favorites, and find inspiration for your next gathering.",
+    buttonLabel: "Discover Cocktails",
+    link: "/drinks",
   },
 ];
 

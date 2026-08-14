@@ -16,6 +16,7 @@ const statSlice = createSlice({
       totalUsers: 0,
       totalComments: 0,
       totalShares: 0,
+      totalEventsCompleted: 0,
     },
     status: "idle",
     error: null,
@@ -34,8 +35,15 @@ const statSlice = createSlice({
           totalUsers = 0,
           totalComments = 0,
           totalShares = 0,
+          totalEventsCompleted = 0,
         } = action.payload || {};
-        state.appStats = { totalDrinks, totalUsers, totalComments, totalShares };
+        state.appStats = {
+          totalDrinks,
+          totalUsers,
+          totalComments,
+          totalShares,
+          totalEventsCompleted,
+        };
       })
       .addCase(fetchAppStats.rejected, (state, action) => {
         state.status = "failed";

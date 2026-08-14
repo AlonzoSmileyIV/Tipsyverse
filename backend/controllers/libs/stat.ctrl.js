@@ -2,15 +2,17 @@ import {
   DrinkModel as Drink,
   CommentModel as Comment,
   UserModel as User,
+  EventModel as Event,
 } from "../../models/index.js";
 
 const statCtrl = {
   getAppStats: async (req, res) => {
     try {
-      const [totalDrinks, totalUsers, totalComments, sharesAgg] = await Promise.all([
+      const [totalDrinks, totalUsers, totalComments, totalEventsCompleted, sharesAgg] = await Promise.all([
         Drink.countDocuments(),
         User.countDocuments(),
         Comment.countDocuments(),
+        Event.countDocuments({ status: { $in: ["completed", "closed"] } }),
         Drink.aggregate([
           {
             $group: {
@@ -29,6 +31,7 @@ const statCtrl = {
         totalDrinks,
         totalUsers,
         totalComments,
+        totalEventsCompleted,
         totalShares,
       });
     } catch (err) {

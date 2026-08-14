@@ -119,6 +119,32 @@ test("readiness reflects a real MongoDB connection", async () => {
   assert.deepEqual(response.body, { success: true, status: "ready" });
 });
 
+test("public stats count only completed or closed events as events served", async () => {
+  await EventModel.create([
+    {
+      organizer: owner._id,
+      type: "birthday",
+      location: { address1: "1 Completed Way", city: "Indianapolis", state: "IN" },
+      startAt: new Date("2026-07-10T21:00:00.000Z"),
+      endAt: new Date("2026-07-11T01:00:00.000Z"),
+      contact: { fullName: owner.fullName, email: owner.email },
+      status: "completed",
+    },
+    {
+      organizer: owner._id,
+      type: "corporate",
+      location: { address1: "2 Canceled Way", city: "Indianapolis", state: "IN" },
+      startAt: new Date("2026-07-12T21:00:00.000Z"),
+      endAt: new Date("2026-07-13T01:00:00.000Z"),
+      contact: { fullName: owner.fullName, email: owner.email },
+      status: "canceled",
+    },
+  ]);
+
+  const response = await request(app).get("/api/v1/stats").expect(200);
+  assert.equal(response.body.totalEventsCompleted, 1);
+});
+
 test("event persistence synchronizes both staffing requirement fields", async () => {
   const saved = await EventModel.findById(event._id).lean();
   assert.equal(saved.counts.recommendedBartenders, 1);
