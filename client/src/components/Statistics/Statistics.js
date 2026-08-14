@@ -5,8 +5,8 @@ import { useInView } from "react-intersection-observer";
 import { useDispatch, useSelector } from "react-redux";
 
 import LocalBarIcon from "@mui/icons-material/LocalBar";
-import CommentIcon from "@mui/icons-material/Comment";
 import GroupIcon from "@mui/icons-material/Group";
+import SportsBarOutlinedIcon from "@mui/icons-material/SportsBarOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 
 import { fetchAppStats } from "../../features/stats/statsSlice";
@@ -32,7 +32,7 @@ const Statistics = () => {
     () => [
       { icon: <EventAvailableOutlinedIcon sx={{ color: "var(--primary-color)" }} />, label: "Events Served", value: appStats.totalEventsCompleted },
       { icon: <LocalBarIcon sx={{ color: "var(--primary-color)" }} />, label: "Drinks", value: appStats.totalDrinks },
-      { icon: <CommentIcon sx={{ color: "var(--primary-color)" }} />, label: "Comments", value: appStats.totalComments },
+      { icon: <SportsBarOutlinedIcon sx={{ color: "var(--primary-color)" }} />, label: "Bartenders", value: appStats.totalBartenders },
       { icon: <GroupIcon sx={{ color: "var(--primary-color)" }} />, label: "Users", value: appStats.totalUsers },
     ],
     [appStats]

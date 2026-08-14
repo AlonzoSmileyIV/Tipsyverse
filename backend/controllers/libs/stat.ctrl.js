@@ -8,9 +8,19 @@ import {
 const statCtrl = {
   getAppStats: async (req, res) => {
     try {
-      const [totalDrinks, totalUsers, totalComments, totalEventsCompleted, sharesAgg] = await Promise.all([
+      const [
+        totalDrinks,
+        accountCount,
+        duplicateOwnerAliases,
+        totalBartenders,
+        totalComments,
+        totalEventsCompleted,
+        sharesAgg,
+      ] = await Promise.all([
         Drink.countDocuments(),
         User.countDocuments(),
+        User.countDocuments({ username: { $in: ["tipsyverse", "alonzo.smiley"] } }),
+        User.countDocuments({ role: "bartender" }),
         Comment.countDocuments(),
         Event.countDocuments({ status: { $in: ["completed", "closed"] } }),
         Drink.aggregate([
@@ -26,10 +36,12 @@ const statCtrl = {
       ]);
 
       const totalShares = sharesAgg[0]?.totalShares || 0;
+      const totalUsers = Math.max(0, accountCount - Math.max(0, duplicateOwnerAliases - 1));
 
       return res.status(200).json({
         totalDrinks,
         totalUsers,
+        totalBartenders,
         totalComments,
         totalEventsCompleted,
         totalShares,
