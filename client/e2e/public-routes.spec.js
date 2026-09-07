@@ -57,6 +57,23 @@ test("login is keyboard navigable and has no serious axe violations", async ({
   expect(secondFocus).toBeTruthy();
 });
 
+test("age verification persists after a full page reload", async ({ page }) => {
+  await page.goto("/");
+  const dialog = page.getByRole("dialog", { name: /welcome to tipsyverse/i });
+  await expect(dialog).toBeVisible();
+  await dialog.locator('input[placeholder="MM/DD/YYYY"]').fill("01/01/1990");
+  for (const checkbox of await dialog.locator('input[type="checkbox"]').all()) {
+    await checkbox.check();
+  }
+  const verifyButton = dialog.getByRole("button", { name: /let.s go/i });
+  await verifyButton.click();
+  await expect(verifyButton).toBeHidden({ timeout: 5_000 });
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: /let.s go/i })).toBeHidden();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("ageVerified"))).toBe("true");
+});
+
 test("shows offline status without discarding the current page", async ({
   context,
   page,
@@ -74,7 +91,12 @@ test("remains usable on a slow mobile connection", async ({
   page,
   browserName,
 }) => {
+  test.setTimeout(60_000);
   test.skip(browserName !== "chromium", "Network throttling is Chromium-only.");
+  // Load the development app shell before throttling. Vite serves thousands
+  // of unbundled modules in dev, which is not representative of production;
+  // the slow-network assertion should exercise route delivery and rendering.
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   const session = await page.context().newCDPSession(page);
   await session.send("Network.enable");
   await session.send("Network.emulateNetworkConditions", {
@@ -87,7 +109,7 @@ test("remains usable on a slow mobile connection", async ({
 
   const response = await page.goto("/privacy", {
     waitUntil: "domcontentloaded",
-    timeout: 30_000,
+    timeout: 45_000,
   });
   expect(response?.status()).toBe(200);
   await expect(page.locator("#root")).not.toBeEmpty();

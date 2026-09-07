@@ -54,6 +54,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { fetchBidsByEventId } from "../../features/bids/bidSlice";
 import { fetchEventById } from "../../features/events/eventSlice";
 import PhoneTextField from "../PhoneTextField/PhoneTextField";
+import DateTextField from "../DateTextField/DateTextField";
 import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
 import { isHoliday as getHolidayInfo } from "../../utils/holiday";
 import getEventPaymentPolicyView, { formatPaymentDueDate } from "../../utils/eventPaymentPolicy";
@@ -462,6 +463,37 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   // helper to normalize a bid id
   const getBidId = (bid) => String(bid._id || bid.id || "");
 
+  const assignedBartenderIds = useMemo(
+    () =>
+      new Set(
+        allAssignments
+          .map((assignment) =>
+            String(
+              assignment.bartenderUser?._id ||
+                assignment.bartenderUser ||
+                assignment.bartender?._id ||
+                assignment.bartender ||
+                ""
+            )
+          )
+          .filter(Boolean)
+      ),
+    [allAssignments]
+  );
+
+  const selectableBids = useMemo(
+    () =>
+      allBids.filter((bid) => {
+        const bartender =
+          bid.bartenderUser || bid.bartender || bid.user || bid.owner || {};
+        const bartenderId = String(
+          bartender?._id || bartender?.id || bartender || ""
+        );
+        return !bartenderId || !assignedBartenderIds.has(bartenderId);
+      }),
+    [allBids, assignedBartenderIds]
+  );
+
   const compareBidPriority = (a, b) => {
     // Hard availability is always the first gate. Interested bartenders with
     // conflicts stay visible, but are grouped at the bottom.
@@ -497,15 +529,15 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
   const leftBids = useMemo(() => {
     const selectedSet = new Set(selectedBidIds);
-    return allBids
+    return selectableBids
       .filter((b) => !selectedSet.has(getBidId(b)))
       .sort(compareBidPriority);
-  }, [allBids, selectedBidIds]);
+  }, [selectableBids, selectedBidIds]);
 
   const rightBids = useMemo(() => {
     const selectedSet = new Set(selectedBidIds);
-    return allBids.filter((b) => selectedSet.has(getBidId(b)));
-  }, [allBids, selectedBidIds]);
+    return selectableBids.filter((b) => selectedSet.has(getBidId(b)));
+  }, [selectableBids, selectedBidIds]);
 
   const bidMatchesSearch = (bid, query) => {
     const q = String(query || "")
@@ -552,7 +584,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const rightChecked = intersection(checkedBidIds, rightIds);
 
   const handleToggleBid = (id) => () => {
-    const bid = allBids.find((item) => getBidId(item) === id);
+    const bid = selectableBids.find((item) => getBidId(item) === id);
     if (bid?.conflictsSchedule && !selectedBidIds.includes(id)) return;
     setCheckedBidIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -1130,14 +1162,11 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   useEffect(() => {
     if (!manageBartendersOpen) return;
 
-    const preselectedIds = allBids
-      .filter((b) => String(b.status).toLowerCase() === "selected")
-      .map((b) => getBidId(b));
-
-    setSelectedBidIds(preselectedIds);
-    // optional: also clear checked state when opening
+    // Only newly chosen bartenders belong in this state. Previously selected
+    // bids may already be assignments and must not consume another open slot.
+    setSelectedBidIds([]);
     setCheckedBidIds([]);
-  }, [manageBartendersOpen, allBids]);
+  }, [manageBartendersOpen]);
 
   // derive auto rush (decimal + whole)
   const autoRush = useMemo(() => {
@@ -1277,7 +1306,11 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const [paymentActionType, setPaymentActionType] = useState("");
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [paymentActionReason, setPaymentActionReason] = useState("");
+  const [paymentActionAmount, setPaymentActionAmount] = useState("");
   const [paymentActionSaving, setPaymentActionSaving] = useState(false);
+  const [creditRefundAmount, setCreditRefundAmount] = useState("");
+  const [creditRefundMethod, setCreditRefundMethod] = useState("");
+  const [creditRefundSaving, setCreditRefundSaving] = useState(false);
   const [arrangementNotes, setArrangementNotes] = useState(
     event?.payment?.arrangementNotes || ""
   );
@@ -1304,7 +1337,8 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     0;
 
   const recordedAmountPaid = activePayments.reduce(
-    (sum, p) => sum + (Number(p.amount) || 0),
+    (sum, p) =>
+      sum + Math.max(0, (Number(p.amount) || 0) - (Number(p.refundedAmount) || 0)),
     0
   );
   const amountPaid = activePayments.length
@@ -1313,6 +1347,29 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
   const remainingBalance = Math.max(discountedTotal - amountPaid, 0);
   const overpaymentCredit = Math.max(amountPaid - discountedTotal, 0);
+  const creditRefundPayment = activePayments.find(
+    (payment) =>
+      !String(payment?._id || "").startsWith("summary-") &&
+      (Number(payment.amount) || 0) - (Number(payment.refundedAmount) || 0) > 0
+  );
+  const creditRefundMax = Math.min(
+    overpaymentCredit,
+    Math.max(
+      0,
+      (Number(creditRefundPayment?.amount) || 0) -
+        (Number(creditRefundPayment?.refundedAmount) || 0)
+    )
+  );
+  useEffect(() => {
+    setCreditRefundAmount((current) => {
+      const amount = Number(current);
+      return creditRefundMax > 0 && amount > 0 && amount <= creditRefundMax
+        ? current
+        : creditRefundMax > 0
+        ? creditRefundMax.toFixed(2)
+        : "";
+    });
+  }, [creditRefundMax]);
   const paymentAmountReceived = Number(paymentForm.amount) || 0;
   const collectPaymentAmountInvalid =
     paymentAmountReceived <= 0 || paymentAmountReceived > remainingBalance;
@@ -2568,10 +2625,58 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     }
   };
 
+  const handleCreditRefund = async () => {
+    const amount = Number(creditRefundAmount);
+    if (
+      !creditRefundPayment?._id ||
+      !creditRefundMethod ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > creditRefundMax
+    ) {
+      return;
+    }
+
+    setCreditRefundSaving(true);
+    try {
+      const res = await api.patch(`/payments/${creditRefundPayment._id}/refund`, {
+        amount,
+        method: creditRefundMethod,
+        notes: `Customer credit refund via ${creditRefundMethod}.`,
+      });
+      const updatedPayment = res.data?.data;
+      setPayments((prev) =>
+        prev.map((payment) =>
+          payment._id === creditRefundPayment._id ? updatedPayment : payment
+        )
+      );
+      setCreditRefundAmount("");
+      setCreditRefundMethod("");
+      setAlertType("success");
+      setAlertMsg(`${fmtMoney(amount)} customer credit refunded successfully.`);
+      setAlertOpen(true);
+    } catch (err) {
+      setAlertType("error");
+      setAlertMsg(err?.response?.data?.message || "Failed to refund customer credit.");
+      setAlertOpen(true);
+    } finally {
+      setCreditRefundSaving(false);
+    }
+  };
+
   const openPaymentAction = (payment, actionType) => {
     setSelectedPayment(payment);
     setPaymentActionType(actionType);
     setPaymentActionReason("");
+    const refundable = Math.max(
+      0,
+      (Number(payment?.amount) || 0) - (Number(payment?.refundedAmount) || 0)
+    );
+    setPaymentActionAmount(
+      actionType === "refund"
+        ? String(Math.min(refundable, overpaymentCredit || refundable).toFixed(2))
+        : ""
+    );
     setPaymentActionOpen(true);
   };
 
@@ -2581,6 +2686,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     setSelectedPayment(null);
     setPaymentActionType("");
     setPaymentActionReason("");
+    setPaymentActionAmount("");
   };
 
   const handlePaymentAction = async () => {
@@ -2596,7 +2702,10 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       const payload =
         paymentActionType === "void"
           ? { voidReason: paymentActionReason }
-          : { notes: paymentActionReason };
+          : {
+              amount: Number(paymentActionAmount),
+              notes: paymentActionReason,
+            };
 
       const res = await api.patch(endpoint, payload);
       const updatedPayment = res.data?.data;
@@ -2640,6 +2749,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       setSelectedPayment(null);
       setPaymentActionType("");
       setPaymentActionReason("");
+      setPaymentActionAmount("");
     } catch (err) {
       setAlertType("error");
       setAlertMsg(
@@ -3120,14 +3230,11 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               Time
             </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
+              <DateTextField
                 label="Arrival Date"
-                placeholder="MM/DD/YYYY"
                 fullWidth
                 value={dateInputs.startAt}
                 onChange={updateEventDateTextPart("startAt")}
-                InputLabelProps={{ shrink: true }}
-                inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 helperText="Use MM/DD/YYYY."
               />
               <TextField
@@ -3144,14 +3251,11 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               />
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
+              <DateTextField
                 label="Leaving Date"
-                placeholder="MM/DD/YYYY"
                 fullWidth
                 value={dateInputs.endAt}
                 onChange={updateEventDateTextPart("endAt")}
-                InputLabelProps={{ shrink: true }}
-                inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 helperText="Use MM/DD/YYYY."
               />
               <TextField
@@ -4235,6 +4339,13 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                 paymentRequest={paymentRequest}
                 paymentRequests={paymentRequests}
                 formatMoney={fmtMoney}
+                creditRefundAmount={creditRefundAmount}
+                creditRefundMethod={creditRefundMethod}
+                creditRefundMax={creditRefundMax}
+                creditRefundSaving={creditRefundSaving}
+                onCreditRefundAmountChange={setCreditRefundAmount}
+                onCreditRefundMethodChange={setCreditRefundMethod}
+                onCreditRefund={handleCreditRefund}
               />
 
               {paymentPolicy.dueAt && (
@@ -4727,14 +4838,14 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                 selected.
               </Alert>
 
-              {allBids.length === 0 && (
+              {selectableBids.length === 0 && (
                 <Alert severity="warning">
                   There are currently no bids with an{" "}
                   <strong>interested</strong> status for this event.
                 </Alert>
               )}
 
-              {!!allBids.length && (
+              {!!selectableBids.length && (
                 <Grid
                   container
                   spacing={2}
@@ -5836,6 +5947,22 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               via {selectedPayment?.method || "unknown method"}
             </Typography>
 
+            {paymentActionType === "refund" && (
+              <TextField
+                fullWidth
+                type="number"
+                label="Refund amount"
+                value={paymentActionAmount}
+                onChange={(e) => setPaymentActionAmount(e.target.value)}
+                inputProps={{ min: 0.01, step: 0.01 }}
+                helperText={
+                  overpaymentCredit > 0
+                    ? `${fmtMoney(overpaymentCredit)} customer credit is available to refund.`
+                    : "Enter the amount actually returned to the customer."
+                }
+              />
+            )}
+
             <TextField
               fullWidth
               multiline
@@ -5862,7 +5989,16 @@ We wanted to confirm the details you entered and ask a few quick questions so we
             variant="contained"
             color={paymentActionType === "void" ? "error" : "warning"}
             onClick={handlePaymentAction}
-            disabled={paymentActionSaving || !selectedPayment?._id}
+            disabled={
+              paymentActionSaving ||
+              !selectedPayment?._id ||
+              (paymentActionType === "refund" &&
+                (!Number.isFinite(Number(paymentActionAmount)) ||
+                  Number(paymentActionAmount) <= 0 ||
+                  Number(paymentActionAmount) >
+                    (Number(selectedPayment?.amount) || 0) -
+                      (Number(selectedPayment?.refundedAmount) || 0)))
+            }
           >
             {paymentActionSaving
               ? "Saving..."

@@ -28,8 +28,15 @@ const {
   PaymentModel,
   PaymentRequestModel,
   UserModel,
+  AuthSessionModel,
 } = await import("../../models/index.js");
 const { storeComplianceDocument } = await import("../../utils/libs/complianceDocumentStore.js");
+const { hashRefreshTokenId, refreshSessionExpiresAt } = await import(
+  "../../utils/libs/refreshSession.js"
+);
+const { default: createRefreshToken } = await import(
+  "../../utils/libs/createRefreshToken.js"
+);
 
 const tokenFor = (user) =>
   jwt.sign(
@@ -258,6 +265,81 @@ test("staff can approve fewer bartenders than recommended with a documented reas
   assert.match(saved.staffingException.reason, /limited menu/);
 });
 
+test("contact-only edits normalize values without repricing the event", async () => {
+  const contactEvent = await EventModel.create({
+    organizer: owner._id,
+    type: "birthday",
+    location: { address1: "500 Contact Way", city: "Indianapolis", state: "IN" },
+    startAt: new Date("2027-01-10T21:00:00.000Z"),
+    endAt: new Date("2027-01-11T01:00:00.000Z"),
+    contact: { fullName: owner.fullName, email: owner.email },
+    pricing: { hourlyRate: 40, bartendersRequested: 1 },
+    payment: { total: 500, balance: 500 },
+  });
+
+  await request(app)
+    .patch(`/api/v1/events/${contactEvent._id}`)
+    .set("Authorization", `Bearer ${tokenFor(employee)}`)
+    .send({
+      contact: {
+        fullName: "  Anne-Marie O'Connor  ",
+        email: "  qa.contact@example.com  ",
+        phone: "  +1 317 555 0199  ",
+        preferred: "call",
+      },
+    })
+    .expect(200);
+
+  const saved = await EventModel.findById(contactEvent._id).lean();
+  assert.equal(saved.contact.fullName, "Anne-Marie O'Connor");
+  assert.equal(saved.contact.email, "qa.contact@example.com");
+  assert.equal(saved.payment.total, 500);
+  assert.equal(saved.payment.balance, 500);
+});
+
+test("approved staffing cannot be reduced below active assignments", async () => {
+  const bartenders = await UserModel.create([
+    {
+      username: "integration.assigned1",
+      email: "assigned1.integration@example.com",
+      fullName: "Assigned Integration Bartender One",
+      passwordHash: "not-used",
+      role: "bartender",
+    },
+    {
+      username: "integration.assigned2",
+      email: "assigned2.integration@example.com",
+      fullName: "Assigned Integration Bartender Two",
+      passwordHash: "not-used",
+      role: "bartender",
+    },
+  ]);
+  const staffingEvent = await EventModel.create({
+    organizer: owner._id,
+    type: "corporate",
+    location: { address1: "600 Staffing Way", city: "Indianapolis", state: "IN" },
+    startAt: new Date("2027-02-10T21:00:00.000Z"),
+    endAt: new Date("2027-02-11T01:00:00.000Z"),
+    contact: { fullName: owner.fullName, email: owner.email },
+    counts: { recommendedBartenders: 2, approvedBartenders: 2, neededBartenders: 2, assigned: 2 },
+    pricing: { bartendersRequested: 2, hourlyRate: 40 },
+  });
+  await AssignmentModel.create(
+    bartenders.map((bartender) => ({
+      event: staffingEvent._id,
+      bartenderUser: bartender._id,
+      status: "active",
+    }))
+  );
+
+  const response = await request(app)
+    .patch(`/api/v1/events/${staffingEvent._id}`)
+    .set("Authorization", `Bearer ${tokenFor(employee)}`)
+    .send({ counts: { approvedBartenders: 1 } })
+    .expect(409);
+  assert.match(response.body.message, /Remove or replace assigned bartenders first/);
+});
+
 test("login validates malformed input before querying", async () => {
   const response = await request(app)
     .post("/api/v1/users/login")
@@ -281,6 +363,44 @@ test("login queries MongoDB and returns a generic credential failure", async () 
     .expect(400);
 
   assert.equal(response.body.message, "Invalid credentials.");
+});
+
+test("an overlapping stale refresh does not revoke a newly rotated session", async () => {
+  const sessionStartedAt = Date.now();
+  const sessionId = "integration-refresh-overlap";
+  const tokenId = "integration-refresh-token-1";
+  const refreshToken = createRefreshToken({
+    id: String(owner._id),
+    email: owner.email,
+    username: owner.username,
+    fullName: owner.fullName,
+    role: owner.role,
+    sessionStartedAt,
+    sid: sessionId,
+    jti: tokenId,
+  });
+  await AuthSessionModel.create({
+    sessionId,
+    user: owner._id,
+    currentTokenHash: hashRefreshTokenId(tokenId),
+    sessionStartedAt: new Date(sessionStartedAt),
+    expiresAt: refreshSessionExpiresAt(sessionStartedAt),
+  });
+
+  const first = await request(app)
+    .post("/api/v1/users/refresh-token")
+    .set("Cookie", `refreshToken=${refreshToken}`)
+    .expect(200);
+  assert.ok(first.body.accessToken);
+
+  const overlap = await request(app)
+    .post("/api/v1/users/refresh-token")
+    .set("Cookie", `refreshToken=${refreshToken}`)
+    .expect(200);
+  assert.ok(overlap.body.accessToken);
+
+  const session = await AuthSessionModel.findOne({ sessionId });
+  assert.equal(session.revokedAt, null);
 });
 
 test("private event details are visible to the owner but hidden from another customer", async () => {
@@ -353,10 +473,10 @@ test("only staff can record a payment and the event balance synchronizes", async
   assert.equal(synchronized.payment.paidTotal, 200);
   assert.equal(synchronized.payment.balance, 300);
   assert.equal(synchronized.payment.status, "partially_paid");
-  const completedRequest = await PaymentRequestModel.findById(
+  const partialRequest = await PaymentRequestModel.findById(
     paymentRequest._id
   ).lean();
-  assert.equal(completedRequest.status, "completed");
+  assert.equal(partialRequest.status, "sent");
 });
 
 test("payment edits reject invalid amounts and resynchronize the balance", async () => {
@@ -392,6 +512,84 @@ test("overpayments are rejected without changing the payment ledger", async () =
     await PaymentModel.countDocuments({ event: event._id, status: "recorded" }),
     1
   );
+});
+
+test("concurrent payments cannot consume the same remaining balance", async () => {
+  const concurrentEvent = await EventModel.create({
+    organizer: owner._id,
+    type: "corporate",
+    location: { address1: "700 Ledger Way", city: "Indianapolis", state: "IN" },
+    startAt: new Date("2027-03-10T21:00:00.000Z"),
+    endAt: new Date("2027-03-11T01:00:00.000Z"),
+    contact: { fullName: owner.fullName, email: owner.email },
+    status: "confirmed",
+    payment: { total: 100, balance: 100 },
+  });
+  const makePayment = (reference) =>
+    request(app)
+      .post("/api/v1/payments")
+      .set("Authorization", `Bearer ${tokenFor(employee)}`)
+      .send({ event: concurrentEvent._id, amount: 60, method: "cash", reference });
+
+  const responses = await Promise.all([makePayment("race-a"), makePayment("race-b")]);
+  assert.deepEqual(responses.map(({ status }) => status).sort(), [201, 409]);
+  assert.equal(
+    await PaymentModel.countDocuments({ event: concurrentEvent._id, status: "recorded" }),
+    1
+  );
+  const saved = await EventModel.findById(concurrentEvent._id).lean();
+  assert.equal(saved.payment.paidTotal, 60);
+  assert.equal(saved.payment.balance, 40);
+});
+
+test("cancellation releases operational records in the same transaction", async () => {
+  const bartender = await UserModel.create({
+    username: "integration.cancelledbartender",
+    email: "cancelled.bartender@example.com",
+    fullName: "Cancellation Bartender",
+    passwordHash: "not-used",
+    role: "bartender",
+  });
+  const cancelEvent = await EventModel.create({
+    organizer: owner._id,
+    type: "corporate",
+    location: { address1: "800 Cancel Way", city: "Indianapolis", state: "IN" },
+    startAt: new Date("2027-04-10T21:00:00.000Z"),
+    endAt: new Date("2027-04-11T01:00:00.000Z"),
+    contact: { fullName: owner.fullName, email: owner.email },
+    status: "confirmed",
+    visibility: { onBiddingBoard: true },
+    counts: { recommendedBartenders: 1, approvedBartenders: 1, neededBartenders: 1, assigned: 1 },
+    payment: { total: 100, balance: 100 },
+  });
+  await AssignmentModel.create({ event: cancelEvent._id, bartenderUser: bartender._id });
+  await BidModel.create({ event: cancelEvent._id, bartenderUser: bartender._id, status: "selected" });
+  const openRequest = await PaymentRequestModel.create({
+    event: cancelEvent._id,
+    provider: "other",
+    paymentType: "full",
+    amountRequested: 100,
+    status: "sent",
+  });
+
+  await request(app)
+    .post(`/api/v1/events/${cancelEvent._id}/cancel`)
+    .set("Authorization", `Bearer ${tokenFor(employee)}`)
+    .send({ cancelReason: "customer_request" })
+    .expect(200);
+
+  const [saved, assignment, bid, savedRequest] = await Promise.all([
+    EventModel.findById(cancelEvent._id).lean(),
+    AssignmentModel.findOne({ event: cancelEvent._id }).lean(),
+    BidModel.findOne({ event: cancelEvent._id }).lean(),
+    PaymentRequestModel.findById(openRequest._id).lean(),
+  ]);
+  assert.equal(saved.status, "canceled");
+  assert.equal(saved.counts.assigned, 0);
+  assert.equal(saved.visibility.onBiddingBoard, false);
+  assert.equal(assignment.status, "removed");
+  assert.equal(bid.status, "dropped");
+  assert.equal(savedRequest.status, "cancelled");
 });
 
 test("event price increases and decreases keep the payment ledger and balance aligned", async () => {
@@ -440,7 +638,7 @@ test("voiding a payment restores the balance and reopens its request", async () 
   const reopenedRequest = await PaymentRequestModel.findById(
     paymentRequest._id
   ).lean();
-  assert.equal(reopenedRequest.status, "sent");
+  assert.equal(reopenedRequest.status, "cancelled");
 });
 
 const compliantProfile = ({ state = "IN", status = "active", expiresAt = "2030-12-31" } = {}) => ({

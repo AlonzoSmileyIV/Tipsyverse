@@ -64,12 +64,14 @@ test("authEmployee rejects regular and bartender accounts", async () => {
   }
 });
 
-test("authEmployee allows employee accounts", async () => {
-  let calledNext = false;
-  await authEmployee({ user: { role: "employee" } }, {}, () => {
-    calledNext = true;
-  });
-  assert.equal(calledNext, true);
+test("authEmployee allows employee and admin accounts", async () => {
+  for (const role of ["employee", "admin"]) {
+    let calledNext = false;
+    await authEmployee({ user: { role } }, {}, () => {
+      calledNext = true;
+    });
+    assert.equal(calledNext, true);
+  }
 });
 
 test("credential fields are excluded from user queries by default", () => {

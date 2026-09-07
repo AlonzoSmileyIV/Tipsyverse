@@ -11,7 +11,7 @@ import {
   sendNotification,
 } from "../../utils/index.js";
 
-const isEmployee = (user) => user?.role === "employee";
+const isEmployee = (user) => ["admin", "employee"].includes(user?.role);
 const appUrl = () => process.env.ADMIN_PORTAL_URL || process.env.FRONTEND_URL || "http://localhost:3000";
 const adminTicketUrl = (ticket) => `${appUrl()}/admin/operations?ticket=${ticket._id}`;
 const customerTicketUrl = (ticket) => `${appUrl()}/settings/support?ticket=${ticket._id}`;

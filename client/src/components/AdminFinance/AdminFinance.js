@@ -47,6 +47,17 @@ import {
 
 const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 const roundMoney = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const REFUND_METHODS = [
+  ["credit_card", "Credit Card"],
+  ["cashapp", "Cash App"],
+  ["venmo", "Venmo"],
+  ["paypal", "PayPal"],
+  ["zelle", "Zelle"],
+  ["square", "Square"],
+  ["cash", "Cash"],
+  ["check", "Check"],
+  ["other", "Other"],
+];
 const fmtPct = (n) => `${n > 0 ? "+" : ""}${n.toFixed(1)}%`;
 const fmtDateTime = (value) =>
   formatTimestamp(value, {
@@ -265,7 +276,10 @@ const buildFinanceRows = ({
     if (!map[eventId].paymentCount && paidFromEventSummary) {
       map[eventId].received = 0;
     }
-    map[eventId].received += Number(payment.amount) || 0;
+    map[eventId].received += Math.max(
+      0,
+      (Number(payment.amount) || 0) - (Number(payment.refundedAmount) || 0)
+    );
     map[eventId].paymentCount += 1;
   });
 
@@ -387,6 +401,9 @@ export default function AdminFinance() {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [allocationOpen, setAllocationOpen] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundMethod, setRefundMethod] = useState("");
+  const [refunding, setRefunding] = useState(false);
   const [alert, setAlert] = useState(null);
   const [payoutForm, setPayoutForm] = useState({
     reference: "",
@@ -641,6 +658,53 @@ export default function AdminFinance() {
         : [],
     [payouts, selectedEventId]
   );
+  const refundablePayment = selectedPayments.find(
+    (payment) =>
+      payment.status === "recorded" &&
+      (Number(payment.amount) || 0) - (Number(payment.refundedAmount) || 0) > 0
+  );
+  const refundMax = Math.min(
+    Number(selectedRow?.customerCredit) || 0,
+    Math.max(
+      0,
+      (Number(refundablePayment?.amount) || 0) -
+        (Number(refundablePayment?.refundedAmount) || 0)
+    )
+  );
+
+  useEffect(() => {
+    setRefundAmount(refundMax > 0 ? refundMax.toFixed(2) : "");
+    setRefundMethod("");
+  }, [selectedEventId, refundMax]);
+
+  const refundCustomerCredit = async () => {
+    const amount = Number(refundAmount);
+    if (
+      !refundablePayment?._id ||
+      !refundMethod ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > refundMax
+    ) return;
+
+    setRefunding(true);
+    try {
+      await api.patch(`/payments/${refundablePayment._id}/refund`, {
+        amount,
+        method: refundMethod,
+        notes: `Customer credit refund via ${refundMethod}.`,
+      });
+      setAlert({ severity: "success", message: `${fmtMoney(amount)} customer credit refunded.` });
+      await loadFinance();
+    } catch (err) {
+      setAlert({
+        severity: "error",
+        message: err?.response?.data?.message || "Failed to refund customer credit.",
+      });
+    } finally {
+      setRefunding(false);
+    }
+  };
 
   const payoutRows = selectedAssignments.map((assignment) => {
     const expected = getExpectedAssignmentPay(assignment, selectedRow?.event);
@@ -703,7 +767,7 @@ export default function AdminFinance() {
       label: "Customer credits",
       value: totals.customerCredit,
       previous: previousTotals.customerCredit,
-      helper: "Overpayments on account",
+      helper: "Overpayments",
     },
     {
       id: "actualProfit",
@@ -1235,6 +1299,54 @@ export default function AdminFinance() {
         <DialogContent dividers>
           {selectedRow && (
             <Stack spacing={2}>
+              {selectedRow.customerCredit > 0 && (
+                <Alert severity="info">
+                  <Stack spacing={1.5}>
+                    <Typography variant="body2">
+                      Customer credit on this event: <strong>{fmtMoney(selectedRow.customerCredit)}</strong>.
+                      Refunds cannot exceed the available credit.
+                    </Typography>
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "flex-start" }}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        label="Refund amount"
+                        value={refundAmount}
+                        onChange={(event) => setRefundAmount(event.target.value)}
+                        inputProps={{ min: 0.01, max: refundMax, step: 0.01 }}
+                        helperText={`Maximum ${fmtMoney(refundMax)}`}
+                      />
+                      <FormControl size="small" sx={{ minWidth: 180 }}>
+                        <InputLabel id="finance-refund-method-label">Refund method</InputLabel>
+                        <Select
+                          labelId="finance-refund-method-label"
+                          label="Refund method"
+                          value={refundMethod}
+                          onChange={(event) => setRefundMethod(event.target.value)}
+                        >
+                          {REFUND_METHODS.map(([value, label]) => (
+                            <MenuItem key={value} value={value}>{label}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <Button
+                        variant="contained"
+                        color="warning"
+                        onClick={refundCustomerCredit}
+                        disabled={
+                          refunding ||
+                          !refundMethod ||
+                          !(Number(refundAmount) > 0) ||
+                          Number(refundAmount) > refundMax
+                        }
+                      >
+                        {refunding ? "Refunding..." : "Refund"}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Alert>
+              )}
+
               <Paper variant="outlined" sx={{ p: 2 }}>
                 <Stack spacing={1}>
                   <Typography variant="subtitle1" fontWeight={700}>

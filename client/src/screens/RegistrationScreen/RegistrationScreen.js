@@ -27,6 +27,7 @@ import HelmetHeader from "../../components/HelmetHeader/Helmet";
 import api from "../../services/api";
 import { isAtLeastAge } from "../../utils/dateOnly";
 import { useNavigate } from "react-router-dom";
+import DateTextField from "../../components/DateTextField/DateTextField";
 
 const passwordCriteria = {
   length: (value) => value.length >= 6,
@@ -278,11 +279,10 @@ const RegistrationScreen = () => {
           helperText={errors.username}
         />
 
-        <TextField
+        <DateTextField
           fullWidth
           label="Date of Birth"
           name="dob"
-          placeholder="MM/DD/YYYY"
           margin="normal"
           value={form.dob}
           onChange={(e) => {
@@ -300,11 +300,6 @@ const RegistrationScreen = () => {
           }}
           error={!!errors.dob}
           helperText={errors.dob || "Use MM/DD/YYYY, like 07/02/1998."}
-          inputProps={{
-            inputMode: "numeric",
-            maxLength: 10,
-          }}
-          InputLabelProps={{ shrink: true }}
         />
         <TextField
           fullWidth

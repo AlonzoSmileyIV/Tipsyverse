@@ -150,6 +150,7 @@ const PaymentSnapshotSchema = new mongoose.Schema(
       default: null,
     },
     arrangementNotes: { type: String, trim: true, default: null },
+    ledgerVersion: { type: Number, min: 0, default: 0 },
   },
   { _id: false }
 );
@@ -391,7 +392,7 @@ const EventSchema = new mongoose.Schema(
     bartenderClockOut5mReminderSentAt: { type: Date, default: null, index: true },
 
   },
-  { timestamps: true }
+  { timestamps: true, optimisticConcurrency: true }
 );
 
 EventSchema.pre("validate", function (next) {

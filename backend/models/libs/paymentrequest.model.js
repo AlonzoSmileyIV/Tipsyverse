@@ -5,7 +5,6 @@ const PaymentRequestSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Event",
     required: true,
-    index: true,
   },
 
   provider: {
@@ -34,6 +33,7 @@ const PaymentRequestSchema = new mongoose.Schema({
   },
 
   providerUrl: String,
+  stripePaymentIntentId: { type: String, index: true },
 
   sentTo: {
     fullName: String,
@@ -65,7 +65,22 @@ const PaymentRequestSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "EmailLog",
   },
-}, { timestamps: true });
+}, { timestamps: true, optimisticConcurrency: true });
+
+// Only one customer-payable request may exist per event. Revised pricing or a
+// replacement request must invalidate the previous link first.
+PaymentRequestSchema.index(
+  { event: 1 },
+  {
+    name: "one_sent_payment_request_per_event",
+    unique: true,
+    partialFilterExpression: { status: "sent" },
+  }
+);
+PaymentRequestSchema.index(
+  { event: 1, createdAt: -1 },
+  { name: "payment_requests_by_event_created" }
+);
 
 export const PaymentRequestModel = mongoose.model("PaymentRequest", PaymentRequestSchema);
 export default PaymentRequestModel;

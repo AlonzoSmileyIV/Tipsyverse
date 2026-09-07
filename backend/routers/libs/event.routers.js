@@ -52,6 +52,6 @@ eventRouter.post('/:id/send-to-assign', auth, authEmployee, sensitiveActionDedup
 eventRouter.post('/:id/payment-policy/resolve', auth, authEmployee, sensitiveActionDedupe, eventCtrl.resolvePaymentPolicy);
 eventRouter.post('/:id/assign-bartenders', auth, authEmployee, sensitiveActionDedupe, eventCtrl.assignSelectedBartenders);
 eventRouter.post('/:id/remove-bartenders', auth, authEmployee, eventCtrl.removeAssignedBartenders);
-eventRouter.post('/:id/cancel', auth, eventCtrl.cancelRequest);
+eventRouter.post('/:id/cancel', auth, sensitiveActionDedupe, eventCtrl.cancelRequest);
 
 export default eventRouter;

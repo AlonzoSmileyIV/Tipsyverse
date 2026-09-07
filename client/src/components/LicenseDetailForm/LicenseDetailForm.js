@@ -26,6 +26,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import api from "../../services/api";
 import { Visibility } from "@mui/icons-material";
 import { parseDateOnlyParts } from "../../utils/dateOnly";
+import DateTextField from "../DateTextField/DateTextField";
 
 const US_STATES = [
   { value: "AL", label: "Alabama" },
@@ -553,9 +554,8 @@ function LicenseDetailForm({
           size="small"
         />
 
-        <TextField
+        <DateTextField
           label={`Expiration Date${compliancePolicy.permitRequired ? "" : " (optional)"}`}
-          placeholder="MM/DD/YYYY"
           value={expiresAt}
           disabled={disableFields}
           onChange={(e) => {
@@ -564,8 +564,6 @@ function LicenseDetailForm({
           }}
           fullWidth
           size="small"
-          InputLabelProps={{ shrink: true }}
-          inputProps={{ inputMode: "numeric", maxLength: 10 }}
           helperText={compliancePolicy.permitRequired
             ? "Use MM/DD/YYYY. Expiration date cannot be in the past."
             : "Optional when this state does not require an individual permit."}

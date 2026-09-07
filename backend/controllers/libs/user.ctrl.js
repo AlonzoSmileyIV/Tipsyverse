@@ -84,6 +84,7 @@ import {
 import XLSX from "xlsx";
 import {
   hashRefreshTokenId,
+  deriveNextRefreshTokenId,
   newRefreshTokenId,
   newSessionId,
   refreshSessionExpiresAt,
@@ -1558,7 +1559,30 @@ const userCtrl = {
       revokedAt: null,
       expiresAt: { $gt: new Date() },
     }).select("+currentTokenHash");
-    if (!session || session.currentTokenHash !== hashRefreshTokenId(decoded.jti)) {
+    const presentedTokenHash = hashRefreshTokenId(decoded.jti);
+    let overlapReplayTokenId = null;
+    if (!session || session.currentTokenHash !== presentedTokenHash) {
+      // A hard navigation can briefly overlap the refresh request from the
+      // document being replaced. The first request rotates the cookie while
+      // the second may still carry the immediately preceding value. Do not
+      // classify that narrow window as malicious reuse or revoke the session;
+      // ask the client to retry after the browser applies Set-Cookie.
+      const rotationAgeMs = session?.lastRotatedAt
+        ? Date.now() - new Date(session.lastRotatedAt).getTime()
+        : Number.POSITIVE_INFINITY;
+      const expectedNextTokenId = deriveNextRefreshTokenId(
+        decoded.jti,
+        decoded.sid,
+        process.env.REFRESH_TOKEN_SECRET
+      );
+      if (
+        session &&
+        rotationAgeMs >= 0 &&
+        rotationAgeMs < 10_000 &&
+        session.currentTokenHash === hashRefreshTokenId(expectedNextTokenId)
+      ) {
+        overlapReplayTokenId = expectedNextTokenId;
+      } else {
       if (session) {
         session.revokedAt = new Date();
         session.revokeReason = "refresh-token-reuse";
@@ -1571,6 +1595,7 @@ const userCtrl = {
         forceLogout: true,
         message: "Your session is no longer valid. Please sign in again.",
       });
+      }
     }
 
     const sessionStartedAt = Number(
@@ -1646,7 +1671,13 @@ const userCtrl = {
         sessionStartedAt,
       });
 
-      const nextJti = newRefreshTokenId();
+      const nextJti =
+        overlapReplayTokenId ||
+        deriveNextRefreshTokenId(
+          decoded.jti,
+          decoded.sid,
+          process.env.REFRESH_TOKEN_SECRET
+        );
       const {
         iat: _issuedAt,
         exp: _expiresAt,
@@ -1657,9 +1688,11 @@ const userCtrl = {
         ...refreshPayload,
         jti: nextJti,
       });
-      session.currentTokenHash = hashRefreshTokenId(nextJti);
-      session.lastRotatedAt = new Date();
-      await session.save();
+      if (!overlapReplayTokenId) {
+        session.currentTokenHash = hashRefreshTokenId(nextJti);
+        session.lastRotatedAt = new Date();
+        await session.save();
+      }
       res.cookie("refreshToken", nextRefreshToken, {
         ...getRefreshCookieOptions(),
         maxAge: Math.max(0, session.expiresAt.getTime() - Date.now()),
@@ -2601,7 +2634,7 @@ const userCtrl = {
   getLicenseById: async (req, res) => {
     try {
       const { licenseId } = req.params;
-      const isEmployee = req.user.role === "employee";
+      const isEmployee = ["admin", "employee"].includes(req.user.role);
 
       // Employees can view *any* bartender's license.
       // Bartenders can only view their own license.
@@ -2643,7 +2676,7 @@ const userCtrl = {
   getLicenseVerificationDocument: async (req, res) => {
     try {
       const { licenseId } = req.params;
-      const isStaff = req.user.role === "employee";
+      const isStaff = ["admin", "employee"].includes(req.user.role);
       const query = isStaff
         ? { "bartenderProfile.licenses._id": licenseId }
         : { _id: req.user.id, "bartenderProfile.licenses._id": licenseId };
@@ -3038,7 +3071,7 @@ const userCtrl = {
 
   reviewLicenseForAdmin: async (req, res) => {
     try {
-      if (req.user.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user.role)) {
         return res.status(403).json({
           success: false,
           message: "Only employees can approve/deny licenses.",
@@ -3160,7 +3193,7 @@ const userCtrl = {
 
   reviewBartenderProfileForAdmin: async (req, res) => {
     try {
-      if (req.user.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user.role)) {
         return res.status(403).json({
           success: false,
           message: "Only employees can approve/deny bartender profiles.",
@@ -3574,7 +3607,7 @@ const userCtrl = {
           .status(400)
           .json({ success: false, message: "role is required" });
 
-      if (role === "bartender" && req.user?.role === "employee") {
+      if (role === "bartender" && ["admin", "employee"].includes(req.user?.role)) {
         return res.json({
           role,
           eligible: true,
@@ -3984,7 +4017,7 @@ const userCtrl = {
   // VIEWS
   viewAllUsers: async (req, res) => {
     try {
-      if (req.user?.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: "Employee resources access denied." });
       }
       const users = await User.find()
@@ -4000,7 +4033,7 @@ const userCtrl = {
   },
   viewAllEmployees: async (req, res) => {
     try {
-      if (req.user?.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: "Employee resources access denied." });
       }
       const employees = await User.find({ role: "employee" })
@@ -4021,7 +4054,7 @@ const userCtrl = {
 
   viewAllRegulars: async (req, res) => {
     try {
-      if (req.user?.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: "Employee resources access denied." });
       }
       const customers = await User.find({ role: "regular" }).lean();
@@ -4467,7 +4500,7 @@ const userCtrl = {
 
   viewEmployeesNotReporting: async (req, res) => {
     try {
-      if (req.user?.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: "Employee resources access denied." });
       }
       const employees = await User.find({
@@ -4493,7 +4526,7 @@ const userCtrl = {
 
   viewUser: async (req, res) => {
     try {
-      if (req.user?.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: "Employee resources access denied." });
       }
       const { id } = req.params;
@@ -4631,7 +4664,7 @@ const userCtrl = {
 
   updateUser: async (req, res) => {
     try {
-      if (req.user?.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user?.role)) {
         return res.status(403).json({ success: false, message: "Employee resources access denied." });
       }
       const { id } = req.params;
@@ -5864,7 +5897,7 @@ const userCtrl = {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-      if (req.user?.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user?.role)) {
         await session.abortTransaction();
         session.endSession();
         return res.status(403).json({ success: false, message: "Employee resources access denied." });

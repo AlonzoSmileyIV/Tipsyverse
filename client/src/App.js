@@ -1,6 +1,7 @@
 import { BrowserRouter, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { useEffect, useRef, useState } from "react";
+import { Box, CircularProgress, Typography } from "@mui/material";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./styles/globalStyles.scss";
@@ -17,6 +18,46 @@ import {
 } from "./features/users/userSlice";
 import { restoreAuthentication } from "./services/api";
 
+const routeTitle = (pathname) => {
+  if (pathname.startsWith("/admin")) return "Tipsyverse administration";
+  if (pathname.startsWith("/bartend")) return "Bartender portal";
+  if (pathname.startsWith("/my-events")) return "My events";
+  if (pathname.startsWith("/book")) return "Book an event";
+  if (pathname.startsWith("/drinks/")) return "Drink details";
+  if (pathname.startsWith("/drinks")) return "Drinks";
+  if (pathname.startsWith("/learn/")) return "Course details";
+  if (pathname.startsWith("/learn")) return "Learning courses";
+  if (pathname.startsWith("/settings")) return "Account settings";
+  if (pathname.startsWith("/about")) return "About Tipsyverse";
+  if (pathname.startsWith("/contact")) return "Contact Tipsyverse";
+  if (pathname.startsWith("/faq")) return "Frequently asked questions";
+  if (pathname.startsWith("/privacy")) return "Privacy policy";
+  if (pathname.startsWith("/terms")) return "Terms and conditions";
+  if (pathname.startsWith("/login")) return "Log in";
+  if (pathname.startsWith("/register")) return "Create an account";
+  return pathname === "/" ? "Tipsyverse" : "Tipsyverse page";
+};
+
+function AuthenticationLoadingScreen() {
+  return (
+    <Box
+      role="status"
+      aria-live="polite"
+      sx={{
+        minHeight: "100vh",
+        display: "grid",
+        placeContent: "center",
+        justifyItems: "center",
+        gap: 2,
+        bgcolor: "background.default",
+      }}
+    >
+      <CircularProgress aria-label="Restoring your session" />
+      <Typography color="text.secondary">Restoring your session…</Typography>
+    </Box>
+  );
+}
+
 function ReadyAppContent() {
   const location = useLocation();
   const loggedInUser = useSelector((state) => state.users.loggedInUser);
@@ -32,6 +73,22 @@ function ReadyAppContent() {
           user={user}
           canShowWebsiteNotifications={canShowWebsiteNotifications}
         >
+          <Typography
+            component="h1"
+            sx={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              p: 0,
+              m: -1,
+              overflow: "hidden",
+              clip: "rect(0 0 0 0)",
+              whiteSpace: "nowrap",
+              border: 0,
+            }}
+          >
+            {routeTitle(location.pathname)}
+          </Typography>
           <AppRoutes loggedInUser={loggedInUser} user={user} />
           <ToastContainer
             position="top-right"
@@ -109,7 +166,7 @@ function AppContent() {
     };
   }, [dispatch, hasPersistedSession]);
 
-  if (!authenticationReady) return null;
+  if (!authenticationReady) return <AuthenticationLoadingScreen />;
 
   return <ReadyAppContent />;
 }

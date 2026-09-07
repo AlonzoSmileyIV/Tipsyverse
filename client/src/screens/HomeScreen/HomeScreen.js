@@ -125,6 +125,71 @@ const BartenderCoursePromo = ({ onStart }) => (
   </Box>
 );
 
+const EventServicePromo = ({ onStart }) => (
+  <Box sx={{ px: { xs: 2, md: 4 }, my: { xs: 3, md: 5 } }}>
+    <Paper
+      elevation={0}
+      sx={{
+        maxWidth: 1180,
+        mx: "auto",
+        p: { xs: 2.5, md: 3 },
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 2,
+        background:
+          "linear-gradient(135deg, rgba(128,0,32,0.08), rgba(255,255,255,0.96))",
+      }}
+    >
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={2}
+        alignItems={{ xs: "flex-start", md: "center" }}
+        justifyContent="space-between"
+      >
+        <Stack direction="row" spacing={1.5} alignItems="flex-start">
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              bgcolor: "var(--primary-color)",
+              color: "#fff",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <SchoolOutlinedIcon />
+          </Box>
+          <Box>
+            <Typography variant="h6" fontWeight={800}>
+              Looking for a bartender for your event?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Share your event details and Tipsyverse will help you plan staffing, timing, bar setup, and the service your guests need.
+            </Typography>
+          </Box>
+        </Stack>
+
+        <Button
+          component={RouterLink}
+          to="/book"
+          onClick={onStart}
+          variant="contained"
+          endIcon={<ArrowForwardIcon />}
+          sx={{
+            bgcolor: "var(--primary-color)",
+            whiteSpace: "nowrap",
+            "&:hover": { bgcolor: "var(--primary-color)" },
+          }}
+        >
+          Book an Event
+        </Button>
+      </Stack>
+    </Paper>
+  </Box>
+);
+
 
 
 const HomeScreen = () => {
@@ -196,10 +261,13 @@ const HomeScreen = () => {
         <>
           <Hero />
 
-          <EventServicesPromo />
+
 
           {showBartenderCoursePromo && (
+            <>
+            <EventServicePromo />
             <BartenderCoursePromo onStart={handleStartBartenderCourse} />
+            </>
           )}
 
           <DrinkCarousel

@@ -23,6 +23,27 @@ const PaymentSchema = new mongoose.Schema(
       default: "recorded",
     },
 
+    // Partial refunds remain attached to the original payment so the ledger
+    // can retain the gross receipt while balance calculations use its net.
+    refundedAmount: { type: Number, min: 0, default: 0 },
+    refunds: [
+      {
+        amount: { type: Number, min: 0, required: true },
+        notes: String,
+        method: {
+          type: String,
+          enum: ["credit_card", "square", "paypal", "venmo", "cashapp", "zelle", "cash", "check", "other"],
+        },
+        refundedAt: { type: Date, default: Date.now },
+        refundedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        providerRefundId: String,
+      },
+    ],
+    refundMethod: {
+      type: String,
+      enum: ["credit_card", "square", "paypal", "venmo", "cashapp", "zelle", "cash", "check", "other"],
+    },
+
     voidReason: String,
     voidedAt: Date,
     voidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -38,7 +59,7 @@ const PaymentSchema = new mongoose.Schema(
       refundId: String,
     },
   },
-  { timestamps: true }
+  { timestamps: true, optimisticConcurrency: true }
 );
 
 PaymentSchema.index({ "stripe.paymentIntentId": 1 }, { unique: true, sparse: true });

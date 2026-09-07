@@ -47,15 +47,34 @@ const persistRefreshedAccessToken = (accessToken, sessionStartedAt) => {
 // rotates refresh tokens, so two simultaneous refreshes with the same cookie
 // would make the second request look like token reuse and revoke the session.
 let refreshRequestPromise = null;
-const refreshAccessToken = () => {
-  if (refreshRequestPromise) return refreshRequestPromise;
+const MAX_ROTATION_RETRIES = 3;
 
-  refreshRequestPromise = axios
-    .post(
+const wait = (milliseconds) =>
+  new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+const requestRefreshedAccessToken = async (attempt = 0) => {
+  try {
+    return await axios.post(
       `${process.env.REACT_APP_BASE_URL}/users/refresh-token`,
       {},
       { withCredentials: true, __isRefreshCall: true }
-    )
+    );
+  } catch (error) {
+    const isRotationOverlap =
+      error.response?.status === 409 &&
+      error.response?.data?.code === "REFRESH_TOKEN_ROTATION_IN_PROGRESS";
+    if (!isRotationOverlap || attempt >= MAX_ROTATION_RETRIES) throw error;
+
+    const retryAfterMs = Number(error.response?.data?.retryAfterMs);
+    await wait(Number.isFinite(retryAfterMs) ? retryAfterMs : 150);
+    return requestRefreshedAccessToken(attempt + 1);
+  }
+};
+
+const refreshAccessToken = () => {
+  if (refreshRequestPromise) return refreshRequestPromise;
+
+  refreshRequestPromise = requestRefreshedAccessToken()
     .then((res) => {
       const accessToken = res.data?.accessToken || null;
       persistRefreshedAccessToken(

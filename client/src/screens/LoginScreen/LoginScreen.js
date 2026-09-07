@@ -43,7 +43,7 @@ const LoginScreen = () => {
   useEffect(() => {
     if (loginStatus === "succeeded" && loggedInUser) {
       const redirect = searchParams.get("redirect") || "/";
-      navigateOrReload(navigate, redirect);
+      navigateOrReload(navigate, redirect, { replace: true });
     }
   }, [loginStatus, loggedInUser, navigate, searchParams]);
 
@@ -152,6 +152,7 @@ const LoginScreen = () => {
           onChange={handleChange}
           error={!!errors.emailOrUsername}
           helperText={errors.emailOrUsername}
+          disabled={loginStatus === "loading"}
         />
         <TextField
           fullWidth
@@ -163,6 +164,7 @@ const LoginScreen = () => {
           onChange={handleChange}
           error={!!errors.password}
           helperText={errors.password}
+          disabled={loginStatus === "loading"}
           InputProps={{
             endAdornment: (
               <InputAdornment position="end">
@@ -189,9 +191,11 @@ const LoginScreen = () => {
           type="submit"
           fullWidth
           variant="contained"
+          disabled={loginStatus === "loading"}
+          aria-busy={loginStatus === "loading"}
           sx={{ backgroundColor: "var(--primary-color)" }}
         >
-          Login
+          {loginStatus === "loading" ? "Signing in…" : "Login"}
         </Button>
       </Box>
       <Typography sx={{ mt: 2 }}>

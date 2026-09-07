@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { canManage } from "../utils/libs/canManage.js";
 import {
   hashRefreshTokenId,
+  deriveNextRefreshTokenId,
   refreshSessionExpiresAt,
 } from "../utils/libs/refreshSession.js";
 import createRefreshToken from "../utils/libs/createRefreshToken.js";
@@ -71,12 +72,31 @@ test("self deletion and self status changes are denied", () => {
   );
 });
 
+test("an admin can manage users without an employee hierarchy", () => {
+  assert.deepEqual(
+    canManage({
+      actor: { _id: "admin", role: "admin" },
+      action: "edit",
+      targetHierarchyName: "Owner",
+      targetId: "target",
+      isStatusChange: true,
+    }),
+    { ok: true }
+  );
+});
+
 test("refresh identifiers are hashed and sessions have an eight-hour ceiling", () => {
   assert.notEqual(hashRefreshTokenId("token-id"), "token-id");
   assert.equal(
     refreshSessionExpiresAt(1_000).getTime(),
     1_000 + 8 * 60 * 60 * 1000
   );
+});
+
+test("refresh rotation is deterministic for safe overlap recovery", () => {
+  const next = deriveNextRefreshTokenId("token-1", "session-1", "secret");
+  assert.equal(next, deriveNextRefreshTokenId("token-1", "session-1", "secret"));
+  assert.notEqual(next, deriveNextRefreshTokenId("token-2", "session-1", "secret"));
 });
 
 test("a decoded refresh token can be rotated without reusing JWT timestamps", () => {

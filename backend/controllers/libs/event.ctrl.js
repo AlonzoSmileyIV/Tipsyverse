@@ -37,6 +37,7 @@ import {
 } from "../../utils/libs/eventSummary.js";
 import { assertBartendersCompliantForEvent } from "../../utils/libs/bartenderCompliance.js";
 import { resolveVenueTimezone } from "../../utils/libs/resolveVenueTimezone.js";
+import { cancelStripePaymentIntents } from "../../utils/libs/cancelStripePaymentIntents.js";
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
@@ -218,7 +219,7 @@ function buildCoreEventFacts({ evt, urgent }) {
   const bartendersCount = getRequiredBartenderCount(evt) || "—";
 
   const description = safeText(evt?.description);
-  const barType = safeText(evt?.options?.barType);
+  const barType = formatEventType(evt?.options?.barType);
   const bartenderNotes = safeText(evt?.bartenderNotes, "None");
 
   const additionalInstructions = safeText(evt?.additionalInstructions, "");
@@ -655,7 +656,9 @@ const eventCtrl = {
         {
           $group: {
             _id: "$event",
-            paidTotal: { $sum: "$amount" },
+            paidTotal: {
+              $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+            },
           },
         },
       ]);
@@ -1214,7 +1217,9 @@ const eventCtrl = {
               {
                 $group: {
                   _id: "$event",
-                  paidTotal: { $sum: "$amount" },
+                  paidTotal: {
+                    $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+                  },
                 },
               },
             ],
@@ -1868,7 +1873,9 @@ const eventCtrl = {
         {
           $group: {
             _id: "$event",
-            paidTotal: { $sum: "$amount" },
+            paidTotal: {
+              $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+            },
           },
         },
       ]);
@@ -1995,7 +2002,9 @@ const eventCtrl = {
               {
                 $group: {
                   _id: "$event",
-                  paidTotal: { $sum: "$amount" },
+                  paidTotal: {
+                    $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+                  },
                 },
               },
             ],
@@ -2365,9 +2374,26 @@ const eventCtrl = {
       if (!evt) {
         return res.status(404).json({ success: false, message: "Not found" });
       }
+      if (["canceled", "completed", "closed"].includes(evt.status)) {
+        return res.status(409).json({
+          success: false,
+          message: `A ${evt.status} event cannot be edited. Use the designated review workflow.`,
+        });
+      }
 
       // ✅ TRUE "before" snapshot (plain object) BEFORE any changes
       const beforeDoc = evt.toObject({ depopulate: true });
+      const expectedRevisionHeader = req.get?.("if-match");
+      if (expectedRevisionHeader != null && expectedRevisionHeader !== "") {
+        const expectedRevision = Number(String(expectedRevisionHeader).replace(/\"/g, ""));
+        if (!Number.isInteger(expectedRevision) || expectedRevision !== Number(evt.__v || 0)) {
+          return res.status(409).json({
+            success: false,
+            message: "This event was updated by someone else. Reload before saving your changes.",
+            currentRevision: Number(evt.__v || 0),
+          });
+        }
+      }
 
       // Allowed fields
       const allowedTopLevel = new Set([
@@ -2398,6 +2424,20 @@ const eventCtrl = {
 
       const body = req.body || {};
       const patch = {};
+      const requestedKeys = new Set(Object.keys(body));
+      const staffingInputsChanged = ["guestCount", "counts", "pricing"].some(
+        (key) => requestedKeys.has(key)
+      );
+      const billingInputsChanged = [
+        "startAt",
+        "endAt",
+        "guestCount",
+        "location",
+        "pricing",
+        "counts",
+        "private",
+        "options",
+      ].some((key) => requestedKeys.has(key));
 
       // Guard immutables
       if ("shortCode" in body) {
@@ -2412,6 +2452,18 @@ const eventCtrl = {
 
         if (key === "contact") {
           patch.contact = normalizeContact(body.contact);
+          if (!patch.contact?.fullName || !patch.contact?.email) {
+            return res.status(400).json({
+              success: false,
+              message: "Main contact name and email are required.",
+            });
+          }
+          if (!validateEmail(patch.contact.email)) {
+            return res.status(400).json({
+              success: false,
+              message: "Please enter a valid main contact email address.",
+            });
+          }
           continue;
         }
 
@@ -2581,60 +2633,81 @@ const eventCtrl = {
         patch[key] = body[key];
       }
 
-      const currentCounts = evt.counts?.toObject?.() || evt.counts || {};
-      const nextGuestCount = patch.guestCount ?? evt.guestCount;
-      const recommendedBartenders = recommendBartendersForGuests(nextGuestCount);
-      const approvedBartenders = Math.max(
-        1,
-        Number(
-          patch.counts?.approvedBartenders ??
-            patch.counts?.neededBartenders ??
-            patch.pricing?.bartendersRequested ??
-            currentCounts.approvedBartenders ??
-            currentCounts.neededBartenders ??
-            evt.pricing?.bartendersRequested ??
-            1
-        ) || 1
-      );
-      const staffingExceptionReason = String(
-        body.staffingException?.reason ?? evt.staffingException?.reason ?? ""
-      ).trim();
-      const hasStaffingException = approvedBartenders < recommendedBartenders;
-      if (hasStaffingException && !staffingExceptionReason) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "A staffing exception reason is required when approved staffing is below the recommendation.",
+      if (staffingInputsChanged) {
+        const currentCounts = evt.counts?.toObject?.() || evt.counts || {};
+        const nextGuestCount = patch.guestCount ?? evt.guestCount;
+        const recommendedBartenders = recommendBartendersForGuests(nextGuestCount);
+        const approvedBartenders = Math.max(
+          1,
+          Number(
+            patch.counts?.approvedBartenders ??
+              patch.counts?.neededBartenders ??
+              patch.pricing?.bartendersRequested ??
+              currentCounts.approvedBartenders ??
+              currentCounts.neededBartenders ??
+              evt.pricing?.bartendersRequested ??
+              1
+          ) || 1
+        );
+        const assignedBartenders = await Assignment.countDocuments({
+          event: evt._id,
+          status: "active",
         });
+        if (approvedBartenders < assignedBartenders) {
+          return res.status(409).json({
+            success: false,
+            message: `Approved staffing cannot be reduced below ${assignedBartenders} active assignment(s). Remove or replace assigned bartenders first.`,
+          });
+        }
+        const staffingExceptionReason = String(
+          body.staffingException?.reason ?? evt.staffingException?.reason ?? ""
+        ).trim();
+        const hasStaffingException = approvedBartenders < recommendedBartenders;
+        if (hasStaffingException && !staffingExceptionReason) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "A staffing exception reason is required when approved staffing is below the recommendation.",
+          });
+        }
+        patch.counts = {
+          ...currentCounts,
+          ...(patch.counts || {}),
+          assigned: assignedBartenders,
+          recommendedBartenders,
+          approvedBartenders,
+          neededBartenders: approvedBartenders,
+        };
+        patch.pricing = {
+          ...(evt.pricing?.toObject?.() || evt.pricing || {}),
+          ...(patch.pricing || {}),
+          bartendersRequested: approvedBartenders,
+        };
+        patch.staffingException = hasStaffingException
+          ? {
+              active: true,
+              reason: staffingExceptionReason,
+              approvedBy:
+                evt.staffingException?.active &&
+                evt.staffingException?.reason === staffingExceptionReason
+                  ? evt.staffingException.approvedBy
+                  : req.user.id,
+              approvedAt:
+                evt.staffingException?.active &&
+                evt.staffingException?.reason === staffingExceptionReason
+                  ? evt.staffingException.approvedAt
+                  : new Date(),
+              customerAcknowledgedAt:
+                evt.staffingException?.customerAcknowledgedAt || null,
+            }
+          : {
+              active: false,
+              reason: "",
+              approvedBy: null,
+              approvedAt: null,
+              customerAcknowledgedAt: null,
+            };
       }
-      patch.counts = {
-        ...currentCounts,
-        ...(patch.counts || {}),
-        recommendedBartenders,
-        approvedBartenders,
-        neededBartenders: approvedBartenders,
-      };
-      patch.pricing = {
-        ...(evt.pricing?.toObject?.() || evt.pricing || {}),
-        ...(patch.pricing || {}),
-        bartendersRequested: approvedBartenders,
-      };
-      patch.staffingException = hasStaffingException
-        ? {
-            active: true,
-            reason: staffingExceptionReason,
-            approvedBy: req.user.id,
-            approvedAt: new Date(),
-            customerAcknowledgedAt:
-              evt.staffingException?.customerAcknowledgedAt || null,
-          }
-        : {
-            active: false,
-            reason: "",
-            approvedBy: null,
-            approvedAt: null,
-            customerAcknowledgedAt: null,
-          };
 
       // Apply patch onto doc (so mongoose validation/hooks run)
       for (const [k, v] of Object.entries(patch)) {
@@ -2646,15 +2719,6 @@ const eventCtrl = {
       // pricing delta from an adjustment.
       const currentPayment = beforeDoc.payment || {};
       const hasBilledSnapshot = Number(currentPayment.total) > 0;
-      const billingInputsChanged = [
-        "startAt",
-        "endAt",
-        "pricing",
-        "counts",
-        "private",
-        "options",
-      ].some((key) => Object.prototype.hasOwnProperty.call(patch, key));
-
       if (hasBilledSnapshot && billingInputsChanged) {
         const billableTotals = (event) => {
           const computed = computeEventTotals({
@@ -2691,6 +2755,7 @@ const eventCtrl = {
             Number(currentPayment.total) +
               (afterBillable.total - beforeBillable.total)
           ),
+          ledgerVersion: (Number(currentPayment.ledgerVersion) || 0) + 1,
         });
       }
 
@@ -2699,6 +2764,21 @@ const eventCtrl = {
         return res
           .status(400)
           .json({ success: false, message: "endAt must be after startAt" });
+      }
+
+      const pendingChanges = shallowDiff(
+        beforeDoc,
+        evt.toObject({ depopulate: true })
+      ).filter((change) => !["updatedAt", "createdAt"].includes(change.path));
+      if (!pendingChanges.length) {
+        const totals = computeEventTotals(beforeDoc);
+        return res.json({
+          success: true,
+          data: evt,
+          changed: [],
+          totals: { before: totals, after: totals },
+          emailedCustomer: false,
+        });
       }
 
       // Save updates
@@ -2714,9 +2794,21 @@ const eventCtrl = {
       // A price decrease never creates a refund automatically: requests are
       // capped to the remaining balance, or cancelled when nothing is due.
       if (hasBilledSnapshot && billingInputsChanged) {
+        const staleStripeRequests = await PaymentRequest.find({
+          event: evt._id,
+          status: "sent",
+          stripePaymentIntentId: { $exists: true, $ne: "" },
+        }).select("stripePaymentIntentId").lean();
         const paidRows = await Payment.aggregate([
           { $match: { event: evt._id, status: "recorded" } },
-          { $group: { _id: "$event", total: { $sum: "$amount" } } },
+          {
+            $group: {
+              _id: "$event",
+              total: {
+                $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+              },
+            },
+          },
         ]);
         const paidTotal = Number(paidRows[0]?.total) || 0;
         const remainingBalance = Math.max(
@@ -2730,15 +2822,29 @@ const eventCtrl = {
             { $set: { status: "cancelled" } }
           );
         } else {
-          await PaymentRequest.updateMany(
-            {
-              event: evt._id,
-              status: { $in: ["draft", "sent"] },
-              amountRequested: { $gt: remainingBalance },
-            },
-            { $set: { amountRequested: remainingBalance } }
-          );
+          // Never silently change an amount already delivered by email. Sent
+          // links become stale and must be replaced by an explicit revision;
+          // unsent drafts may safely be capped to the new balance.
+          await Promise.all([
+            PaymentRequest.updateMany(
+              { event: evt._id, status: "sent" },
+              { $set: { status: "cancelled" } }
+            ),
+            PaymentRequest.updateMany(
+              {
+                event: evt._id,
+                status: "draft",
+                amountRequested: { $gt: remainingBalance },
+              },
+              { $set: { amountRequested: remainingBalance } }
+            ),
+          ]);
         }
+        await cancelStripePaymentIntents(
+          staleStripeRequests.map((request) => request.stripePaymentIntentId)
+        ).catch((error) =>
+          console.error("Unable to cancel stale Stripe intents after repricing:", error)
+        );
       }
       if (billingInputsChanged || evt.payment?.policyScheduledAt) {
         const policyResult = await syncEventPaymentPolicy(evt._id);
@@ -2751,6 +2857,7 @@ const eventCtrl = {
           evt.payment.balanceDueAt = policyResult.schedule?.dueAt || null;
           evt.payment.shortNoticeFullPayment =
             policyResult.schedule?.shortNotice || false;
+          evt.__v = Number(evt.__v || 0) + 1;
         }
       }
 
@@ -3022,7 +3129,7 @@ const eventCtrl = {
       const { id } = req.params;
       const { cancelReason, cancelReasonOther } = req.body;
 
-      const evt = await Event.findById(id);
+      let evt = await Event.findById(id);
       if (!evt)
         return res.status(404).json({ success: false, message: "Not found" });
 
@@ -3030,30 +3137,94 @@ const eventCtrl = {
         return res.status(404).json({ success: false, message: "Not found" });
       }
 
-      // Optional: don't double-cancel
+      const normalizedReason = String(cancelReason || "").trim();
+      const normalizedOtherReason = String(cancelReasonOther || "").trim();
+      if (!normalizedReason || (normalizedReason === "other" && !normalizedOtherReason)) {
+        return res.status(400).json({
+          success: false,
+          message: "A cancellation reason is required.",
+        });
+      }
+      if (["completed", "closed"].includes(evt.status)) {
+        return res.status(409).json({
+          success: false,
+          message: "A completed event cannot be canceled. Use the staff review workflow instead.",
+        });
+      }
       if (evt.status === "canceled") {
         return res
           .status(400)
           .json({ success: false, message: "Event is already canceled" });
       }
 
-      // ✅ apply cancel metadata
-      evt.status = "canceled";
-      evt.canceledAt = new Date();
-      evt.canceledBy = req.user?.id || req.user?._id || null;
-      evt.cancelReason = cancelReason || null;
-      evt.cancelReasonOther =
-        cancelReason === "other" && cancelReasonOther
-          ? String(cancelReasonOther).trim()
-          : null;
-      if (cancelReason === "nonpayment") {
-        evt.payment.policyStatus = "canceled_nonpayment";
-      }
+      // Claim the transition atomically. Concurrent cancel requests cannot
+      // both send notifications or append duplicate activity records.
+      const canceledAt = new Date();
+      const cancelableStripeRequests = await PaymentRequest.find({
+        event: id,
+        status: "sent",
+        stripePaymentIntentId: { $exists: true, $ne: "" },
+      }).select("stripePaymentIntentId").lean();
+      const session = await mongoose.startSession();
+      let canceledEvent = null;
+      try {
+        await session.withTransaction(async () => {
+          canceledEvent = await Event.findOneAndUpdate(
+            {
+              _id: id,
+              status: { $nin: ["canceled", "completed", "closed"] },
+            },
+            {
+              $set: {
+                status: "canceled",
+                canceledAt,
+                canceledBy: req.user?.id || req.user?._id || null,
+                cancelReason: normalizedReason,
+                cancelReasonOther:
+                  normalizedReason === "other" ? normalizedOtherReason : null,
+                "visibility.onBiddingBoard": false,
+                "counts.assigned": 0,
+                ...(normalizedReason === "nonpayment"
+                  ? { "payment.policyStatus": "canceled_nonpayment" }
+                  : {}),
+              },
+            },
+            { new: true, runValidators: true, session }
+          );
+          if (!canceledEvent) return;
 
-      await evt.save();
-      await PaymentRequest.updateMany(
-        { event: id, status: { $in: ["draft", "sent"] } },
-        { $set: { status: "cancelled" } }
+          await Promise.all([
+            PaymentRequest.updateMany(
+              { event: id, status: { $in: ["draft", "sent"] } },
+              { $set: { status: "cancelled" } },
+              { session }
+            ),
+            Assignment.updateMany(
+              { event: id, status: "active" },
+              { $set: { status: "removed", reason: `Event canceled: ${normalizedReason}` } },
+              { session }
+            ),
+            Bid.updateMany(
+              { event: id, status: { $in: ["interested", "waitlist", "selected"] } },
+              { $set: { status: "dropped" } },
+              { session }
+            ),
+          ]);
+        });
+      } finally {
+        await session.endSession();
+      }
+      if (!canceledEvent) {
+        return res.status(409).json({
+          success: false,
+          message: "The event changed while cancellation was being processed. Reload and review its current status.",
+        });
+      }
+      evt = canceledEvent;
+      await cancelStripePaymentIntents(
+        cancelableStripeRequests.map((request) => request.stripePaymentIntentId)
+      ).catch((error) =>
+        console.error("Unable to cancel Stripe intents after cancellation:", error)
       );
 
       // notify interested + assigned bartenders
@@ -3293,7 +3464,9 @@ const eventCtrl = {
         {
           $group: {
             _id: "$event",
-            paidTotal: { $sum: "$amount" },
+            paidTotal: {
+              $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+            },
           },
         },
       ]);

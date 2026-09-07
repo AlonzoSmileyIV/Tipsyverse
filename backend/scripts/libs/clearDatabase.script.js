@@ -3,6 +3,7 @@ import "dotenv/config";
 import mongoose from "mongoose";
 
 // NODE_ENV=development CONFIRM_CLEAR=true node scripts/libs/clearDatabase.script.js
+// NODE_ENV=staging CONFIRM_CLEAR=true node scripts/libs/clearDatabase.script.js
 
 const VALID_ENVS = ["development", "staging"];
 const env = (process.env.NODE_ENV || "development").toLowerCase();

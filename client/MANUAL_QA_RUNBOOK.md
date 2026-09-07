@@ -313,6 +313,272 @@ Repeat without submitting a second valid event:
 5. Set DevTools Network to Offline immediately before submission. Confirm a
    recoverable error and no false success message.
 
+### Booking change and customer-request scenarios
+
+Use disposable events for this section. Do not reuse the primary event needed
+for bidding, assignment, attendance, payment, and review tests. Prefix every
+description and staff note with `QA SCENARIO - DO NOT FULFILL`, record the event
+code, and never contact a real person.
+
+For each scenario:
+
+1. Book the event as Customer A and record its original values.
+2. As Employee, log the customer's request as a contact attempt or event note.
+3. Make the change only through the controls available to that role. If the
+   product intentionally requires staff assistance, confirm the customer sees
+   clear instructions rather than an editable control.
+4. Review any pricing-change or cancellation confirmation before accepting it.
+5. Reload the page and compare the customer event, admin event, Finance,
+   payment history, staffing, notifications, email, and activity log wherever
+   applicable.
+6. Confirm the mutation and customer notification occur exactly once, internal
+   notes remain private, and no unrelated event changes.
+
+#### Point-of-contact changes
+
+Test each request independently:
+
+- Change only the primary contact's name.
+- Change the contact email to another QA-controlled address.
+- Change the contact phone to another reserved QA number.
+- Change the preferred contact method from email to phone and back.
+- Replace the point of contact with a different person while keeping Customer A
+  as the event owner.
+- Add a secondary/on-site contact if supported.
+- Make the billing contact different from the on-site contact if supported.
+- Correct capitalization, punctuation, or a typo without changing ownership.
+- Remove an optional contact value and confirm required values cannot be
+  removed.
+- Enter leading/trailing spaces and confirm saved values are normalized.
+- Enter international characters, apostrophes, and hyphens in the contact name.
+- Attempt invalid email and phone formats and confirm they are rejected.
+- As Customer B, attempt to change Customer A's contact data by URL or request
+  replay. Confirm denial and no private data in the response.
+
+Changing a point of contact must not transfer event ownership, expose Customer
+A's account, silently change the login email, or redirect payment requests to an
+unapproved recipient.
+
+#### Staffing changes
+
+Test these before bidding, while bids exist, after one assignment, and after a
+deposit when the workflow permits:
+
+- Customer asks to add one bartender.
+- Customer asks to add several bartenders.
+- Customer asks to reduce the bartender count.
+- Customer asks to remove all bartenders.
+- Guest count increases enough to change the recommended staffing count.
+- Guest count decreases enough to change the recommendation.
+- Employee overrides the recommendation with a different approved count.
+- Approved staffing is increased above the current assigned count.
+- Approved staffing is reduced to exactly the assigned count.
+- Attempt to reduce approved staffing below the assigned count. Expect a clear
+  resolution flow; assigned bartenders must not disappear silently.
+- Increase staffing after the event is Ready To Assign and confirm the new open
+  slots appear to eligible bartenders.
+- Reduce staffing while bids are pending and confirm excess bids remain safely
+  handled without becoming assignments.
+- Increase staffing after assignment and confirm existing assignments remain.
+- Remove one assigned bartender with a reason, then assign a replacement.
+- Attempt to assign the same bartender twice.
+- Attempt to assign more bartenders than the approved count.
+- Attempt to assign an unavailable, conflicting, expired, rejected, or pending-
+  license bartender.
+- Have two employees assign the last open slot concurrently. Confirm the final
+  assigned count cannot exceed the approved count.
+
+For every staffing change, verify recommended, approved, assigned, and still-
+needed counts remain distinct and correct. Confirm labor, gratuity, tax, total,
+balance, bartender schedules, notifications, and activity history update only
+when the business rules say they should.
+
+#### Gratuity, tip jars, and service-model changes
+
+Test these as separate pricing revisions:
+
+- Customer initially allows tip jars, then asks for no tip jars. Increase the
+  contractual gratuity to the required amount and confirm the old and new
+  gratuity are shown in the pricing-change review.
+- Customer initially declines tip jars, then permits them. Confirm any gratuity
+  reduction follows policy and is not applied silently.
+- Toggle tip-jar permission twice before saving. Confirm only the final state is
+  stored and only one activity entry is created.
+- Change gratuity from a percentage to a fixed amount, if supported.
+- Change gratuity from a fixed amount to a percentage, if supported.
+- Enter zero gratuity where tip jars are prohibited. Expect policy validation.
+- Enter the minimum and maximum allowed gratuity values.
+- Attempt a negative, excessive, malformed, or over-precision gratuity value.
+- Change gratuity before payment, after a deposit, and after paid in full.
+- Increase gratuity after payment and confirm the new amount becomes balance
+  due rather than altering prior payment records.
+- Decrease gratuity while keeping total above paid and confirm balance falls.
+- Decrease gratuity below the paid amount and confirm a credit/overpayment or
+  staff-review state appears; no automatic refund may occur.
+- Add, remove, or change a service charge, travel fee, setup fee, or other
+  supported line item and verify gratuity and tax are recalculated according to
+  policy without double counting.
+- Confirm customer-facing copy clearly distinguishes gratuity, tip-jar policy,
+  tax, fees, paid amount, and remaining balance.
+
+#### Cancellation and reinstatement
+
+Use a new event for each materially different cancellation state:
+
+- Point of contact cancels immediately after submitting the request.
+- Cancel after staff contact but before pricing.
+- Cancel after pricing but before Ready To Assign.
+- Cancel while bartender bids are pending.
+- Cancel after one or more bartenders are assigned.
+- Cancel after a deposit.
+- Cancel after paid in full.
+- Cancel on the event date or inside any configured cancellation-fee window.
+- Attempt cancellation after completion.
+- Cancel with each available reason and with optional customer-safe notes.
+- Attempt cancellation without a required reason.
+- Start cancellation and back out at the confirmation dialog.
+- Double-click Confirm or replay the cancellation request.
+- Have two staff members cancel the same event concurrently.
+- Attempt to edit, bid on, assign, check in to, pay, or complete a canceled
+  event.
+- Attempt to cancel an already canceled event.
+- Reinstate/reopen a canceled event if supported; otherwise confirm the UI
+  clearly requires a new booking.
+
+Verify the final status, reason, cancellation fee, credit/refund-review state,
+staffing release, opportunity removal, schedules, payment requests,
+notifications, email, and activity log. Cancellation must never automatically
+refund money unless an explicitly authorized refund workflow is completed.
+
+#### Date and time changes
+
+- Move the event to a later date.
+- Move it to an earlier date that still satisfies minimum lead time.
+- Attempt to move it inside the minimum lead-time window.
+- Move arrival time earlier or later.
+- Move leave time earlier or later.
+- Extend and shorten event duration.
+- Attempt equal start/end times or an end before the start.
+- Test an event crossing midnight.
+- Test daylight-saving-time boundaries and the Indiana event timezone.
+- Reschedule before bidding, with bids pending, after assignment, after a
+  deposit, and after paid in full.
+- Reschedule into and out of an assigned bartender's conflicting event.
+- Have two staff members reschedule concurrently; stale data must not overwrite
+  the accepted change without warning.
+
+Confirm availability and conflicts are recalculated, affected bartenders and
+the customer are notified, price changes are reviewed, and all screens and
+emails show the same local event time.
+
+#### Venue and location changes
+
+- Correct a typo in the same address.
+- Move to another address in the same city.
+- Move to another city or service zone.
+- Move from an indoor to outdoor venue and vice versa.
+- Add or change suite, unit, gate, parking, loading, or entry instructions.
+- Change to a location that geocodes to different coordinates.
+- Use a valid address for which coordinates are unavailable.
+- Clear an optional address component.
+- Attempt an incomplete, malformed, out-of-service-area, or obviously unsafe
+  location.
+- Change venue after bidding and after assignment.
+- Change venue so an assigned bartender now has a travel or timing conflict.
+- Change venue after travel fees or mileage have been priced.
+
+Confirm coordinates, service-area validation, travel fees, tax jurisdiction,
+directions, opportunities, assignments, customer details, and notifications
+refresh together. The old private address must not remain exposed in stale
+notifications or unauthorized responses.
+
+#### Event size, type, and service scope
+
+- Increase and decrease guest count by one.
+- Change guest count across every staffing/pricing threshold.
+- Test minimum, maximum, zero, negative, decimal, nonnumeric, and extremely
+  large guest counts.
+- Change the event type, title, description, and special instructions.
+- Add or remove bar setup, cleanup, cocktail service, beer/wine-only service,
+  mocktails, champagne toast, or other supported service options.
+- Change who supplies alcohol, mixers, ice, cups, garnishes, tools, and bar
+  equipment where those options exist.
+- Add or remove an additional bar or service area.
+- Add accessibility, parking, loading, dress-code, venue-rule, or security
+  instructions.
+- Add a dry-event or no-alcohol requirement.
+- Add a last-minute restriction such as no glass, no open flame, or no tip jars.
+- Enter a long description, line breaks, Unicode/emoji, and harmless HTML text;
+  confirm layout is stable and scripts never execute.
+- Clear optional instructions and confirm required operational information is
+  retained.
+
+Confirm changes that affect labor, staffing, supplies, fees, gratuity, or tax
+produce a transparent repricing review and changes that do not affect price
+leave financial totals untouched.
+
+#### Pricing, discounts, tax, and payment timing
+
+- Quote and save the initial price, then make one price-affecting change at a
+  time.
+- Add, edit, and remove an allowed discount or promotion.
+- Attempt an expired, ineligible, excessive, duplicate, or malformed discount.
+- Enter zero-dollar, minimum, maximum, decimal, and over-precision line items.
+- Attempt negative values where credits are not supported.
+- Change a taxable item and a nontaxable item separately.
+- Change location across a tax boundary and verify tax treatment.
+- Save a no-op edit and confirm no false pricing mutation is recorded.
+- Abandon the pricing-change dialog and confirm no partial values persist.
+- Submit the same pricing revision twice and confirm it is idempotent.
+- Reprice with no payment, a partial deposit, paid in full, an overpayment, a
+  voided payment, and a pending payment request.
+- Open an old payment-request link after the total changes and confirm the user
+  cannot overpay or pay a stale unauthorized amount.
+- Have payment and repricing submitted concurrently. Confirm payment history is
+  immutable and total, paid, credit, and balance settle consistently.
+
+#### Customer decisions and communication
+
+- Customer accepts a revised quote.
+- Customer declines a revised quote but does not cancel.
+- Customer requests more information before deciding.
+- Customer becomes unreachable after one or multiple contact attempts.
+- Customer asks to pause/hold the booking if supported.
+- Customer later resumes a held booking.
+- Customer requests a copy of the agreement or invoice.
+- Customer disputes a detail shown in the confirmation.
+- Customer changes communication preference after notifications already exist.
+- Point of contact asks that a secondary person receive operational updates.
+- Customer requests deletion of an internal note; confirm internal audit data
+  is not exposed or improperly destroyed.
+
+Confirm customer-visible status language is unambiguous, staff-only notes never
+appear to customers or bartenders, and every email/link uses the staging host
+and opens the exact event or decision requested.
+
+#### Workflow boundaries and recovery
+
+- Refresh, navigate Back, close the tab, and sign out with an unsaved booking.
+- Save or submit on slow, offline, timed-out, and recovered connections.
+- Retry after a `400`, `401`, `403`, `409`, `422`, and `500` response when each
+  can be safely simulated.
+- Let the session expire while reviewing, submitting, repricing, or canceling.
+- Open the same event in two tabs and save conflicting edits.
+- Have Customer A and Employee view the event while Employee changes it.
+- Have Employee and Admin A edit different fields concurrently.
+- Repeat a request using browser reload or Network request replay.
+- Use browser Back after successful submission and attempt resubmission.
+- Open a stale notification, email, event URL, and payment URL after the event
+  changes status.
+- Verify changes survive application and browser reloads.
+- Verify direct API requests enforce the same ownership, role, state, and value
+  rules as the UI.
+
+No scenario may create duplicate events, payments, assignments, notifications,
+emails, or activity entries. Errors must preserve the last confirmed state and
+provide a recoverable message without leaking stack traces, tokens, internal
+notes, or another customer's data.
+
 ### View and protect customer events
 
 1. Open `http://localhost:3000/my-events`.

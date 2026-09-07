@@ -17,6 +17,7 @@ import {
   Snackbar,
 } from "@mui/material";
 import { isAtLeastAge, parseDateOnlyParts } from "../../utils/dateOnly";
+import DateTextField from "../DateTextField/DateTextField";
 
 const AgeVerificationModal = ({ open, onVerify }) => {
   const clinkAudio = new Audio("/sounds/glass-clink.mp3");
@@ -99,17 +100,14 @@ const AgeVerificationModal = ({ open, onVerify }) => {
             fake IDs 😉
           </Typography>
 
-          <TextField
+          <DateTextField
             fullWidth
             label="Date of Birth"
-            placeholder="MM/DD/YYYY"
-            InputLabelProps={{ shrink: true }}
             value={dob}
             onChange={(e) => {
               setDob(formatDobInput(e.target.value));
               setError("");
             }}
-            inputProps={{ inputMode: "numeric", maxLength: 10 }}
             helperText="Use MM/DD/YYYY, like 07/02/1998."
             sx={{ mb: 2 }}
           />

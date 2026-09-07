@@ -14,7 +14,14 @@ export const getRecordedEventPayments = async (eventId) => {
         status: "recorded",
       },
     },
-    { $group: { _id: "$event", total: { $sum: "$amount" } } },
+    {
+      $group: {
+        _id: "$event",
+        total: {
+          $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+        },
+      },
+    },
   ]);
   return Math.round((Number(row?.total) || 0) * 100) / 100;
 };
@@ -69,7 +76,10 @@ export const syncEventPaymentPolicy = async (eventId, { now = new Date() } = {})
       : {}),
   };
 
-  await Event.updateOne({ _id: event._id }, { $set: update });
+  await Event.updateOne(
+    { _id: event._id },
+    { $set: update, $inc: { __v: 1 } }
+  );
   return {
     ...result,
     event,

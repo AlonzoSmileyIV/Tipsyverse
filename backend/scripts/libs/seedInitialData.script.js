@@ -30,6 +30,7 @@ const DOCS_PATH = path.resolve(__dirname, "../../../docs");
 
 const seedUsers = [
   {
+    role: "admin",
     username: process.env.ADMIN_SEED_USERNAME,
     email: process.env.ADMIN_SEED_EMAIL,
     fullName: process.env.ADMIN_SEED_FULL_NAME,

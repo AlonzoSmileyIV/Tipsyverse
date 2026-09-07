@@ -24,8 +24,17 @@ const normalizeProcurementItems = (items) =>
 
 const paymentBalance = (evt, fallbackTotal) => {
   const payment = evt?.payment || {};
-  if (Number.isFinite(Number(payment.balance))) return Number(payment.balance);
-  if (Number.isFinite(Number(payment.total))) return Number(payment.total);
+  const billedTotal = Number(payment.total);
+
+  // Payment snapshots default to zero before an event is actually billed.
+  // That placeholder must not hide the event's computed pricing in update
+  // emails. Once a positive billed snapshot exists, its balance (including a
+  // legitimate paid-in-full zero) remains authoritative.
+  if (Number.isFinite(billedTotal) && billedTotal > 0) {
+    const balance = Number(payment.balance);
+    if (Number.isFinite(balance)) return balance;
+    return billedTotal;
+  }
   return Number(fallbackTotal) || 0;
 };
 

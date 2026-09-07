@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSelector, shallowEqual } from "react-redux";
 import PhoneTextField from "../../components/PhoneTextField/PhoneTextField";
 import LocationInput from "../../components/LocationInput/LocationInput";
+import DateTextField from "../../components/DateTextField/DateTextField";
 import { parseDateOnlyParts } from "../../utils/dateOnly";
 import {
   formatTimeInput,
@@ -1022,16 +1023,13 @@ export default function BookEventForm({
               </Typography>
 
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <TextField
+                <DateTextField
                   fullWidth
                   label="Arrival Date"
-                  placeholder="MM/DD/YYYY"
                   value={dateInputs.startAt}
                   onChange={updateDateTextPart("startAt")}
                   error={!!errors.startAt}
                   helperText={errors.startAt || "Use MM/DD/YYYY."}
-                  InputLabelProps={{ shrink: true }}
-                  inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 />
                 <TextField
                   fullWidth
@@ -1048,16 +1046,13 @@ export default function BookEventForm({
                 />
               </Stack>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <TextField
+                <DateTextField
                   fullWidth
                   label="Leave Date"
-                  placeholder="MM/DD/YYYY"
                   value={dateInputs.endAt}
                   onChange={updateDateTextPart("endAt")}
                   error={!!errors.endAt}
                   helperText={errors.endAt || "Use MM/DD/YYYY."}
-                  InputLabelProps={{ shrink: true }}
-                  inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 />
                 <TextField
                   fullWidth

@@ -17,7 +17,7 @@ const formatContextValue = (value) =>
     ? JSON.stringify(value)
     : String(value);
 
-const formatDevelopmentMessage = (level, message, context) => {
+const formatHumanReadableMessage = (level, message, context) => {
   switch (message) {
     case "database_connected":
       return `✅ Connected to ${context.environment || "development"} database...`;
@@ -54,8 +54,8 @@ const formatDevelopmentMessage = (level, message, context) => {
 };
 
 const write = (level, message, context = {}) => {
-  if (process.env.NODE_ENV === "development") {
-    const output = formatDevelopmentMessage(level, message, context);
+  if (["development", "staging"].includes(process.env.NODE_ENV)) {
+    const output = formatHumanReadableMessage(level, message, context);
     (level === "error" ? process.stderr : process.stdout).write(`${output}\n`);
     return;
   }

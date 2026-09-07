@@ -47,11 +47,15 @@ const StyledBadge = styled(Badge)(({ theme }) => ({
   },
 }));
 
-const hasBartendAccessSignal = (session, currentUser) =>
-  ["employee", "bartender"].includes(currentUser?.role) ||
-  !!currentUser?.bartenderProfile ||
-  !!session?.bartenderInfo ||
-  ["applicant", "approved", "active"].includes(currentUser?.bartenderStatus);
+const hasBartendAccessSignal = (session, currentUser) => {
+  if (currentUser?.role === "admin") return false;
+  return (
+    ["employee", "bartender"].includes(currentUser?.role) ||
+    !!currentUser?.bartenderProfile ||
+    !!session?.bartenderInfo ||
+    ["applicant", "approved", "active"].includes(currentUser?.bartenderStatus)
+  );
+};
 
 const Header = () => {
   const dispatch = useDispatch();
@@ -429,7 +433,7 @@ const Header = () => {
                   setShowNotificationBox((prev) => !prev);
                   setUserMenuAnchor(null);
                 }}
-                aria-label="notifications"
+                aria-label={`Notifications, ${unreadCount} unread`}
               >
                 <StyledBadge
                   showZero={false}
@@ -497,7 +501,7 @@ const Header = () => {
             anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "right" }}
           >
-            {user?.role === "employee" && (
+            {["admin", "employee"].includes(user?.role) && (
               <MenuItem
                 component={Link}
                 to="/admin"

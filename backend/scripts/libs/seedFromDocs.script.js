@@ -9,6 +9,7 @@ import fs from "node:fs";
 XLSX.set_fs(fs);
 
 //NODE_ENV=development node scripts/libs/seedFromDocs.script.js
+//NODE_ENV=staging node scripts/libs/seedFromDocs.script.js
 
 import {
   LiquorModel as Liquor,
