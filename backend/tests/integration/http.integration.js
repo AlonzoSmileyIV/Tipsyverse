@@ -575,7 +575,7 @@ test("cancellation releases operational records in the same transaction", async 
   await request(app)
     .post(`/api/v1/events/${cancelEvent._id}/cancel`)
     .set("Authorization", `Bearer ${tokenFor(employee)}`)
-    .send({ cancelReason: "customer_request" })
+    .send({ cancelReason: "unable_to_staff" })
     .expect(200);
 
   const [saved, assignment, bid, savedRequest] = await Promise.all([
@@ -585,8 +585,14 @@ test("cancellation releases operational records in the same transaction", async 
     PaymentRequestModel.findById(openRequest._id).lean(),
   ]);
   assert.equal(saved.status, "canceled");
+  assert.equal(saved.cancelReason, "unable_to_staff");
   assert.equal(saved.counts.assigned, 0);
   assert.equal(saved.visibility.onBiddingBoard, false);
+  assert.equal(saved.payment.balance, 0);
+  assert.equal(saved.payment.policyStatus, "canceled");
+  assert.equal(saved.cancellation.refundEligibleAmount, 0);
+  assert.equal(saved.cancellation.refundReviewStatus, "not_required");
+  assert.equal(saved.cancellation.automaticRefund, false);
   assert.equal(assignment.status, "removed");
   assert.equal(bid.status, "dropped");
   assert.equal(savedRequest.status, "cancelled");
