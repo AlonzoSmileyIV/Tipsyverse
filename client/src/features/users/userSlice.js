@@ -1,6 +1,12 @@
 // features/users/usersSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import api from "../../services/api";
+import {
+  clearAccessToken,
+  persistSession,
+  readPersistedSession,
+  setAccessToken,
+} from "../../services/authSessionStore";
 
 // --- Async Thunks ---
 
@@ -123,8 +129,8 @@ export const loginUser = createAsyncThunk(
   async ({ emailOrUsername, password }, { rejectWithValue }) => {
     try {
       const res = await api.post("/users/login", { emailOrUsername, password });
-      const { accessToken, refreshToken, sessionStartedAt, user } = res.data;
-      return { user, accessToken, refreshToken, sessionStartedAt };
+      const { accessToken, sessionStartedAt, user } = res.data;
+      return { user, accessToken, sessionStartedAt };
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || "Login failed");
     }
@@ -148,12 +154,7 @@ export const logoutUserAsync = createAsyncThunk(
 // --- Helpers ---
 
 const getInitialLoggedInUser = () => {
-  try {
-    const data = JSON.parse(localStorage.getItem("loggedInUser"));
-    return data || null;
-  } catch {
-    return null;
-  }
+  return readPersistedSession();
 };
 
 // --- Initial State ---
@@ -189,36 +190,26 @@ const usersSlice = createSlice({
       state.loggedInUser = null;
       state.loginStatus = "idle";
       state.loginError = null;
+      clearAccessToken();
       localStorage.removeItem("loggedInUser");
       localStorage.removeItem("sessionLastActivityAt");
     },
     updateLoggedInUser: (state, action) => {
-      const { user, accessToken, refreshToken, ...rest } = action.payload;
-      state.loggedInUser = { ...rest, user, accessToken, refreshToken };
-      localStorage.setItem(
-        "loggedInUser",
-        JSON.stringify(state.loggedInUser)
-      );
+      const { user, accessToken, ...rest } = action.payload;
+      state.loggedInUser = { ...rest, user, accessToken };
+      setAccessToken(accessToken);
+      persistSession(state.loggedInUser);
     },
     syncAccessToken: (state, action) => {
       const { accessToken, sessionStartedAt } = action.payload || {};
       if (!accessToken || !state.loggedInUser) return;
 
       state.loggedInUser.accessToken = accessToken;
+      setAccessToken(accessToken);
       if (sessionStartedAt) {
         state.loggedInUser.sessionStartedAt = sessionStartedAt;
       }
-      const stored =
-        JSON.parse(localStorage.getItem("loggedInUser") || "null") || {};
-      localStorage.setItem(
-        "loggedInUser",
-        JSON.stringify({
-          ...stored,
-          ...state.loggedInUser,
-          accessToken,
-          ...(sessionStartedAt ? { sessionStartedAt } : {}),
-        })
-      );
+      persistSession(state.loggedInUser);
     },
   },
   extraReducers: (builder) => {
@@ -324,14 +315,12 @@ const usersSlice = createSlice({
         state.loginError = null;
       })
       .addCase(loginUser.fulfilled, (state, action) => {
-        const { user, accessToken, refreshToken, sessionStartedAt } = action.payload;
+        const { user, accessToken, sessionStartedAt } = action.payload;
         state.loginStatus = "succeeded";
-        state.loggedInUser = { user, accessToken, refreshToken, sessionStartedAt };
+        state.loggedInUser = { user, accessToken, sessionStartedAt };
+        setAccessToken(accessToken);
         localStorage.setItem("sessionLastActivityAt", String(Date.now()));
-        localStorage.setItem(
-          "loggedInUser",
-          JSON.stringify(state.loggedInUser)
-        );
+        persistSession(state.loggedInUser);
       })
 
       .addCase(loginUser.rejected, (state, action) => {
@@ -347,6 +336,7 @@ const usersSlice = createSlice({
         state.loggedInUser = null;
         state.loginStatus = "idle";
         state.loginError = null;
+        clearAccessToken();
         localStorage.removeItem("loggedInUser");
         localStorage.removeItem("sessionLastActivityAt");
       })
@@ -357,6 +347,7 @@ const usersSlice = createSlice({
         state.loggedInUser = null;
         state.loginStatus = "idle";
         state.loginError = null;
+        clearAccessToken();
         localStorage.removeItem("loggedInUser");
         localStorage.removeItem("sessionLastActivityAt");
       })
@@ -369,23 +360,17 @@ const usersSlice = createSlice({
 
         const prev =
           state.loggedInUser ||
-          JSON.parse(localStorage.getItem("loggedInUser")) ||
+          readPersistedSession() ||
           {};
 
         const accessToken = prev?.accessToken || null;
-        const refreshToken = prev?.refreshToken || null; // keep if you use it
-
         state.loggedInUser = {
           ...prev, // preserves bartenderInfo / requirementsByRole
           user: action.payload, // fresh /me
           accessToken,
-          refreshToken,
         };
 
-        localStorage.setItem(
-          "loggedInUser",
-          JSON.stringify(state.loggedInUser)
-        );
+        persistSession(state.loggedInUser);
       })
       .addCase(fetchMe.rejected, (state, action) => {
         state.status = "failed";

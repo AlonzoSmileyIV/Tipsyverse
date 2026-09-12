@@ -47,7 +47,7 @@ const primaryContainedSx = {
   "&:hover": { backgroundColor: "#5f001f" },
 };
 const displayTicketNumber = (ticket) =>
-  ticket?.ticketNumber || "TKT-000000";
+  ticket?.ticketNumber || "TKT-00000";
 const formatLabel = (value) =>
   String(value || "undecided")
     .replace(/_/g, " ")
@@ -463,14 +463,20 @@ function SupportTicketsForm() {
           />
 
           <FormControl fullWidth>
-            <InputLabel>Category</InputLabel>
-            <Select label="Category" value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}>
+            <InputLabel id="support-ticket-category-label">Category</InputLabel>
+            <Select
+              labelId="support-ticket-category-label"
+              label="Category"
+              value={form.category}
+              onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+            >
               <MenuItem value="login">Login</MenuItem>
               <MenuItem value="booking">Booking</MenuItem>
               <MenuItem value="payments">Payments</MenuItem>
               <MenuItem value="bartender_portal">Bartender Portal</MenuItem>
               <MenuItem value="drink_content">Drink Content</MenuItem>
               <MenuItem value="notifications">Notifications</MenuItem>
+              <MenuItem value="technical_issue">Technical Issue</MenuItem>
               <MenuItem value="other">Other</MenuItem>
             </Select>
           </FormControl>

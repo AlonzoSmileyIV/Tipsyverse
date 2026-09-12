@@ -30,6 +30,16 @@ import CloseIcon from "@mui/icons-material/Close";
 import api from "../../services/api";
 import { formatStatus } from "../../utils/formatStatus";
 import { buildSnapshotFromEvent } from "../DetailedEventForm/DetailedEventForm.pricing";
+import getCustomerPaymentStatus from "../../utils/customerPaymentStatus";
+import getEventPaymentPolicyView, { formatPaymentDueDate } from "../../utils/eventPaymentPolicy";
+import { formatTimestamp, getEventTimeZone } from "../../utils/timestamps";
+import {
+  getApprovedBartenderCount,
+  getEventPaidTotal,
+  getEventPaymentSummary,
+  getEventPaymentTotal,
+  getRecommendedBartenderCount,
+} from "../../utils/eventSummary";
 
 const STATUS_COLORS = {
   submitted: "info",
@@ -134,19 +144,9 @@ const getPaymentStatus = (payment) =>
   String(payment?.status || "recorded").toLowerCase();
 const isActivePayment = (payment) =>
   !["voided", "refunded"].includes(getPaymentStatus(payment));
-const getEventPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
 const getEventPaymentBaseTotal = (event) => {
   const snapshotTotal = (buildSnapshotFromEvent(event)?.totals?.totalC || 0) / 100;
-  return Math.max(
-    Number(event?.payment?.total) || 0,
-    Number(event?.payment?.totalAfterDiscount) || 0,
-    Number(event?.pricing?.estimatedTotal) || 0,
-    snapshotTotal || 0
-  );
+  return getEventPaymentTotal(event, snapshotTotal);
 };
 
 function LabelVal({ label, value }) {
@@ -160,8 +160,8 @@ function LabelVal({ label, value }) {
   );
 }
 
-function PaymentRow({ pmt }) {
-  const when = pmt.receivedAt || pmt.createdAt ? new Date(pmt.receivedAt || pmt.createdAt).toLocaleString() : "—";
+function PaymentRow({ pmt, timeZone }) {
+  const when = formatTimestamp(pmt.receivedAt || pmt.createdAt, { timeZone });
   const statusColor =
     pmt.status === "recorded"
       ? "success"
@@ -488,10 +488,19 @@ export default function ClientEventDetailsDrawer({
   };
 
   const tz =
-    evt?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    getEventTimeZone(evt);
   const recordedPayments = payments.filter(isActivePayment);
   const paidTotal = payments.length
-    ? recordedPayments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+    ? recordedPayments.reduce(
+        (sum, payment) =>
+          sum +
+          Math.max(
+            0,
+            (Number(payment.amount) || 0) -
+              (Number(payment.refundedAmount) || 0)
+          ),
+        0
+      )
     : getEventPaidTotal(evt);
   const displayPayments =
     payments.length || paidTotal <= 0
@@ -511,8 +520,17 @@ export default function ClientEventDetailsDrawer({
     ["refunded", "voided"].includes(getPaymentStatus(payment))
   );
   const paymentTotal = getEventPaymentBaseTotal(evt);
-  const balance = Math.max(0, paymentTotal - paidTotal);
-  const overpayment = Math.max(0, paidTotal - paymentTotal);
+  const paymentSummary = getEventPaymentSummary(
+    { ...evt, payment: { ...evt?.payment, paidTotal } },
+    paymentTotal
+  );
+  const balance = paymentSummary.balance;
+  const overpayment = paymentSummary.credit;
+  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal, evt);
+  const paymentPolicy = getEventPaymentPolicyView(evt, {
+    total: paymentTotal,
+    paid: paidTotal,
+  });
 
   useEffect(() => {
     if (detailsTab === "reviews" && !readyForReview) {
@@ -590,9 +608,9 @@ export default function ClientEventDetailsDrawer({
                   {evt.canceledAt && (
                     <Chip
                       size="small"
-                      label={`Canceled at ${new Date(
-                        evt.canceledAt
-                      ).toLocaleString()}`}
+                      label={`Canceled at ${formatTimestamp(evt.canceledAt, {
+                        timeZone: tz,
+                      })}`}
                       variant="outlined"
                     />
                   )}
@@ -680,12 +698,14 @@ export default function ClientEventDetailsDrawer({
                     </Grid>
                     <Grid item xs={12} md={4}>
                       <LabelVal
-                        label="Bartenders Needed"
-                        value={
-                          evt.pricing?.bartendersRequested ??
-                          evt.counts?.neededBartenders ??
-                          1
-                        }
+                        label="Recommended Bartenders"
+                        value={getRecommendedBartenderCount(evt, 1)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <LabelVal
+                        label="Approved Bartenders"
+                        value={getApprovedBartenderCount(evt, 1)}
                       />
                     </Grid>
                     <Grid item xs={12} md={4}>
@@ -765,7 +785,13 @@ export default function ClientEventDetailsDrawer({
                         <Typography
                           variant="h6"
                           fontWeight={800}
-                          color={balance > 0 ? "error.main" : "success.main"}
+                          color={
+                            paymentStatus.key === "pricing_pending"
+                              ? "text.secondary"
+                              : balance > 0
+                              ? "error.main"
+                              : "success.main"
+                          }
                         >
                           {fmtMoney(balance)}
                         </Typography>
@@ -788,13 +814,29 @@ export default function ClientEventDetailsDrawer({
                     </Grid>
                   </Grid>
 
-                  <Alert severity={balance > 0 ? "warning" : "success"}>
-                    {balance > 0
+                  <Alert severity={paymentStatus.severity}>
+                    {paymentStatus.key === "refund_review"
+                      ? `This event is canceled and no balance is due. ${fmtMoney(overpayment)} is awaiting staff refund review; no refund is issued automatically.`
+                      : paymentStatus.key === "canceled"
+                      ? "This event is canceled. No balance is due and no recorded payment requires refund review."
+                      : paymentStatus.key === "pricing_pending"
+                      ? "Pricing has not been confirmed yet. No payment is currently due."
+                      : balance > 0
                       ? `Current balance due: ${fmtMoney(balance)}. Contact Tipsyverse to make or discuss a payment.`
                       : overpayment > 0
                       ? `This event is paid in full. Recorded payments exceed the event total by ${fmtMoney(overpayment)}.`
                       : "This event is paid in full based on recorded payments."}
                   </Alert>
+
+                  {paymentPolicy.dueAt && paymentStatus.key !== "pricing_pending" && (
+                    <Alert severity={paymentPolicy.severity}>
+                      <strong>{paymentPolicy.label}.</strong>{" "}
+                      The remaining balance is due by {formatPaymentDueDate(paymentPolicy.dueAt, tz)}.
+                      {paymentPolicy.status === "payment_hold" || paymentPolicy.status === "action_required"
+                        ? " Bartenders remain assigned, but final instructions, optional purchases, and event changes are paused."
+                        : ""}
+                    </Alert>
+                  )}
 
                   <Divider />
 
@@ -806,7 +848,7 @@ export default function ClientEventDetailsDrawer({
                   ) : (
                     <Stack spacing={1}>
                       {displayPayments.map((pmt) => (
-                        <PaymentRow key={pmt._id} pmt={pmt} />
+                        <PaymentRow key={pmt._id} pmt={pmt} timeZone={tz} />
                       ))}
                     </Stack>
                   )}

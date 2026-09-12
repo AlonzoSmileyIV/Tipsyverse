@@ -10,13 +10,25 @@ import {
   DepartmentModel as Department,
   PositionModel as Position, // 👈 used to resolve position names
   DrinkModel as Drink,
-  CourseModel as Course
+  CourseModel as Course,
+  EventModel as Event,
 
 } from "../../models/index.js";
 
 // Map the query's entityModel -> actual Mongoose model.
 // (Only allow models you're comfortable exposing through this endpoint.)
-const modelMap = { User, Liquor, Mixer, Glass, Hierarchy, Department, Position, Drink, Course };
+const modelMap = {
+  User,
+  Liquor,
+  Mixer,
+  Glass,
+  Hierarchy,
+  Department,
+  Position,
+  Drink,
+  Course,
+  Event,
+};
 
 /** Utility: quick check for ObjectId-looking values (string or ObjectId). */
 const isObjectIdish = (v) =>

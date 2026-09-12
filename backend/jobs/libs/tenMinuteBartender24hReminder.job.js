@@ -39,7 +39,7 @@ function googleMapsLinkFromEventLocation(loc = {}) {
     : null;
 }
 
-function formatWhen(evt, timeZone = TZ) {
+function formatWhen(evt, timeZone = evt.timezone || evt.location?.timezone || TZ) {
   const s = new Date(evt.startAt);
   const e = new Date(evt.endAt);
   const dateFmt = new Intl.DateTimeFormat("en-US", {
@@ -220,7 +220,7 @@ async function sendBartender24hReminders() {
 }
 
 const tenMinuteBartender24hReminderJob = () => {
-  cron.schedule(
+  return cron.schedule(
     "*/15 * * * *",
     async () => {
       console.log(`⏱️ Bartender 24h reminder job triggered.`);

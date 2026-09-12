@@ -195,9 +195,13 @@ export function buildPricingSnapshot({
 /** Build a snapshot from the currently saved event pricing (so "old" matches reality). */
 export function buildSnapshotFromEvent(event) {
   const p = event?.pricing || {};
+  const confirmedBartenderCount = Number(event?.counts?.neededBartenders) || 0;
 
   const formLike = {
-    bartendersRequested: p.bartendersRequested,
+    bartendersRequested:
+      confirmedBartenderCount > 0
+        ? confirmedBartenderCount
+        : p.bartendersRequested,
     startAt: event?.startAt,
     endAt: event?.endAt,
     procurementRequested: !!event?.options?.procurementRequested,

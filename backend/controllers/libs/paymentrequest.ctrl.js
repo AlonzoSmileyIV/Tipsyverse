@@ -11,21 +11,28 @@ import {
   sendEmail,
   validateEmail,
 } from "../../utils/index.js";
+import { eventAccessLevel } from "../../utils/libs/eventAccess.js";
+import { formatDate, formatDateTime } from "../../utils/libs/dateTime.js";
+import {
+  assertCollectibleEvent,
+  eventBalanceSnapshot,
+  netRecordedPayments,
+} from "../../utils/libs/paymentLedger.js";
+import { cancelStripePaymentIntents } from "../../utils/libs/cancelStripePaymentIntents.js";
 
 const isStaff = (user) => ["admin", "employee"].includes(user?.role);
 
 const canViewEvent = async (user, eventId) => {
-  if (isStaff(user)) return true;
   const id = eventId?._id || eventId;
-  const event = await Event.findById(id).select("organizer").lean();
-  return !!event && String(event.organizer) === String(user?.id);
+  const event = await Event.findById(id).select("organizer contact status").lean();
+  return !!event && eventAccessLevel({ event, user }) === "full";
 };
 
 const canManagePaymentRequests = (user) => isStaff(user);
 
 const populatePaymentRequest = (query) =>
   query
-    .populate("event", "shortCode type status startAt endAt location contact organizer payment")
+    .populate("event", "shortCode type status startAt endAt timezone location contact organizer payment")
     .populate("sentBy", "fullName email role");
 
 const formatPaymentAmount = (amount) =>
@@ -52,8 +59,8 @@ const providerLabel = (provider) =>
     other: "payment provider",
   }[provider] || displayLabel(provider, "Payment Provider"));
 
-const formatEventDateTime = (date) =>
-  date ? new Date(date).toLocaleString("en-US") : "Not specified";
+const formatEventDateTime = (date, timeZone) =>
+  formatDateTime(date, { timeZone });
 
 const formatEventLocation = (location = {}) =>
   location.formatted ||
@@ -76,7 +83,9 @@ const buildPaymentRequestEmail = ({
   const eventCode = event?.shortCode || event?._id || "Not specified";
   const firstName = recipientName?.split(" ")[0] || "there";
   const expirationLine = expiresAt
-    ? `<p>Please complete this request by <strong>${new Date(expiresAt).toLocaleDateString("en-US")}</strong>.</p>`
+    ? `<p>Please complete this request by <strong>${formatDate(expiresAt, {
+        timeZone: event?.timezone || event?.location?.timezone,
+      })}</strong>.</p>`
     : "";
   const paymentLink = providerUrl
     ? `
@@ -92,8 +101,8 @@ const buildPaymentRequestEmail = ({
         <p>Hey ${firstName},</p>
         <p>A ${typeLabel} request has been sent to you for Tipsyverse Event <strong>${eventCode}</strong>.</p>
 
-        <p><strong>Arrival Time:</strong> ${formatEventDateTime(event?.startAt)}</p>
-        <p><strong>End Time:</strong> ${formatEventDateTime(event?.endAt)}</p>
+        <p><strong>Arrival Time:</strong> ${formatEventDateTime(event?.startAt, event?.timezone || event?.location?.timezone)}</p>
+        <p><strong>End Time:</strong> ${formatEventDateTime(event?.endAt, event?.timezone || event?.location?.timezone)}</p>
         <p><strong>Event Type:</strong> ${displayEventType(event?.type)}</p>
         <p><strong>Location:</strong> ${formatEventLocation(event?.location)}</p>
 
@@ -145,6 +154,24 @@ const normalizeSentTo = (sentTo, fallbackContact) => {
   return sentTo || fallbackContact;
 };
 
+const assertRequestFitsBalance = async (event, amount) => {
+  assertCollectibleEvent(event);
+  const summary = await eventBalanceSnapshot(event);
+  if (summary.balance <= 0) {
+    const error = new Error("This event has no balance due.");
+    error.statusCode = 409;
+    throw error;
+  }
+  if (Number(amount) > summary.balance + 0.001) {
+    const error = new Error(
+      `Payment request cannot exceed the current balance of $${summary.balance.toFixed(2)}.`
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+  return summary;
+};
+
 const paymentRequestCtrl = {
   createPaymentRequest: async (req, res) => {
     try {
@@ -169,6 +196,15 @@ const paymentRequestCtrl = {
           message: "event, provider, paymentType, and amountRequested are required.",
         });
       }
+      if (
+        provider === "stripe" &&
+        String(process.env.STRIPE_ENABLED).toLowerCase() !== "true"
+      ) {
+        return res.status(503).json({
+          message:
+            "Online card payments are unavailable. Select a manual payment provider.",
+        });
+      }
       const requestAmount = Number(amountRequested);
       if (!Number.isFinite(requestAmount) || requestAmount <= 0) {
         return res.status(400).json({
@@ -177,9 +213,10 @@ const paymentRequestCtrl = {
       }
 
       const eventDoc = await Event.findById(event)
-        .select("_id shortCode type startAt endAt location contact")
+        .select("_id shortCode type status startAt endAt timezone location contact payment pricing")
         .lean();
       if (!eventDoc) return res.status(404).json({ message: "Event not found" });
+      await assertRequestFitsBalance(eventDoc, requestAmount);
       const recipient = normalizeSentTo(sentTo, eventDoc.contact);
       if (!recipient?.email || !validateEmail(String(recipient.email).trim())) {
         return res.status(400).json({
@@ -192,7 +229,7 @@ const paymentRequestCtrl = {
         provider,
         paymentType,
         amountRequested: requestAmount,
-        providerUrl,
+        providerUrl: provider === "stripe" ? undefined : providerUrl,
         sentTo: {
           ...recipient,
           email: String(recipient.email).trim(),
@@ -203,6 +240,15 @@ const paymentRequestCtrl = {
         expiresAt,
         emailId,
       });
+      if (provider === "stripe") {
+        doc.providerUrl = `${process.env.PUBLIC_APP_URL.replace(/\/$/, "")}/pay/${doc._id}`;
+        await doc.save();
+      }
+
+      await PaymentRequest.updateMany(
+        { event, _id: { $ne: doc._id }, status: "sent" },
+        { $set: { status: "cancelled" } }
+      );
 
       const emailResult = await sendPaymentRequestEmail(doc, eventDoc);
       if (!emailResult.success) {
@@ -238,7 +284,7 @@ const paymentRequestCtrl = {
         data: fresh,
       });
     } catch (err) {
-      return res.status(400).json({ message: err.message });
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
   },
 
@@ -253,7 +299,21 @@ const paymentRequestCtrl = {
       if (eventId) filter.event = eventId;
 
       if (!isStaff(req.user)) {
-        const events = await Event.find({ organizer: req.user.id }).select("_id").lean();
+        const userId = req.user?.id || req.user?._id;
+        const userEmail = String(req.user?.email || "").trim();
+        const escapedEmail = userEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const events = await Event.find({
+          $or: [
+            ...(userId
+              ? [{ organizer: userId }, { "contact.userId": userId }]
+              : []),
+            ...(userEmail
+              ? [{ "contact.email": new RegExp(`^${escapedEmail}$`, "i") }]
+              : []),
+          ],
+        })
+          .select("_id")
+          .lean();
         if (eventId && !(await canViewEvent(req.user, eventId))) {
           return res.status(403).json({ message: "Not allowed" });
         }
@@ -266,7 +326,7 @@ const paymentRequestCtrl = {
 
       return res.json({ data: docs });
     } catch (err) {
-      return res.status(400).json({ message: err.message });
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
   },
 
@@ -283,7 +343,7 @@ const paymentRequestCtrl = {
 
       return res.json({ data: docs });
     } catch (err) {
-      return res.status(400).json({ message: err.message });
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
   },
 
@@ -299,7 +359,7 @@ const paymentRequestCtrl = {
 
       return res.json({ data: doc });
     } catch (err) {
-      return res.status(400).json({ message: err.message });
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
   },
 
@@ -311,6 +371,25 @@ const paymentRequestCtrl = {
 
       const doc = await PaymentRequest.findById(req.params.id);
       if (!doc) return res.status(404).json({ message: "Not found" });
+      if (
+        doc.status === "sent" &&
+        ["provider", "paymentType", "amountRequested", "providerUrl"].some(
+          (field) => Object.prototype.hasOwnProperty.call(req.body, field)
+        )
+      ) {
+        return res.status(409).json({
+          message: "A sent payment request is immutable. Cancel it and create a revised request.",
+        });
+      }
+      if (
+        req.body.provider === "stripe" &&
+        String(process.env.STRIPE_ENABLED).toLowerCase() !== "true"
+      ) {
+        return res.status(503).json({
+          message:
+            "Online card payments are unavailable. Select a manual payment provider.",
+        });
+      }
 
       const before = doc.toObject();
       const allowed = [
@@ -319,11 +398,11 @@ const paymentRequestCtrl = {
         "amountRequested",
         "providerUrl",
         "sentTo",
-        "status",
         "sentAt",
         "expiresAt",
         "emailId",
       ];
+      if (req.paymentRequestTransition) allowed.push("status");
 
       for (const field of allowed) {
         if (Object.prototype.hasOwnProperty.call(req.body, field)) {
@@ -351,6 +430,12 @@ const paymentRequestCtrl = {
       }
 
       if (doc.status === "sent" && !doc.sentAt) doc.sentAt = new Date();
+      const eventDoc = await Event.findById(doc.event)
+        .select("status payment pricing")
+        .lean();
+      if (doc.status === "draft" || doc.status === "sent") {
+        await assertRequestFitsBalance(eventDoc, doc.amountRequested);
+      }
       await doc.save();
 
       req.logActivity?.({
@@ -371,7 +456,7 @@ const paymentRequestCtrl = {
       const fresh = await populatePaymentRequest(PaymentRequest.findById(doc._id)).lean();
       return res.json({ data: fresh });
     } catch (err) {
-      return res.status(400).json({ message: err.message });
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
   },
 
@@ -383,9 +468,21 @@ const paymentRequestCtrl = {
 
       const doc = await PaymentRequest.findById(req.params.id).populate(
         "event",
-        "shortCode type startAt endAt location contact"
+        "shortCode type status startAt endAt timezone location contact payment pricing"
       );
       if (!doc) return res.status(404).json({ message: "Not found" });
+      if (!["draft", "sent"].includes(doc.status)) {
+        return res.status(409).json({ message: "Only a draft or active request can be sent." });
+      }
+      if (
+        doc.provider === "stripe" &&
+        String(process.env.STRIPE_ENABLED).toLowerCase() !== "true"
+      ) {
+        return res.status(503).json({
+          message:
+            "Online card payments are unavailable. Select a manual payment provider.",
+        });
+      }
       if (!doc.sentTo?.email || !validateEmail(String(doc.sentTo.email).trim())) {
         return res.status(400).json({
           message: "A valid recipient email is required before sending a payment request.",
@@ -397,6 +494,7 @@ const paymentRequestCtrl = {
           message: "Payment request amount must be greater than $0.00.",
         });
       }
+      await assertRequestFitsBalance(doc.event, requestAmount);
 
       const before = doc.toObject();
       const emailResult = await sendPaymentRequestEmail(doc);
@@ -433,16 +531,32 @@ const paymentRequestCtrl = {
         data: fresh,
       });
     } catch (err) {
-      return res.status(400).json({ message: err.message });
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
   },
 
   completePaymentRequest: async (req, res) => {
+    const doc = await PaymentRequest.findById(req.params.id).lean();
+    if (!doc) return res.status(404).json({ message: "Not found" });
+    const paid = await netRecordedPayments(doc.event, { paymentRequest: doc._id });
+    if (paid < Number(doc.amountRequested) - 0.001) {
+      return res.status(409).json({
+        message: "A payment request cannot be completed until its requested amount is recorded.",
+      });
+    }
+    req.paymentRequestTransition = true;
     req.body.status = "completed";
     return paymentRequestCtrl.updatePaymentRequest(req, res);
   },
 
   cancelPaymentRequest: async (req, res) => {
+    const doc = await PaymentRequest.findById(req.params.id)
+      .select("stripePaymentIntentId")
+      .lean();
+    if (doc?.stripePaymentIntentId) {
+      await cancelStripePaymentIntents([doc.stripePaymentIntentId]);
+    }
+    req.paymentRequestTransition = true;
     req.body.status = "cancelled";
     return paymentRequestCtrl.updatePaymentRequest(req, res);
   },
@@ -472,7 +586,7 @@ const paymentRequestCtrl = {
 
       return res.json({ success: true });
     } catch (err) {
-      return res.status(400).json({ message: err.message });
+      return res.status(err.statusCode || 400).json({ message: err.message });
     }
   },
 };

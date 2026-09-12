@@ -73,8 +73,8 @@ const LicenseReminderSchema = new mongoose.Schema(
 const LicenseSchema = new mongoose.Schema(
   {
     state: { type: String, required: true, uppercase: true, trim: true },
-    permitNumber: { type: String, required: true, trim: true },
-    expiresAt: { type: Date, required: true },
+    permitNumber: { type: String, trim: true, default: "" },
+    expiresAt: { type: Date, default: null },
     verified: { type: Boolean, default: false },
     // NEW: current status for UI
     status: {
@@ -104,8 +104,44 @@ const LicenseSchema = new mongoose.Schema(
 
     // OPTIONAL: why it was denied (for admin log / UX)
     decisionNote: { type: String, trim: true, default: "" },
+    serverTraining: {
+      provider: { type: String, trim: true, default: "" },
+      completedAt: { type: Date, default: null },
+      certificateNumber: { type: String, trim: true, default: "" },
+      proofDocument: {
+        fileId: { type: mongoose.Schema.Types.ObjectId, default: null },
+        mimeType: { type: String, default: "" },
+        size: { type: Number, default: 0 },
+        uploadedAt: { type: Date, default: null },
+      },
+      attestedAuthenticAndCurrent: { type: Boolean, default: false },
+      attestedAt: { type: Date, default: null },
+      attestedRequiredTraining: { type: Boolean, default: false },
+      trainingAttestedAt: { type: Date, default: null },
+      legacyComplianceGrandfatheredAt: { type: Date, default: null },
+      status: {
+        type: String,
+        enum: ["pending", "verified", "rejected", "expired"],
+        default: "pending",
+      },
+      verifiedAt: { type: Date, default: null },
+      verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      decisionNote: { type: String, trim: true, default: "" },
+      reminders: {
+        d90SentOn: { type: String, default: null },
+        d14SentOn: { type: String, default: null },
+        d1SentOn: { type: String, default: null },
+        expiredNotifiedOn: { type: String, default: null },
+      },
+    },
+    verificationHistory: [{
+      action: { type: String, enum: ["submitted", "updated", "verified", "rejected", "expired"] },
+      at: { type: Date, default: Date.now },
+      by: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      note: { type: String, trim: true, default: "" },
+    }],
   },
-  { _id: true }
+  { _id: true, timestamps: true }
 );
 
 const BartenderOnboardingDocumentSchema = new mongoose.Schema(
@@ -298,10 +334,14 @@ const userSchema = new mongoose.Schema(
     },
     email: { type: String, required: true, trim: true, unique: true },
     fullName: { type: String, required: true, trim: true },
-    passwordHash: { type: String, required: true, trim: true },
+    passwordHash: { type: String, required: true, trim: true, select: false },
 
-    resetPasswordToken: { type: String, default: null },
-    resetPasswordExpires: { type: Date, default: null },
+    resetPasswordToken: { type: String, default: null, select: false },
+    resetPasswordExpires: { type: Date, default: null, select: false },
+    activationTokenHash: { type: String, default: null, select: false },
+    activationTokenExpiresAt: { type: Date, default: null, select: false },
+    activationCompletedAt: { type: Date, default: null },
+    mustSetPassword: { type: Boolean, default: false },
 
     profile: {
       photo: { type: String, default: "" },
@@ -340,7 +380,7 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["employee", "regular", "bartender"],
+      enum: ["admin", "employee", "regular", "bartender"],
       default: "regular",
       required: true,
     },

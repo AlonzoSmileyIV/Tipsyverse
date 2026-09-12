@@ -105,3 +105,18 @@ export function formatDistanceLabel(from, eventLocationPoint) {
 export function computeDistanceMiles(from, eventLocationPoint) {
   return computeMiles(from, eventLocationPoint);
 }
+
+export function getDistanceDisplayLabel({
+  sharingEnabled,
+  from,
+  eventLocationPoint,
+}) {
+  if (!sharingEnabled) return null;
+  if (!from || typeof from.lat !== "number" || typeof from.lng !== "number") {
+    return "Your live location is not available";
+  }
+  return (
+    formatDistanceLabel(from, eventLocationPoint) ||
+    "Event coordinates not available"
+  );
+}

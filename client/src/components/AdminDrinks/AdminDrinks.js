@@ -35,7 +35,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import * as XLSX from "xlsx";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import { DataGrid } from "@mui/x-data-grid";
 import moment from "moment/moment";
 import AdminDrinkForm from "../AdminDrinkForm/AdminDrinkForm";
@@ -46,6 +46,7 @@ import { fetchAllDrinks } from "../../features/drinks/drinkSlice";
 import EmptyOverlay from "../EmptyOverlay/EmptyOverlay";
 import AdminSummaryCards from "../AdminSummaryCards/AdminSummaryCards";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const mockGlasses = [
   { id: 1, name: "Cocktail Glass", maxOunces: 8 },
@@ -173,8 +174,10 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isCompactTable = useMediaQuery(theme.breakpoints.down("md"));
-  const isTightTable = useMediaQuery(theme.breakpoints.down("lg"));
+  const is700OrLess = useMediaQuery("(max-width:700px)");
+  const is850OrLess = useMediaQuery("(max-width:850px)");
+  const is1100OrLess = useMediaQuery("(max-width:1100px)");
+  const is1400OrLess = useMediaQuery("(max-width:1400px)");
 
   const drinksData = useMemo(
     () => (allDrinks?.data?.length ? allDrinks?.data : mockDrinks),
@@ -276,9 +279,25 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [],
       "application/vnd.ms-excel": [],
     },
+    maxSize: 5 * 1024 * 1024,
+    multiple: false,
+    onDropRejected: ([rejection]) => {
+      const tooLarge = rejection?.errors?.some(
+        ({ code }) => code === "file-too-large"
+      );
+      setAlertMessage(
+        tooLarge
+          ? "The Excel file must be 5 MB or smaller."
+          : "Choose an Excel spreadsheet (.xlsx or .xls)."
+      );
+      setAlertSeverity("error");
+      setAlertOpen(true);
+      setPendingFile(null);
+    },
   });
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     const data = filteredDrinksData.map(
       ({
         name,
@@ -518,7 +537,7 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       </Collapse>
@@ -569,7 +588,7 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
               {isDragActive ? "Drop the Excel file" : "Upload drink Excel"}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Drag and drop a spreadsheet here, or click to choose a file.
+              Drag and drop a spreadsheet here, or click to choose a file · max 5 MB.
             </Typography>
           </Box>
         </Stack>
@@ -605,10 +624,10 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
           getRowId={(row) => row._id} // ✅ Use _id from MongoDB
           rowsPerPageOptions={[10, 25, 50]}
           columnVisibilityModel={{
-            photo: !isMobile,
-            isAlcoholic: !isMobile,
-            glass: !isCompactTable,
-            createdAt: !isTightTable,
+            photo: !is850OrLess,
+            isAlcoholic: !is700OrLess,
+            glass: !is1100OrLess,
+            createdAt: !is1400OrLess,
           }}
           disableColumnMenu
           slots={{
@@ -623,7 +642,15 @@ const AdminDrinks = ({ handleAddClick, onActionsReady }) => {
             ),
           }}
           sx={{
-            minWidth: isMobile ? 330 : isCompactTable ? 540 : isTightTable ? 670 : 820,
+            minWidth: is700OrLess
+              ? 330
+              : is850OrLess
+              ? 470
+              : is1100OrLess
+              ? 570
+              : is1400OrLess
+              ? 720
+              : 820,
             border: 0,
             "& .MuiDataGrid-columnHeaders": {
               backgroundColor: "rgba(0, 0, 0, 0.025)",

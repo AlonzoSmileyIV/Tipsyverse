@@ -5,6 +5,14 @@ import PaymentMethodList from "../PaymentMethodList/PaymentMethodList";
 import PaymentMethodForm from "../PaymentMethodForm/PaymentMethodForm";
 import DeleteConfirmPaymentDialog from "../DeleteConfirmPaymentDialog/DeleteConfirmPaymentDialog";
 import api from "../../services/api";
+import { Elements } from "@stripe/react-stripe-js";
+import { loadStripe } from "@stripe/stripe-js";
+
+const stripeEnabled =
+  String(process.env.REACT_APP_STRIPE_ENABLED).toLowerCase() === "true";
+const stripePromise = stripeEnabled && process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY)
+  : null;
 
 const PaymentMethodsTab = ({ user }) => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
@@ -53,19 +61,9 @@ const PaymentMethodsTab = ({ user }) => {
       if (formMode === "create") {
         await api.post("/payment-methods", {
           ownerId: user._id,
-          provider: "stripe",
-          type: "card",
-          externalId:
-            payload.externalId ||
-            `pm_local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          brand: payload.brand,
-          last4: (payload.number || "").replace(/\D/g, "").slice(-4),
-          expMonth: Number(payload.expMonth),
-          expYear: 2000 + Number(payload.expYear),
+          setupIntentId: payload.setupIntentId,
           nickname: payload.nickname,
-          billingName: payload.name,
-          billingEmail: user.email,
-          setDefault: !!payload.setDefault, // NEW
+          setDefault: !!payload.setDefault,
         });
         showAlert("success", "Card added successfully.");
       } else if (formMode === "edit" && editTarget?._id) {
@@ -110,6 +108,15 @@ const PaymentMethodsTab = ({ user }) => {
     }
   };
 
+  if (!stripeEnabled) {
+    return (
+      <Alert severity="info">
+        Saved card payments are not currently available. Payments recorded by
+        Tipsyverse staff will still appear in your event finance history.
+      </Alert>
+    );
+  }
+
   return (
     <Stack spacing={2}>
       <Typography variant="h6" fontWeight={700}>
@@ -141,18 +148,22 @@ const PaymentMethodsTab = ({ user }) => {
 
       <div ref={formAnchorRef} />
       {showForm && (
-        <PaymentMethodForm
-          mode={formMode}
-          initialValue={editTarget}
-          onChange={() => {}}
-          onSubmit={handleSubmitPM}
-          onCancel={() => {
-            setShowForm(false);
-            setEditTarget(null);
-          }}
-          allowACHInput={true}
-          submitting={submitting}
-        />
+        stripePromise ? (
+          <Elements stripe={stripePromise}>
+            <PaymentMethodForm
+              mode={formMode}
+              initialValue={editTarget}
+              onSubmit={handleSubmitPM}
+              onCancel={() => {
+                setShowForm(false);
+                setEditTarget(null);
+              }}
+              submitting={submitting}
+            />
+          </Elements>
+        ) : (
+          <Alert severity="warning">Card storage is not configured.</Alert>
+        )
       )}
 
       <DeleteConfirmPaymentDialog

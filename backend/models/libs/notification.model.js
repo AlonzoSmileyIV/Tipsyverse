@@ -16,7 +16,8 @@ const notificationSchema = new mongoose.Schema({
       "event_ready_to_assign",
       "event_bartenders_selected",
       "event_assigned",
-      "event_resassign",
+      "event_assignment_removed",
+      "event_reassign",
       "event_reassign_urgent",
       "event_updated",
       "event_canceled",
@@ -83,6 +84,7 @@ notificationSchema.set("toJSON", {
 
 notificationSchema.index({ "recipients.recipient": 1 });
 notificationSchema.index({ "recipients.recipient": 1, "recipients.read": 1 });
+notificationSchema.index({ "recipients.recipient": 1, createdAt: -1 });
 
 const NotificationModel = mongoose.model("Notification", notificationSchema);
 

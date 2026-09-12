@@ -68,6 +68,10 @@ const termsSections = [
     body: [
       "Customers agree to pay all approved charges associated with their event, including deposits, remaining balances, additional approved charges, procurement costs, overtime, taxes, fees, and any other amounts communicated by Tipsyverse.",
       "A deposit, partial payment, or full payment may be required before Tipsyverse reserves staff, begins assignment, confirms service, or continues event planning.",
+      "Unless Tipsyverse approves different written terms, remaining event balances are due seven calendar days before the event. Events confirmed within seven days require full payment when confirmed.",
+      "Tipsyverse may send a balance reminder fourteen days before the event and a past-due warning five days before the event. At seventy-two hours before the event, an unpaid event may be placed on Payment Hold. Assigned bartenders may remain assigned while final instructions, optional purchases, and additional event changes are paused.",
+      "By forty-eight hours before the event, Tipsyverse may require either full payment, a documented staff-approved payment arrangement, or cancellation for nonpayment.",
+      "If an event is canceled for nonpayment, the deposit and already-incurred, nonrecoverable costs may be retained to the extent permitted by the booking terms and applicable law. Tipsyverse will not automatically charge the remaining balance unless the customer expressly authorized that charge.",
       "Payment records, invoices, receipts, transaction references, refunds, voids, and balances may be maintained in Tipsyverse for accounting, tax, audit, dispute, and operational purposes.",
       "Refunds, credits, cancellations, rescheduling, and transferred payments are subject to the cancellation terms communicated for the event and may depend on timing, staff commitments, expenses incurred, payment processor rules, and applicable law.",
       "Tipsyverse may suspend, delay, cancel, or decline service if required payments are not received, payment methods fail, balances remain unpaid, disputes occur, or risk concerns arise.",
@@ -96,6 +100,8 @@ const termsSections = [
       "Bartenders and applicants may be required to complete onboarding, training, license verification, document submission, tax forms, contractor agreements, service standards acknowledgements, payout setup, contact information, and emergency contact information before being eligible for assignments.",
       "Bartenders are responsible for reviewing assignment details, arriving on time, following applicable alcohol laws, checking identification when required, refusing service when appropriate, communicating issues promptly, maintaining professionalism, and complying with Tipsyverse standards.",
       "Tipsyverse may remove, suspend, deny, deactivate, or restrict bartender access based on incomplete requirements, expired licenses, safety concerns, misconduct, poor performance, customer complaints, incident reports, fraud, or violation of these Terms or other applicable agreements.",
+      "Independent-contractor bartenders must obtain and continuously maintain every alcohol-service permit and server-training credential required for each assignment. A current permit matching the event's state, verified by Tipsyverse, and the bartender's confirmation that required server training was completed are required before bidding or assignment.",
+      "Bartenders must promptly replace expired or superseded permit proof, attest that submitted documents are authentic and current, and redact Social Security numbers, driver-license numbers, and unrelated personal information before upload. Tipsyverse may request additional training proof when legally necessary or when a permit cannot be verified.",
       "Compensation, hourly rates, payouts, bonuses, rewards, reimbursement, and taxes are subject to the terms communicated by Tipsyverse and any applicable contractor, employment, or service agreement.",
     ],
   },
@@ -179,7 +185,7 @@ const TermsConditionsScreen = () => {
         keywords="Tipsyverse terms, terms and conditions, event booking terms, bartender agreement, platform rules, payment terms"
       />
       <Container maxWidth="md" sx={{ py: 6 }}>
-        <Typography variant="h3" gutterBottom textAlign="center" fontWeight={700}>
+        <Typography component="h1" variant="h3" gutterBottom textAlign="center" fontWeight={700}>
           Terms & Conditions
         </Typography>
 
@@ -194,7 +200,7 @@ const TermsConditionsScreen = () => {
 
         {termsSections.map((section) => (
           <Box key={section.title} sx={{ mt: 3 }}>
-            <Typography variant="h6" fontWeight={700} gutterBottom>
+            <Typography component="h2" variant="h6" fontWeight={700} gutterBottom>
               {section.title}
             </Typography>
             {section.body.map((paragraph) => (

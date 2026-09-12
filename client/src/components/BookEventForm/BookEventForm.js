@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSelector, shallowEqual } from "react-redux";
 import PhoneTextField from "../../components/PhoneTextField/PhoneTextField";
 import LocationInput from "../../components/LocationInput/LocationInput";
+import DateTextField from "../../components/DateTextField/DateTextField";
 import { parseDateOnlyParts } from "../../utils/dateOnly";
 import {
   formatTimeInput,
@@ -27,6 +28,11 @@ import {
   timeValueToInput,
 } from "../../utils/timeInput";
 import api from "../../services/api";
+import { getBrowserTimeZone, zonedLocalDateTimeToIso } from "../../utils/timestamps";
+import {
+  COMMON_US_TIMEZONES,
+  formatTimezoneConfirmation,
+} from "../../utils/timezones";
 
 /* ----------------------------- CONSTANTS ----------------------------- */
 
@@ -52,7 +58,7 @@ const POLICY_ITEMS = [
     key: "paymentPolicy",
     title: "Payment Policy",
     script:
-      "A deposit or partial payment may be required before Tipsyverse reserves staff, confirms service, or moves your event into the assignment process. Any remaining balance must be paid according to the payment schedule communicated by Tipsyverse. Payment requests may be sent by email, text, or another approved method. Late, incomplete, failed, disputed, or unpaid balances may delay event confirmation, delay bartender assignment, affect staffing availability, or result in cancellation of service. Additional approved charges, including overtime, procurement, travel, replacement supplies, or other agreed costs, may be billed separately.",
+      "A nonrefundable deposit may be required to reserve the event date. Unless Tipsyverse approves different written terms, the remaining balance is due seven calendar days before the event. Events confirmed within seven days require full payment at confirmation. Tipsyverse may send a reminder fourteen days before the event and a past-due warning five days before the event. An unpaid event may be placed on Payment Hold seventy-two hours before it begins; bartenders remain assigned, but final instructions, optional purchases, and additional event changes are paused. By forty-eight hours before the event, Tipsyverse must approve a documented payment arrangement or may cancel for nonpayment. Deposits and already-incurred, nonrecoverable costs may be retained as permitted by the agreed terms and applicable law. Tipsyverse will not automatically charge an unpaid balance unless expressly authorized. Additional approved charges may be billed separately.",
   },
   {
     key: "cancellationPolicy",
@@ -162,6 +168,7 @@ function shapePayload(form) {
     policyChecks,
     mediaPreference,
     acceptedTerms,
+    timezone,
   } = form;
 
   const point =
@@ -179,8 +186,21 @@ function shapePayload(form) {
     type: eventType,
     description: description?.trim() || "",
     additionalInstructions: instructions?.trim() || "",
-    startAt: startAt ? new Date(startAt).toISOString() : null,
-    endAt: endAt ? new Date(endAt).toISOString() : null,
+    startAt: startAt
+      ? zonedLocalDateTimeToIso(
+          startAt.slice(0, 10),
+          startAt.slice(11, 16),
+          timezone || getBrowserTimeZone()
+        )
+      : null,
+    endAt: endAt
+      ? zonedLocalDateTimeToIso(
+          endAt.slice(0, 10),
+          endAt.slice(11, 16),
+          timezone || getBrowserTimeZone()
+        )
+      : null,
+    timezone: timezone || getBrowserTimeZone(),
     contact: {
       fullName: contactFullName?.trim() || "",
       email: contactEmail?.trim() || "",
@@ -198,6 +218,7 @@ function shapePayload(form) {
       formatted: formattedAddress || "",
       placeId: placeId || "",
       point,
+      timezone: timezone || getBrowserTimeZone(),
     },
     options: {
       barType: "unknown",
@@ -397,6 +418,11 @@ export default function BookEventForm({
     policyChecks: emptyPolicyChecks,
     mediaPreference: "",
     acceptedTerms: false,
+    timezone: getBrowserTimeZone(),
+  });
+  const [timezoneResolution, setTimezoneResolution] = useState({
+    status: "fallback",
+    source: "browser",
   });
   const [dateInputs, setDateInputs] = useState({ startAt: "", endAt: "" });
   const [timeInputs, setTimeInputs] = useState({ startAt: "", endAt: "" });
@@ -405,6 +431,51 @@ export default function BookEventForm({
     eligible: true,
     reason: "",
   });
+
+  useEffect(() => {
+    const latitude = Number(form.latitude);
+    const longitude = Number(form.longitude);
+    const hasCoordinates =
+      form.latitude !== null &&
+      form.latitude !== "" &&
+      form.longitude !== null &&
+      form.longitude !== "" &&
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude);
+
+    if (!hasCoordinates) {
+      const browserTimezone = getBrowserTimeZone();
+      setForm((current) =>
+        current.timezone === browserTimezone
+          ? current
+          : { ...current, timezone: browserTimezone }
+      );
+      setTimezoneResolution({ status: "fallback", source: "browser" });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setTimezoneResolution({ status: "resolving", source: "address" });
+    api
+      .get("/events/timezone", {
+        params: { lat: latitude, lng: longitude },
+        signal: controller.signal,
+      })
+      .then(({ data }) => {
+        const timezone = data?.data?.timezone;
+        if (!timezone) throw new Error("Timezone unavailable");
+        setForm((current) => ({ ...current, timezone }));
+        setTimezoneResolution({ status: "resolved", source: "address" });
+      })
+      .catch((error) => {
+        if (error?.code === "ERR_CANCELED") return;
+        const browserTimezone = getBrowserTimeZone();
+        setForm((current) => ({ ...current, timezone: browserTimezone }));
+        setTimezoneResolution({ status: "fallback", source: "browser" });
+      });
+
+    return () => controller.abort();
+  }, [form.latitude, form.longitude]);
 
   // memoize initialData fields into a stable object to satisfy exhaustive-deps
   // replace your current initialShape useMemo with these two blocks:
@@ -550,23 +621,27 @@ export default function BookEventForm({
 
   // one-time default for start/end
   useEffect(() => {
+    const { start, end } = getNextWeekendWindow();
+    const defaultStartAt = toLocalInput(start);
+    const defaultEndAt = toLocalInput(end);
+
     setForm((f) => {
       if (f.startAt) return f;
-      const { start, end } = getNextWeekendWindow();
-      setDateInputs({
-        startAt: datePartsToInput(start),
-        endAt: datePartsToInput(end),
-      });
-      setTimeInputs({
-        startAt: timeValueToInput(toLocalInput(start).slice(11, 16)),
-        endAt: timeValueToInput(toLocalInput(end).slice(11, 16)),
-      });
       return {
         ...f,
-        startAt: toLocalInput(start),
-        endAt: f.endAt || toLocalInput(end),
+        startAt: defaultStartAt,
+        endAt: f.endAt || defaultEndAt,
       };
     });
+    setDateInputs((current) => ({
+      startAt: current.startAt || datePartsToInput(start),
+      endAt: current.endAt || datePartsToInput(end),
+    }));
+    setTimeInputs((current) => ({
+      startAt:
+        current.startAt || timeValueToInput(getTimePart(defaultStartAt)),
+      endAt: current.endAt || timeValueToInput(getTimePart(defaultEndAt)),
+    }));
   }, []);
 
   const errors = useMemo(() => {
@@ -631,6 +706,20 @@ export default function BookEventForm({
     setAttemptedNext(true);
 
     if (!hasErrors) {
+      // The formatted date/time controls are the source of truth on this step.
+      // Commit even untouched default times before rendering the review.
+      if (step === 2) {
+        const startDate = parseDateOnlyParts(dateInputs.startAt);
+        const endDate = parseDateOnlyParts(dateInputs.endAt);
+        const startTime = parseTimeInput(timeInputs.startAt);
+        const endTime = parseTimeInput(timeInputs.endAt);
+
+        setForm((current) => ({
+          ...current,
+          startAt: combineDateTime(datePartsToDatePart(startDate), startTime),
+          endAt: combineDateTime(datePartsToDatePart(endDate), endTime),
+        }));
+      }
       setAttemptedNext(false);
       setTouched({});
       setStep((s) => Math.min(s + 1, steps.length - 1));
@@ -768,7 +857,7 @@ export default function BookEventForm({
       <Card sx={{ borderRadius: 3 }}>
         <CardHeader
           title={
-            <Typography variant="h5" fontWeight={800}>
+            <Typography component="h1" variant="h5" fontWeight={800}>
               Book an Event
             </Typography>
           }
@@ -932,17 +1021,15 @@ export default function BookEventForm({
               <Typography variant="body2">
                 Please change the times accordingly
               </Typography>
+
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <TextField
+                <DateTextField
                   fullWidth
                   label="Arrival Date"
-                  placeholder="MM/DD/YYYY"
                   value={dateInputs.startAt}
                   onChange={updateDateTextPart("startAt")}
                   error={!!errors.startAt}
                   helperText={errors.startAt || "Use MM/DD/YYYY."}
-                  InputLabelProps={{ shrink: true }}
-                  inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 />
                 <TextField
                   fullWidth
@@ -959,16 +1046,13 @@ export default function BookEventForm({
                 />
               </Stack>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <TextField
+                <DateTextField
                   fullWidth
                   label="Leave Date"
-                  placeholder="MM/DD/YYYY"
                   value={dateInputs.endAt}
                   onChange={updateDateTextPart("endAt")}
                   error={!!errors.endAt}
                   helperText={errors.endAt || "Use MM/DD/YYYY."}
-                  InputLabelProps={{ shrink: true }}
-                  inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 />
                 <TextField
                   fullWidth
@@ -984,6 +1068,42 @@ export default function BookEventForm({
                   inputProps={{ inputMode: "text", maxLength: 8 }}
                 />
               </Stack>
+                <TextField
+                select
+                fullWidth
+                label="Event Timezone"
+                value={form.timezone}
+                onChange={(event) => {
+                  update("timezone")(event);
+                  setTimezoneResolution({ status: "confirmed", source: "manual" });
+                }}
+                helperText="Confirm this timezone before continuing. Times are stored as UTC and displayed in the venue timezone."
+              >
+                {!COMMON_US_TIMEZONES.some(([value]) => value === form.timezone) && (
+                  <MenuItem value={form.timezone}>
+                    {formatTimezoneConfirmation(form.timezone)} ({form.timezone})
+                  </MenuItem>
+                )}
+                {COMMON_US_TIMEZONES.map(([value, label]) => (
+                  <MenuItem key={value} value={value}>
+                    {label} ({value})
+                  </MenuItem>
+                ))}
+              </TextField>
+              <Alert
+                severity={
+                  timezoneResolution.status === "resolved" ? "success" : "info"
+                }
+              >
+                Event timezone: {formatTimezoneConfirmation(form.timezone)}. {" "}
+                {timezoneResolution.status === "resolving"
+                  ? "Checking the selected venue…"
+                  : timezoneResolution.source === "address"
+                    ? "Detected from the selected venue."
+                    : timezoneResolution.source === "manual"
+                      ? "Manually confirmed."
+                      : "Suggested from your browser because venue coordinates are unavailable. Please confirm or change it."}
+              </Alert>
             </Stack>
           )}
 
@@ -1000,6 +1120,10 @@ export default function BookEventForm({
               <ReviewRow
                 label="When"
                 value={formatWhen(form.startAt, form.endAt)}
+              />
+              <ReviewRow
+                label="Event timezone"
+                value={`${formatTimezoneConfirmation(form.timezone)} (${form.timezone})`}
               />
               <ReviewRow
                 label="Where"
@@ -1063,6 +1187,8 @@ export default function BookEventForm({
               </Typography>
 
               <Box
+                tabIndex={0}
+                aria-label="Booking policies and service agreement"
                 sx={{
                   maxHeight: { xs: 380, sm: 460 },
                   overflowY: "auto",

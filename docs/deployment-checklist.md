@@ -1,86 +1,114 @@
-# Tipsyverse Deployment Checklist
+# Tipsyverse release checklist
 
-Use this checklist before pushing to GitHub, staging, or production.
+Record each release in a ticket or release note with the commit SHA, operator,
+timestamps, evidence links, and rollback image. An unchecked item is a launch
+blocker unless the release owner explicitly documents why it does not apply.
 
-## Source Control
+## 1. Release candidate
 
-- Confirm `.env`, `node_modules`, `client/build`, logs, and OS files are ignored.
-- Commit from the root project directory.
-- Review staged files with `git status --short` and `git diff --cached --stat`.
-- Avoid committing generated exports unless they are intentional seed/import assets.
+- [ ] Working tree reviewed; no secret, local environment, export, or production
+      data is included.
+- [ ] Release candidate is an intentional commit, not an uncommitted workspace.
+- [ ] GitHub `Release gates` workflow passes for the exact commit.
+- [ ] Previous successful frontend deployment and backend image tag are known.
+- [ ] Database migrations are backward-compatible or have a tested restore plan.
 
-## Environment Variables
+## 2. Environment isolation
 
-Backend:
+- [ ] Staging and production use different MongoDB databases and credentials.
+- [ ] Stripe keys and webhook endpoints are environment-specific.
+- [ ] Cloudinary folders/accounts and API keys are environment-specific.
+- [ ] Transactional email domains or provider streams are environment-specific.
+- [ ] Sentry environments and `APP_RELEASE`/`REACT_APP_RELEASE` are distinct.
+- [ ] Access/refresh secrets differ between environments and from each other.
+- [ ] Production CORS contains only exact HTTPS frontend origins.
+- [ ] `TRUST_PROXY` matches the actual number of trusted proxy hops.
 
-- `NODE_ENV`
-- `PORT`
-- `API_URL`
-- `FRONTEND_URL`
-- `PUBLIC_APP_URL`
-- `ADMIN_PORTAL_URL`
-- `CORS_ORIGINS`
-- `MONGO_PROD_URI`
-- `ACCESS_TOKEN_SECRET`
-- `REFRESH_TOKEN_SECRET`
-- `SALT_ROUNDS`
-- `RESEND_EMAIL_KEY`
-- `FROM_EMAIL`
-- `SUPPORT_EMAIL`
-- `CLOUDINARY_CLOUD_NAME`
-- `CLOUDINARY_API_KEY`
-- `CLOUDINARY_API_SECRET`
-- Payment provider keys if payment processing is enabled
+Run:
 
-Client:
+```sh
+cd backend
+STAGING_API_URL=https://... \
+STAGING_FRONTEND_URL=https://... \
+npm run verify:staging
+```
 
-- `REACT_APP_BASE_URL`
-- `REACT_APP_SOCKET_URL`
-- `REACT_APP_PUBLIC_SITE_URL`
-- `REACT_APP_SHARE_BASE_URL`
-- `REACT_APP_GOOGLE_MAPS_API_KEY`
+## 3. Data recovery
 
-## Smoke Tests
+- [ ] `mongodump` and `mongorestore` versions are recorded.
+- [ ] A staging backup completes and its manifest checksum verifies.
+- [ ] The archive restores into the staging drill database.
+- [ ] Post-restore smoke tests confirm users, events, payments, assignments,
+      indexes, and representative relationships.
+- [ ] Recovery point objective and recovery time are recorded.
+- [ ] Backup encryption, off-host replication, retention, and restore access are
+      confirmed.
 
-- Book event as a customer.
-- Confirm event/admin details.
-- Send invoice/payment request.
-- View customer payment summary.
-- Record payment and confirm finance totals update.
-- Assign bartender.
-- Bartender expresses interest, accepts assignment, clocks in, and clocks out.
-- Submit support ticket with notes and photos.
-- Submit incident report and confirm acknowledgement email.
-- Claim reward and review claim details in admin.
-- Mark onboarding documents sent/received.
-- Restrict booking access and verify Book Event explains the reason.
-- Suspend a signed-in user and verify the logout countdown appears.
+Commands:
 
-## Backend Jobs And Emails
+```sh
+DATABASE_BACKUP_DIR=/absolute/secure/path npm run db:backup
+DATABASE_BACKUP_ARCHIVE=/absolute/secure/path/file.archive.gz npm run db:backup:verify
+DATABASE_RESTORE_SOURCE=/absolute/secure/path/file.archive.gz \
+CONFIRM_RESTORE=true npm run db:restore-drill
+```
 
-- 24-hour customer reminders.
-- 24-hour bartender reminders.
-- Clock-in reminders.
-- Clock-out reminders.
-- Incident report confirmation.
-- Confirmed event change email to assigned bartenders.
-- Invoice/payment emails.
-- License expiration reminders.
-- Completed event checks.
+## 4. Staging flows
 
-## UX Review
+- [ ] Registration, activation, login, refresh, logout, password reset.
+- [ ] Customer booking, pricing, invoice, payment success/failure, and refund.
+- [ ] Duplicate Stripe event and duplicate mutation do not duplicate effects.
+- [ ] Bartender interest, assignment, clock-in/out, license, and payout links.
+- [ ] Admin authorization and record-level ownership for every role.
+- [ ] Upload type/size rejection and temporary-file cleanup.
+- [ ] Socket authentication, reconnect, and account suspension.
+- [ ] Email provider failure enters the outbox and later retries successfully.
+- [ ] Scheduled-job leader hands off after the current leader stops.
 
-- No raw enum values in tables or emails.
-- Disabled buttons explain why when practical.
-- Empty states are clear and helpful.
-- Mobile admin tables keep identifier, status, and actions visible.
-- Sensitive actions require confirmation.
-- Customer-facing payment wording uses `Total`, `Paid`, and `Balance Due`.
+## 5. Quality and capacity
 
-## Production Safety
+- [ ] Playwright desktop Chromium, Android Chrome, and mobile Safari projects pass.
+- [ ] Keyboard smoke tests and axe serious/critical checks pass.
+- [ ] Lighthouse accessibility and SEO gates pass on the deployed frontend.
+- [ ] Slow-network/offline and expired-session behavior is acceptable.
+- [ ] k6 staging test passes its 1% error and p95 latency thresholds.
+- [ ] Expected peak Socket.IO concurrency has been tested.
 
-- Rate limits are enabled for auth, password reset, public booking, support, and booking eligibility endpoints.
-- CORS origins are explicitly configured for production.
-- Health/config endpoint returns expected service readiness.
-- Scheduled jobs are only initialized in one backend process.
-- Payment, invoice, and sensitive email actions avoid duplicate sends where possible.
+Load test:
+
+```sh
+cd backend
+LOAD_API_URL=https://staging-api.example.com k6 run load/k6-smoke.js
+```
+
+Never load-test production without an approved window and owners monitoring it.
+
+## 6. Providers, monitoring, and ownership
+
+- [ ] DNS and HTTPS expiry monitoring are active.
+- [ ] SPF, DKIM, and DMARC pass for the transactional sending domain.
+- [ ] Stripe webhook failures and unreconciled payments have an alert and owner.
+- [ ] Sentry receives frontend/backend staged failures with the release SHA.
+- [ ] `/live` and `/ready` are monitored from outside the hosting provider.
+- [ ] 5xx rate, readiness, email backlog, and job-leadership alerts reach on-call.
+- [ ] Database and application secrets have rotation owners and dates.
+- [ ] Customer-support and incident-commander roles are assigned.
+
+## 7. Policy and launch
+
+- [ ] Counsel/qualified reviewer approves privacy, terms, refunds/cancellations,
+      contractor/employment language, and data deletion for served jurisdictions.
+- [ ] Support can execute account access/export/deletion requests.
+- [ ] Incident runbook has been reviewed in a tabletop exercise.
+- [ ] Soft-launch audience, duration, success thresholds, and stop conditions are
+      recorded.
+
+## 8. Deployment and observation
+
+- [ ] Production backup finishes immediately before deployment.
+- [ ] Backend image and frontend artifact match the reviewed commit SHA.
+- [ ] Readiness passes before traffic is shifted.
+- [ ] Authenticated production smoke test uses a designated test account.
+- [ ] Stripe, email, Socket.IO, Sentry, and scheduled jobs are observed.
+- [ ] Metrics remain healthy through the soft-launch observation window.
+- [ ] Release note and all evidence are stored in the release record.

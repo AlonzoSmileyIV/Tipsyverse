@@ -43,7 +43,7 @@ const LoginScreen = () => {
   useEffect(() => {
     if (loginStatus === "succeeded" && loggedInUser) {
       const redirect = searchParams.get("redirect") || "/";
-      navigateOrReload(navigate, redirect);
+      navigateOrReload(navigate, redirect, { replace: true });
     }
   }, [loginStatus, loggedInUser, navigate, searchParams]);
 
@@ -134,7 +134,7 @@ const LoginScreen = () => {
 
       {/* Login Box */}
       <Box>
-      <Typography variant="h5" fontWeight={600} gutterBottom>
+      <Typography component="h1" variant="h5" fontWeight={600} gutterBottom>
         Login
       </Typography>
       {message && (
@@ -152,6 +152,7 @@ const LoginScreen = () => {
           onChange={handleChange}
           error={!!errors.emailOrUsername}
           helperText={errors.emailOrUsername}
+          disabled={loginStatus === "loading"}
         />
         <TextField
           fullWidth
@@ -163,10 +164,12 @@ const LoginScreen = () => {
           onChange={handleChange}
           error={!!errors.password}
           helperText={errors.password}
+          disabled={loginStatus === "loading"}
           InputProps={{
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                 >
@@ -179,7 +182,7 @@ const LoginScreen = () => {
         <Box display="flex" justifyContent="space-between" mt={1} mb={2}>
           <Link
             to="/forgot-password"
-            style={{ color: "var(--primary-color)", textDecoration: "none" }}
+            style={{ color: "var(--primary-color)", textDecoration: "underline" }}
           >
             Forgot Password?
           </Link>
@@ -188,16 +191,18 @@ const LoginScreen = () => {
           type="submit"
           fullWidth
           variant="contained"
+          disabled={loginStatus === "loading"}
+          aria-busy={loginStatus === "loading"}
           sx={{ backgroundColor: "var(--primary-color)" }}
         >
-          Login
+          {loginStatus === "loading" ? "Signing in…" : "Login"}
         </Button>
       </Box>
       <Typography sx={{ mt: 2 }}>
         Don’t have an account?{" "}
         <Link
           to="/register"
-          style={{ color: "var(--primary-color)", textDecoration: "none" }}
+          style={{ color: "var(--primary-color)", textDecoration: "underline" }}
         >
           Sign Up
         </Link>

@@ -35,9 +35,9 @@ import {
   MenuItem,
 } from "@mui/material";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import * as XLSX from "xlsx";
 import api from "../../services/api"; // used to fetch course list (only here)
-import ActivityLogsTable from "../ActivityLogsTable/ActivityLogsTable";
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 // ----- WYSIWYG placeholder -----
 const Wysiwyg = ({ value, onChange, label }) => (
@@ -372,8 +372,28 @@ const AdminModuleForm = ({
   };
 
   const handleExcelUpload = (file) => {
+    const extension = String(file?.name || "").toLowerCase();
+    const isExcel = extension.endsWith(".xlsx") || extension.endsWith(".xls");
+    if (!isExcel) {
+      setSnackbar({
+        open: true,
+        message: "Choose an Excel spreadsheet (.xlsx or .xls).",
+        severity: "error",
+      });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setSnackbar({
+        open: true,
+        message: "The Excel file must be 5 MB or smaller.",
+        severity: "error",
+      });
+      return;
+    }
+
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
+      const XLSX = await loadSpreadsheet();
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: "array" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -476,7 +496,8 @@ const AdminModuleForm = ({
     setParsedSectionsDraft([]);
   };
 
-  const downloadTemplateXlsx = () => {
+  const downloadTemplateXlsx = async () => {
+    const XLSX = await loadSpreadsheet();
     const headers = [
       "SectionTitle",
       "LessonContent",
@@ -789,21 +810,38 @@ const AdminModuleForm = ({
 
             <Box
               sx={{
-                border: "2px dashed #ccc",
-                borderRadius: 2,
+                border: "1px dashed",
+                borderColor: "divider",
+                borderRadius: 1,
                 p: 2,
-                textAlign: "center",
                 cursor: "pointer",
-                bgcolor: "grey.50",
+                bgcolor: "background.paper",
+                "&:hover": {
+                  borderColor: "var(--primary-color)",
+                  bgcolor: "rgba(139, 0, 38, 0.03)",
+                },
               }}
               onClick={() => fileInputRef.current?.click()}
               onDrop={handleExcelDrop}
               onDragOver={(e) => e.preventDefault()}
             >
-              <Typography variant="body2">
-                Drag & Drop Excel here or click to upload multiple sections at
-                once
-              </Typography>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                alignItems="center"
+                justifyContent="center"
+                textAlign={{ xs: "center", sm: "left" }}
+              >
+                <UploadFileIcon sx={{ color: "var(--primary-color)" }} />
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={800}>
+                    Upload section Excel
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Drag and drop a spreadsheet here, or click to choose a file · max 5 MB.
+                  </Typography>
+                </Box>
+              </Stack>
               <input
                 type="file"
                 accept=".xlsx, .xls"

@@ -1,6 +1,14 @@
 // AdminSettingsScreen.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { Badge, Box, Tab, Tabs, Tooltip, useMediaQuery } from "@mui/material";
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  Badge,
+  Box,
+  CircularProgress,
+  Tab,
+  Tabs,
+  Tooltip,
+  useMediaQuery,
+} from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import {
   Category as CategoryIcon,
@@ -17,67 +25,100 @@ import { useDispatch, useSelector } from "react-redux";
 import PublicLayout from "../../components/PublicLayout/PublicLayout";
 import HelmetHeader from "../../components/HelmetHeader/Helmet";
 import LoadingSkeleton from "../../components/LoadingSkeleton/LoadingSkeleton";
-import AdminCategories from "../../components/AdminCategories/AdminCategories";
-import AdminEvents from "../../components/AdminEvents/AdminEvents";
-import AdminFinance from "../../components/AdminFinance/AdminFinance";
-import AdminUsers from "../../components/AdminUsers/AdminUsers";
-import AdminDrinksHub from "../../components/AdminDrinksHub/AdminDrinksHub";
-import AdminOperationsHub from "../../components/AdminOperationsHub/AdminOperationsHub";
-import HowToGuide from "../../components/HowToGuide/HowToGuide";
-import AdminNeedsAttention from "../../components/AdminNeedsAttention/AdminNeedsAttention";
 import { fetchAllEvents, selectAllEvents } from "../../features/events/eventSlice";
 
+const AdminNeedsAttention = lazy(() =>
+  import("../../components/AdminNeedsAttention/AdminNeedsAttention")
+);
+const AdminEvents = lazy(() =>
+  import("../../components/AdminEvents/AdminEvents")
+);
+const AdminFinance = lazy(() =>
+  import("../../components/AdminFinance/AdminFinance")
+);
+const AdminUsers = lazy(() =>
+  import("../../components/AdminUsers/AdminUsers")
+);
+const AdminOperationsHub = lazy(() =>
+  import("../../components/AdminOperationsHub/AdminOperationsHub")
+);
+const AdminDrinksHub = lazy(() =>
+  import("../../components/AdminDrinksHub/AdminDrinksHub")
+);
+const AdminCategories = lazy(() =>
+  import("../../components/AdminCategories/AdminCategories")
+);
+const HowToGuide = lazy(() =>
+  import("../../components/HowToGuide/HowToGuide")
+);
+
 const TabPanel = ({ value, index, children }) =>
-  value === index ? <Box sx={{ mt: 4, minWidth: 0 }}>{children}</Box> : null;
+  value === index ? (
+    <Box sx={{ mt: 4, minWidth: 0 }}>
+      <Suspense
+        fallback={
+          <Box sx={{ display: "grid", minHeight: 320, placeItems: "center" }}>
+            <CircularProgress
+              aria-label="Loading admin section"
+              sx={{ color: "var(--primary-color)" }}
+            />
+          </Box>
+        }
+      >
+        {children}
+      </Suspense>
+    </Box>
+  ) : null;
 
 const ADMIN_TABS = [
   {
     key: "overview",
     label: "Overview",
     icon: <DashboardIcon />,
-    component: <AdminNeedsAttention />,
+    Component: AdminNeedsAttention,
   },
   {
     key: "events",
     label: "Events",
     icon: <EventIcon />,
-    component: <AdminEvents />,
+    Component: AdminEvents,
   },
   {
     key: "finance",
     label: "Finance",
     icon: <PaidIcon />,
-    component: <AdminFinance />,
+    Component: AdminFinance,
   },
   {
     key: "users",
     label: "Users",
     icon: <GroupsIcon />,
-    component: <AdminUsers />,
+    Component: AdminUsers,
   },
   {
     key: "operations",
     label: "Operations",
     icon: <FactCheckIcon />,
-    component: <AdminOperationsHub />,
+    Component: AdminOperationsHub,
   },
   {
     key: "drinks",
     label: "Drinks",
     icon: <LocalBarIcon />,
-    component: <AdminDrinksHub />,
+    Component: AdminDrinksHub,
   },
   {
     key: "categories",
     label: "Catalog Setup",
     icon: <CategoryIcon />,
-    component: <AdminCategories />,
+    Component: AdminCategories,
   },
   {
     key: "how-to",
     label: "How To",
     icon: <HelpIcon />,
-    component: <HowToGuide audience="admin" />,
+    Component: HowToGuide,
+    componentProps: { audience: "admin" },
   },
 ];
 
@@ -227,7 +268,7 @@ const AdminSettingsScreen = () => {
           >
             {ADMIN_TABS.map((tab, index) => (
               <TabPanel key={tab.key} value={selectedIndex} index={index}>
-                {tab.component}
+                <tab.Component {...tab.componentProps} />
               </TabPanel>
             ))}
           </Box>

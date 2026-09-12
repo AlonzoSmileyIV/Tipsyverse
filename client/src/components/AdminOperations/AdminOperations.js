@@ -36,9 +36,10 @@ import {
   FormatListBulleted,
   FormatListNumbered,
   FormatUnderlined,
+  DeleteOutline,
+  EditOutlined,
 } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
-import * as XLSX from "xlsx";
 import { useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import api from "../../services/api";
@@ -50,13 +51,15 @@ import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminSummaryCards from "../AdminSummaryCards/AdminSummaryCards";
 import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
+import DOMPurify from "dompurify";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const moneyDate = (value) => (value ? new Date(value).toLocaleString() : "-");
 const rowId = (row) => row._id || row.id;
 const gridRow = (params, row) => params?.row || row || {};
 const gridValue = (params) => params?.value ?? params;
 const displayTicketNumber = (ticket) =>
-  ticket?.ticketNumber || "TKT-000000";
+  ticket?.ticketNumber || "TKT-00000";
 const formatLabel = (value) =>
   String(value || "undecided")
     .replace(/([a-z])([A-Z])/g, "$1 $2")
@@ -119,16 +122,18 @@ function SupportAttachmentGrid({ attachments = [] }) {
 }
 function RichTextNotesEditor({ value = "", onChange, maxLength = 4000 }) {
   const editorRef = useRef(null);
-  const lastExternalValue = useRef(value || "");
+  const lastExternalValue = useRef(null);
   const plainLength = (html) => {
     if (typeof window === "undefined") return String(html || "").length;
     const holder = document.createElement("div");
-    holder.innerHTML = html || "";
+    holder.innerHTML = DOMPurify.sanitize(html || "");
     return holder.textContent.length;
   };
 
   useEffect(() => {
-    const next = value || "";
+    const next = DOMPurify.sanitize(value || "");
+    if (next === lastExternalValue.current) return;
+
     if (editorRef.current && editorRef.current.innerHTML !== next) {
       editorRef.current.innerHTML = next;
     }
@@ -136,7 +141,7 @@ function RichTextNotesEditor({ value = "", onChange, maxLength = 4000 }) {
   }, [value]);
 
   const emitChange = () => {
-    const next = editorRef.current?.innerHTML || "";
+    const next = DOMPurify.sanitize(editorRef.current?.innerHTML || "");
     lastExternalValue.current = next;
     onChange(next);
   };
@@ -342,6 +347,9 @@ function AdminOperations() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+  const is800OrLess = useMediaQuery("(max-width:800px)");
+  const is1300OrLess = useMediaQuery("(max-width:1300px)");
+  const is1400OrLess = useMediaQuery("(max-width:1400px)");
   const location = useLocation();
   const loggedInUser = useSelector((state) => state.users.loggedInUser?.user || state.users.loggedInUser);
   const reportedComments = useSelector((state) => state.comments?.reported);
@@ -359,6 +367,9 @@ function AdminOperations() {
   const [pendingSubmitterComment, setPendingSubmitterComment] = useState(null);
   const [supportDialogTab, setSupportDialogTab] = useState("details");
   const [search, setSearch] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [notesSaving, setNotesSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -397,9 +408,10 @@ function AdminOperations() {
       status: ticket.status,
       priority: ticket.priority,
       resolution: ticket.resolution || "",
-      notes: ticket.notes || "",
       assignedTo: ticket.assignedTo || null,
     });
+    setNoteDraft("");
+    setEditingNoteId(null);
   }, [location.search, tickets]);
 
   const updateIncident = async () => {
@@ -438,7 +450,6 @@ function AdminOperations() {
       status: updateForm.status,
       priority: updateForm.priority,
       resolution: updateForm.resolution,
-      notes: updateForm.notes,
     };
     await api.patch(`/support-tickets/${selected._id}`, ticketPatch);
     setSelected(null);
@@ -447,30 +458,58 @@ function AdminOperations() {
     load();
   };
 
-  const saveTicketNotes = async () => {
+  const applyUpdatedTicket = (updatedTicket) => {
+    if (!updatedTicket) return;
+    setSelected(updatedTicket);
+    setTickets((prev) =>
+      prev.map((ticket) =>
+        String(ticket._id) === String(updatedTicket._id) ? updatedTicket : ticket
+      )
+    );
+  };
+
+  const saveTicketNote = async () => {
+    if (!String(noteDraft || "").trim()) {
+      setAlert({ type: "error", message: "Add note content before saving." });
+      return;
+    }
+
+    setNotesSaving(true);
     try {
-      const res = await api.patch(`/support-tickets/${selected._id}`, {
-        notes: updateForm.notes || "",
-      });
+      const res = editingNoteId
+        ? await api.patch(`/support-tickets/${selected._id}/notes/${editingNoteId}`, {
+            content: noteDraft,
+          })
+        : await api.post(`/support-tickets/${selected._id}/notes`, {
+            content: noteDraft,
+          });
       const updatedTicket = res.data?.data;
-      if (updatedTicket) {
-        setSelected(updatedTicket);
-        setTickets((prev) =>
-          prev.map((ticket) =>
-            String(ticket._id) === String(updatedTicket._id) ? updatedTicket : ticket
-          )
-        );
-        setUpdateForm((prev) => ({
-          ...prev,
-          notes: updatedTicket.notes || "",
-        }));
-      }
-      setAlert({ type: "success", message: "Ticket notes saved." });
+      applyUpdatedTicket(updatedTicket);
+      setNoteDraft("");
+      setEditingNoteId(null);
+      setAlert({ type: "success", message: editingNoteId ? "Ticket note updated." : "Ticket note added." });
     } catch (err) {
       setAlert({
         type: "error",
         message: err?.response?.data?.message || "Failed to save ticket notes.",
       });
+    } finally {
+      setNotesSaving(false);
+    }
+  };
+
+  const deleteTicketNote = async (noteId) => {
+    if (!window.confirm("Delete this internal note? This cannot be undone.")) return;
+    try {
+      const res = await api.delete(`/support-tickets/${selected._id}/notes/${noteId}`);
+      applyUpdatedTicket(res.data?.data);
+      if (editingNoteId === noteId) {
+        setEditingNoteId(null);
+        setNoteDraft("");
+      }
+      setAlert({ type: "success", message: "Ticket note deleted." });
+    } catch (err) {
+      setAlert({ type: "error", message: err?.response?.data?.message || "Failed to delete ticket note." });
     }
   };
 
@@ -558,10 +597,11 @@ function AdminOperations() {
       status: ticket.status,
       priority: ticket.priority,
       resolution: ticket.resolution || "",
-      notes: ticket.notes || "",
       assignedTo: ticket.assignedTo || null,
       customerMessage: "",
     });
+    setNoteDraft("");
+    setEditingNoteId(null);
   };
 
   const verifyAttendance = async () => {
@@ -693,7 +733,8 @@ function AdminOperations() {
     setAlert({ type: "success", message: "Operations refreshed." });
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     if (tab === "reported") {
       const rowsToExport = (reportedComments?.data || []).map((comment) => ({
         Author: comment.author?.fullName || comment.author?.email || "",
@@ -786,7 +827,7 @@ function AdminOperations() {
       return [
         { field: "ticketNumber", headerName: "Ticket #", width: isMobile ? 135 : 155, valueGetter: (value, row) => displayTicketNumber(gridRow(value, row)) },
         { field: "subject", headerName: "Subject", flex: 1.5 },
-        { field: "submittedBy", headerName: "Submitted By", flex: 1, valueGetter: (value, row) => gridRow(value, row).submittedBy?.fullName || gridRow(value, row).submittedBy?.email || "-" },
+        { field: "submittedBy", headerName: "Submitted By", flex: 1, valueGetter: (value, row) => gridRow(value, row).submittedBy?.fullName || gridRow(value, row).submittedBy?.email || (gridRow(value, row).submissionSource === "anonymous_error" ? "Anonymous error report" : "-") },
         { field: "assignedTo", headerName: "Assignee", flex: 1, valueGetter: (value, row) => gridRow(value, row).assignedTo?.fullName || gridRow(value, row).assignedTo?.email || "Unassigned" },
         { field: "category", headerName: "Category", flex: 0.9, valueFormatter: (value) => formatLabel(gridValue(value)) },
         { field: "priority", headerName: "Priority", flex: 0.8, renderCell: (p) => <Chip size="small" color={statusColor(p.value)} label={formatLabel(p.value)} /> },
@@ -894,7 +935,7 @@ function AdminOperations() {
   const operationColumnVisibilityModel =
     tab === "attendance"
       ? {
-          bartender: !isMobile,
+          bartender: !is800OrLess,
           status: !isMobile,
           clockInAt: !isTablet,
           clockOutAt: !isTablet,
@@ -902,16 +943,16 @@ function AdminOperations() {
       : tab === "support"
       ? {
           subject: !isMobile,
-          submittedBy: !isMobile,
-          assignedTo: !isTablet,
-          category: !isTablet,
-          priority: !isMobile,
+          submittedBy: !is1400OrLess,
+          assignedTo: !is1400OrLess,
+          category: !is800OrLess,
+          priority: !is800OrLess,
           status: !isMobile,
         }
       : {
-          type: !isMobile,
-          reportedBy: !isMobile,
-          severity: !isMobile,
+          type: !is800OrLess,
+          reportedBy: !is1300OrLess,
+          severity: !is800OrLess,
           status: !isMobile,
           createdAt: !isTablet,
         };
@@ -1069,7 +1110,7 @@ function AdminOperations() {
                           </Typography>
                           <Typography variant="body2">
                             <strong>Name:</strong>{" "}
-                            {selected.submittedBy?.fullName || selected.submittedBy?.username || "-"}
+                            {selected.submittedBy?.fullName || selected.submittedBy?.username || (selected.submissionSource === "anonymous_error" ? "Anonymous error report" : "-")}
                           </Typography>
                           <Typography variant="body2">
                             <strong>Email:</strong> {selected.submittedBy?.email || "-"}
@@ -1226,9 +1267,9 @@ function AdminOperations() {
                       renderSupportMessage(message)
                     )
                   )}
-                  
+
                 
-                 
+
                 </Stack>
               )}
 
@@ -1242,20 +1283,94 @@ function AdminOperations() {
                       Internal documentation for troubleshooting steps, findings, screenshots reviewed, and next actions.
                     </Typography>
                   </Box>
+
+                  <Typography variant="subtitle2">
+                    {editingNoteId ? "Edit note" : "Add another note"}
+                  </Typography>
                   <RichTextNotesEditor
-                    value={updateForm.notes || ""}
-                    onChange={(notes) => setUpdateForm((p) => ({ ...p, notes }))}
+                    key={editingNoteId || "new-note"}
+                    value={noteDraft}
+                    onChange={setNoteDraft}
                     maxLength={4000}
                   />
-                  <Box>
+                  <Stack direction="row" spacing={1}>
                     <Button
                       variant="contained"
                       sx={primaryContainedSx}
-                      onClick={saveTicketNotes}
+                      onClick={saveTicketNote}
+                      disabled={notesSaving || !String(noteDraft || "").trim()}
                     >
-                      Save Notes
+                      {editingNoteId ? "Save Changes" : "Add Note"}
                     </Button>
-                  </Box>
+                    {editingNoteId && (
+                      <Button
+                        onClick={() => {
+                          setEditingNoteId(null);
+                          setNoteDraft("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </Stack>
+                  {(selected.noteEntries || []).length > 0 || selected.notes ? (
+                    <Stack spacing={1.5}>
+                      {selected.notes && (
+                        <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "grey.50" }}>
+                          <Typography variant="caption" color="text.secondary">
+                            Legacy note
+                          </Typography>
+                          <Box
+                            sx={{ mt: 0.75, lineHeight: 1.6, "& p": { my: 1 } }}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selected.notes) }}
+                          />
+                        </Paper>
+                      )}
+                       <Divider />
+                      {[...(selected.noteEntries || [])].reverse().map((note) => (
+                        <Paper key={note._id} variant="outlined" sx={{ p: 1.5 }}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                            <Box>
+                              <Typography variant="body2" fontWeight={700}>
+                                {note.author?.fullName || note.author?.username || "Team member"}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {moneyDate(note.createdAt)}
+                                {note.updatedAt && new Date(note.updatedAt).getTime() !== new Date(note.createdAt).getTime()
+                                  ? ` · Edited ${moneyDate(note.updatedAt)}`
+                                  : ""}
+                              </Typography>
+                            </Box>
+                            <Stack direction="row" spacing={0.5}>
+                              <Tooltip title="Edit note">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    setEditingNoteId(note._id);
+                                    setNoteDraft(note.content || "");
+                                  }}
+                                >
+                                  <EditOutlined fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Delete note">
+                                <IconButton size="small" color="error" onClick={() => deleteTicketNote(note._id)}>
+                                  <DeleteOutline fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+                          </Stack>
+                          <Box
+                            sx={{ mt: 1, lineHeight: 1.6, "& ul, & ol": { pl: 3 }, "& p": { my: 1 } }}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content || "") }}
+                          />
+                        </Paper>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">No internal notes yet.</Typography>
+                  )}
+
                 </Stack>
               )}
 
@@ -1263,7 +1378,7 @@ function AdminOperations() {
                 <Paper variant="outlined" sx={{ height: 320 }}>
                   <DataGrid
                     rows={[
-                      { id: "created", action: "Created", actor: selected.submittedBy?.fullName || selected.submittedBy?.email || "Submitter", date: selected.createdAt },
+                      { id: "created", action: "Created", actor: selected.submittedBy?.fullName || selected.submittedBy?.email || (selected.submissionSource === "anonymous_error" ? "Anonymous guest" : "Submitter"), date: selected.createdAt },
                       ...(selected.assignedTo ? [{ id: "assigned", action: "Assigned", actor: selected.assignedTo?.fullName || selected.assignedTo?.email, date: selected.updatedAt }] : []),
                       ...(selected.messages || []).map((message) => ({
                         id: message._id,
@@ -1277,6 +1392,10 @@ function AdminOperations() {
                       { field: "actor", headerName: "Actor", flex: 1 },
                       { field: "date", headerName: "Date", flex: 1, valueFormatter: (value) => moneyDate(gridValue(value)) },
                     ]}
+                    columnVisibilityModel={{
+                      actor: !is800OrLess,
+                      date: !isMobile,
+                    }}
                     pageSizeOptions={[5, 10]}
                     initialState={{ pagination: { paginationModel: { pageSize: 5 } } }}
                     disableRowSelectionOnClick

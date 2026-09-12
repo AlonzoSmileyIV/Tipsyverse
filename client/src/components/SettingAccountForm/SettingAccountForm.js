@@ -84,7 +84,7 @@ const SettingAccountForm = ({ user, onNavigateToSettings }) => {
   const profileCompletion = getProfileCompletion(profileChecklist);
   const joinedAt =
     user?.createdAt || user?.dateCreated || user?.profile?.dateCreated;
-  const isEmployee = user?.role === "employee";
+  const isEmployee = ["admin", "employee"].includes(user?.role);
 
   const handleLogout = () => {
     logout();

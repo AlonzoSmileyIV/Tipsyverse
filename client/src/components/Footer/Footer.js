@@ -18,7 +18,7 @@ import { Link } from "react-router-dom";
 
 const Footer = () => {
   return (
-    <Box sx={{ backgroundColor: "#111", color: "#fff", py: 4 }}>
+    <Box component="footer" sx={{ backgroundColor: "#111", color: "#fff", py: 4 }}>
       <Container>
         <Grid
           container
@@ -28,7 +28,7 @@ const Footer = () => {
         >
           {/* Logo & Tagline */}
           <Grid item xs={12} md={3}>
-            <Typography variant="h6" sx={{ mb: 1 }}>
+            <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
               Tipsyverse 🍸
             </Typography>
             <Typography variant="body2">
@@ -39,7 +39,7 @@ const Footer = () => {
           {/* Navigation */}
           {/* Links */}
           <Grid item xs={12} sm={6} md={2}>
-            <Typography variant="h6" gutterBottom>
+            <Typography component="h2" variant="h6" gutterBottom>
               Pages
             </Typography>
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -75,7 +75,7 @@ const Footer = () => {
 
           {/* Contact Info */}
           <Grid item xs={12} sm={6} md={3}>
-            <Typography variant="h6" gutterBottom>
+            <Typography component="h2" variant="h6" gutterBottom>
               Contact Us
             </Typography>
             <Stack spacing={1}>
@@ -97,52 +97,62 @@ const Footer = () => {
               flexWrap="wrap"
               justifyContent={{ xs: "flex-start", md: "flex-start" }}
             >
-              <Link to={"https://www.facebook.com/"} target="_blank">
               <IconButton
+                component="a"
+                href="https://www.facebook.com/"
+                target="_blank"
+                rel="noopener noreferrer"
                 sx={{ backgroundColor: "var(--primary-color)", color: "white" }}
-                aria-label="Facebook"
+                aria-label="Facebook (opens in a new tab)"
               >
                 <Facebook />
               </IconButton>
-              </Link>
-              <Link to={"https://www.twitter.com/tipsyverse"} target="_blank">
               <IconButton
+                component="a"
+                href="https://www.twitter.com/tipsyverse"
+                target="_blank"
+                rel="noopener noreferrer"
                 sx={{ backgroundColor: "var(--primary-color)", color: "white" }}
-                aria-label="X"
+                aria-label="X (opens in a new tab)"
               >
                 <X />
               </IconButton>
-              </Link>
-              <Link to={"https://www.instagram.com/tipsyverse_"} target="_blank">
               <IconButton
+                component="a"
+                href="https://www.instagram.com/tipsyverse_"
+                target="_blank"
+                rel="noopener noreferrer"
                 sx={{ backgroundColor: "var(--primary-color)", color: "white" }}
-                aria-label="Instagram"
+                aria-label="Instagram (opens in a new tab)"
               >
                 <Instagram />
               </IconButton>
-               </Link>
-              <Link to={"https://www.youtube.com/@tipsyverse2"} target="_blank">
                 <IconButton
+                  component="a"
+                  href="https://www.youtube.com/@tipsyverse2"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   sx={{
                     backgroundColor: "var(--primary-color)",
                     color: "white",
                   }}
-                  aria-label="YouTube"
+                  aria-label="YouTube (opens in a new tab)"
                 >
                   <YouTube />
                 </IconButton>
-              </Link>
-              <Link to={"https://www.linkedin.com/"} target="_blank">
                 <IconButton
+                  component="a"
+                  href="https://www.linkedin.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   sx={{
                     backgroundColor: "var(--primary-color)",
                     color: "white",
                   }}
-                  aria-label="LinkedIn"
+                  aria-label="LinkedIn (opens in a new tab)"
                 >
                   <LinkedIn />
                 </IconButton>
-              </Link>
             </Box>
           </Grid>
         </Grid>

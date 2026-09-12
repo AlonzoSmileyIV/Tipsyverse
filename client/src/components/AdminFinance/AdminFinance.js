@@ -25,19 +25,45 @@ import {
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { InfoOutlined, Paid } from "@mui/icons-material";
-import * as XLSX from "xlsx";
 import api from "../../services/api";
 import EmptyOverlay from "../EmptyOverlay/EmptyOverlay";
 import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
 import { buildSnapshotFromEvent } from "../DetailedEventForm/DetailedEventForm.pricing";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
+import getEventPaymentPolicyView, { formatPaymentDueDate } from "../../utils/eventPaymentPolicy";
+import {
+  formatEventTimestamp,
+  formatTimestamp,
+  getBrowserTimeZone,
+  getEventTimeZone,
+} from "../../utils/timestamps";
+import {
+  getEventPaidTotal,
+  getEventPaymentTotal,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
 
 const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 const roundMoney = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const REFUND_METHODS = [
+  ["credit_card", "Credit Card"],
+  ["cashapp", "Cash App"],
+  ["venmo", "Venmo"],
+  ["paypal", "PayPal"],
+  ["zelle", "Zelle"],
+  ["square", "Square"],
+  ["cash", "Cash"],
+  ["check", "Check"],
+  ["other", "Other"],
+];
 const fmtPct = (n) => `${n > 0 ? "+" : ""}${n.toFixed(1)}%`;
 const fmtDateTime = (value) =>
-  value ? new Date(value).toLocaleString() : "Not recorded";
+  formatTimestamp(value, {
+    timeZone: getBrowserTimeZone(),
+    fallback: "Not recorded",
+  });
 const titleize = (value) =>
   String(value || "")
     .replace(/_/g, " ")
@@ -162,10 +188,7 @@ const getExpectedAssignmentPay = (assignment, fallbackEvent) => {
     (Number(pricing.setupHours) || 0) +
     (Number(pricing.breakdownHours) || 0);
   const hourlyPay = hours * (Number(pricing.hourlyRate) || 0);
-  const bartenderCount =
-    Number(event?.counts?.neededBartenders) ||
-    Number(pricing.bartendersRequested) ||
-    1;
+  const bartenderCount = getRequiredBartenderCount(event, 1);
   const subtotal =
     Number(event?.payment?.subtotal) ||
     hourlyPay * bartenderCount + (Number(pricing.bookingFee) || 0);
@@ -178,20 +201,18 @@ const getExpectedAssignmentPay = (assignment, fallbackEvent) => {
 const getEventTotal = (event, received) => {
   const snapshotTotal =
     Number(buildSnapshotFromEvent(event)?.totals?.totalC || 0) / 100;
-  return (
+  return getEventPaymentTotal(
+    event,
     Math.max(
-      Number(event?.payment?.total) || 0,
       Number(event?.payment?.subtotal) || 0,
-      snapshotTotal
-    ) ||
-    Number(event?.payment?.total) ||
-    Number(event?.payment?.subtotal) ||
-    Number(received) ||
-    0
+      snapshotTotal,
+      Number(received) || 0
+    )
   );
 };
 
 const getCustomerPaymentStatus = (received, total) => {
+  if (received > total && total >= 0) return "Overpaid / Credit";
   if (total > 0 && received >= total) return "Paid in full";
   if (received > 0) return "Partially paid";
   return "Unpaid";
@@ -203,11 +224,7 @@ const getEventId = (event) => {
 };
 const getPaymentEvent = (payment) =>
   payment?.event && typeof payment.event === "object" ? payment.event : {};
-const getRecordedPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
+const getRecordedPaidTotal = getEventPaidTotal;
 
 const buildFinanceRows = ({
   events,
@@ -220,7 +237,6 @@ const buildFinanceRows = ({
   (events || []).forEach((event) => {
     const eventId = getEventId(event);
     if (!eventId) return;
-    if (event.status === "canceled") return;
     if (!getEventTotal(event, 0)) return;
 
     map[eventId] = {
@@ -259,7 +275,10 @@ const buildFinanceRows = ({
     if (!map[eventId].paymentCount && paidFromEventSummary) {
       map[eventId].received = 0;
     }
-    map[eventId].received += Number(payment.amount) || 0;
+    map[eventId].received += Math.max(
+      0,
+      (Number(payment.amount) || 0) - (Number(payment.refundedAmount) || 0)
+    );
     map[eventId].paymentCount += 1;
   });
 
@@ -276,14 +295,36 @@ const buildFinanceRows = ({
         0
       );
       const customerTotal = getEventTotal(row.event, row.received);
-      const customerBalance = Math.max(0, customerTotal - row.received);
+      const canceled = row.event?.status === "canceled";
+      const retainedAmount = canceled
+        ? Math.min(
+            row.received,
+            Math.max(0, Number(row.event?.cancellation?.retainedAmount) || 0)
+          )
+        : 0;
+      const customerBalance = canceled
+        ? 0
+        : Math.max(0, customerTotal - row.received);
+      const customerCredit = canceled
+        ? Math.max(0, row.received - retainedAmount)
+        : Math.max(0, row.received - customerTotal);
       const bartenderBalance = Math.max(0, bartenderExpected - bartenderPaid);
+      const paymentPolicy = getEventPaymentPolicyView(row.event, {
+        total: customerTotal,
+        paid: row.received,
+      });
 
       return {
         ...row,
         customerTotal,
         customerBalance,
-        customerStatus: getCustomerPaymentStatus(row.received, customerTotal),
+        customerCredit,
+        customerStatus: canceled
+          ? customerCredit > 0
+            ? "Canceled / Refund review"
+            : "Canceled / Settled"
+          : getCustomerPaymentStatus(row.received, customerTotal),
+        paymentPolicy,
         bartenderExpected,
         bartenderPaid,
         bartenderBalance,
@@ -301,6 +342,7 @@ const sumRows = (rows) =>
     (sum, row) => ({
       received: sum.received + row.received,
       customerBalance: sum.customerBalance + row.customerBalance,
+      customerCredit: sum.customerCredit + row.customerCredit,
       bartenderBalance: sum.bartenderBalance + row.bartenderBalance,
       actualProfit: sum.actualProfit + row.actualProfit,
       projectedProfit: sum.projectedProfit + row.projectedProfit,
@@ -308,6 +350,7 @@ const sumRows = (rows) =>
     {
       received: 0,
       customerBalance: 0,
+      customerCredit: 0,
       bartenderBalance: 0,
       actualProfit: 0,
       projectedProfit: 0,
@@ -350,7 +393,11 @@ const buildProfitAllocationRows = (profit) => {
 export default function AdminFinance() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+  const is800OrLess = useMediaQuery("(max-width:800px)");
+  const is900OrLess = useMediaQuery("(max-width:900px)");
+  const is1300OrLess = useMediaQuery("(max-width:1300px)");
+
+
   const isCompactTable = useMediaQuery(theme.breakpoints.down("lg"));
   const loggedInUser = useSelector(
     (state) => state.users.loggedInUser?.user || state.users.loggedInUser
@@ -368,6 +415,9 @@ export default function AdminFinance() {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [allocationOpen, setAllocationOpen] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundMethod, setRefundMethod] = useState("");
+  const [refunding, setRefunding] = useState(false);
   const [alert, setAlert] = useState(null);
   const [payoutForm, setPayoutForm] = useState({
     reference: "",
@@ -474,17 +524,6 @@ export default function AdminFinance() {
     [bounds, range]
   );
 
-  const rangePayments = useMemo(
-    () =>
-      (payments || []).filter((payment) =>
-        isDateInRange(
-          payment.receivedAt || payment.createdAt || payment.event?.startAt,
-          bounds
-        )
-      ),
-    [bounds, payments]
-  );
-
   const rangeEvents = useMemo(
     () =>
       (events || []).filter((event) =>
@@ -493,18 +532,12 @@ export default function AdminFinance() {
     [bounds, events]
   );
 
-  const previousRangePayments = useMemo(
-    () =>
-      previousBounds
-        ? (payments || []).filter((payment) =>
-            isDateInRange(
-              payment.receivedAt || payment.createdAt || payment.event?.startAt,
-              previousBounds
-            )
-          )
-        : [],
-    [payments, previousBounds]
-  );
+  const rangePayments = useMemo(() => {
+    const eventIds = new Set(rangeEvents.map((event) => getEventId(event)));
+    return (payments || []).filter((payment) =>
+      eventIds.has(getEventId(payment.event))
+    );
+  }, [payments, rangeEvents]);
 
   const previousRangeEvents = useMemo(
     () =>
@@ -515,6 +548,15 @@ export default function AdminFinance() {
         : [],
     [events, previousBounds]
   );
+
+  const previousRangePayments = useMemo(() => {
+    const eventIds = new Set(
+      previousRangeEvents.map((event) => getEventId(event))
+    );
+    return (payments || []).filter((payment) =>
+      eventIds.has(getEventId(payment.event))
+    );
+  }, [payments, previousRangeEvents]);
 
   const payoutByAssignmentId = useMemo(() => {
     const map = {};
@@ -560,6 +602,8 @@ export default function AdminFinance() {
     const filteredByCard =
       tableFilter === "receivable"
         ? rows.filter((row) => row.customerBalance > 0)
+        : tableFilter === "credit"
+        ? rows.filter((row) => row.customerCredit > 0)
         : tableFilter === "payable"
         ? rows.filter((row) => row.bartenderBalance > 0)
         : tableFilter === "paid"
@@ -628,6 +672,53 @@ export default function AdminFinance() {
         : [],
     [payouts, selectedEventId]
   );
+  const refundablePayment = selectedPayments.find(
+    (payment) =>
+      payment.status === "recorded" &&
+      (Number(payment.amount) || 0) - (Number(payment.refundedAmount) || 0) > 0
+  );
+  const refundMax = Math.min(
+    Number(selectedRow?.customerCredit) || 0,
+    Math.max(
+      0,
+      (Number(refundablePayment?.amount) || 0) -
+        (Number(refundablePayment?.refundedAmount) || 0)
+    )
+  );
+
+  useEffect(() => {
+    setRefundAmount(refundMax > 0 ? refundMax.toFixed(2) : "");
+    setRefundMethod("");
+  }, [selectedEventId, refundMax]);
+
+  const refundCustomerCredit = async () => {
+    const amount = Number(refundAmount);
+    if (
+      !refundablePayment?._id ||
+      !refundMethod ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > refundMax
+    ) return;
+
+    setRefunding(true);
+    try {
+      await api.patch(`/payments/${refundablePayment._id}/refund`, {
+        amount,
+        method: refundMethod,
+        notes: `Customer credit refund via ${refundMethod}.`,
+      });
+      setAlert({ severity: "success", message: `${fmtMoney(amount)} customer credit refunded.` });
+      await loadFinance();
+    } catch (err) {
+      setAlert({
+        severity: "error",
+        message: err?.response?.data?.message || "Failed to refund customer credit.",
+      });
+    } finally {
+      setRefunding(false);
+    }
+  };
 
   const payoutRows = selectedAssignments.map((assignment) => {
     const expected = getExpectedAssignmentPay(assignment, selectedRow?.event);
@@ -683,6 +774,14 @@ export default function AdminFinance() {
       value: totals.customerBalance,
       previous: previousTotals.customerBalance,
       helper: "Accounts receivable",
+    },
+    {
+      id: "credit",
+      filter: "credit",
+      label: "Customer credits",
+      value: totals.customerCredit,
+      previous: previousTotals.customerCredit,
+      helper: "Overpayments",
     },
     {
       id: "actualProfit",
@@ -752,14 +851,21 @@ export default function AdminFinance() {
     setAlert({ severity: "success", message: "Finance refreshed." });
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     const worksheet = XLSX.utils.json_to_sheet(
       filteredRows.map((row) => ({
         "Event Code": row.eventLabel,
         "Event Date": row.date,
         Status: row.customerStatus,
+        "Payment Policy": row.paymentPolicy.label,
+        "Balance Due Date": formatPaymentDueDate(
+          row.paymentPolicy.dueAt,
+          getEventTimeZone(row.event)
+        ),
         Received: row.received,
         "Customer Balance": row.customerBalance,
+        "Customer Credit": row.customerCredit,
         "Bartender Expected": row.bartenderExpected,
         "Bartender Paid": row.bartenderPaid,
         "Bartender Balance": row.bartenderBalance,
@@ -785,7 +891,9 @@ export default function AdminFinance() {
           size="small"
           label={params.row.customerStatus}
           color={
-            params.row.customerBalance <= 0
+            params.row.customerCredit > 0
+              ? "info"
+              : params.row.customerBalance <= 0
               ? "success"
               : params.row.received > 0
               ? "warning"
@@ -803,11 +911,41 @@ export default function AdminFinance() {
       renderCell: (params) => fmtMoney(params.row.received),
     },
     {
+      field: "paymentPolicy",
+      headerName: "Payment Deadline",
+      flex: 1,
+      minWidth: 175,
+      valueGetter: (_value, row) => row.paymentPolicy?.label || "Not scheduled",
+      renderCell: (params) => (
+        <Chip
+          size="small"
+          label={params.row.paymentPolicy?.label || "Not scheduled"}
+          color={
+            params.row.paymentPolicy?.severity === "error"
+              ? "error"
+              : params.row.paymentPolicy?.severity === "warning"
+              ? "warning"
+              : params.row.paymentPolicy?.severity === "success"
+              ? "success"
+              : "default"
+          }
+          variant="outlined"
+        />
+      ),
+    },
+    {
       field: "customerBalance",
       headerName: "Customer Balance",
       flex: 1,
       minWidth: 150,
       renderCell: (params) => fmtMoney(params.row.customerBalance),
+    },
+    {
+      field: "customerCredit",
+      headerName: "Customer Credit",
+      flex: 1,
+      minWidth: 145,
+      renderCell: (params) => fmtMoney(params.row.customerCredit),
     },
     {
       field: "bartenderBalance",
@@ -971,10 +1109,10 @@ export default function AdminFinance() {
             sx={{ mb: 0 }}
           >
             <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="finance-range-label">Range</InputLabel>
+              <InputLabel id="finance-range-label">Event date</InputLabel>
               <Select
                 labelId="finance-range-label"
-                label="Range"
+                label="Event date"
                 value={range}
                 onChange={(e) => {
                   setRange(e.target.value);
@@ -1023,17 +1161,18 @@ export default function AdminFinance() {
           loading={loading}
           disableRowSelectionOnClick
           columnVisibilityModel={{
-            date: !isMobile,
-            customerStatus: !isMobile,
+            date: !is900OrLess,
+            customerStatus: !is800OrLess,
             received: !isCompactTable,
-            customerBalance: !isTablet,
-            bartenderBalance: !isCompactTable,
+            customerBalance: !is1300OrLess,
+            customerCredit: !is1300OrLess,
+            bartenderBalance: !is1300OrLess,
           }}
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
           slots={{
             noRowsOverlay: () => (
-              <EmptyOverlay message={emptyFinanceMessage} />
+              <EmptyOverlay inGrid message={emptyFinanceMessage} />
             ),
           }}
           // MUI v5 fallback (safe to keep)
@@ -1123,6 +1262,10 @@ export default function AdminFinance() {
               summary={
                 selectedRow.customerBalance > 0
                   ? "This event has a customer balance due. Review payment records before sending reminders or closing the event."
+                  : selectedRow.customerCredit > 0
+                    ? selectedRow.event?.status === "canceled"
+                      ? "This event is canceled. The available customer credit is awaiting refund review; record a refund only after money is returned."
+                      : "This event has an overpayment recorded as customer credit. A refund is optional and should only be recorded if money is actually returned."
                   : selectedEventDone
                     ? "This completed event is paid from the customer side. Review bartender payouts before closing finance work."
                     : "This event is still active. Payout controls unlock after the event is completed."
@@ -1131,13 +1274,33 @@ export default function AdminFinance() {
                 <Chip
                   size="small"
                   label={selectedRow.customerStatus}
-                  color={selectedRow.customerBalance > 0 ? "warning" : "success"}
+                  color={
+                    selectedRow.customerBalance > 0
+                      ? "warning"
+                      : selectedRow.customerCredit > 0
+                        ? "info"
+                        : "success"
+                  }
                 />
               }
               facts={[
                 { label: "Total", value: fmtMoney(selectedRow.customerTotal) },
                 { label: "Received", value: fmtMoney(selectedRow.received) },
                 { label: "Balance", value: fmtMoney(selectedRow.customerBalance) },
+                {
+                  label: "Payment Policy",
+                  value: selectedRow.paymentPolicy.label,
+                },
+                {
+                  label: "Balance Due",
+                  value: formatPaymentDueDate(
+                    selectedRow.paymentPolicy.dueAt,
+                    getEventTimeZone(selectedRow.event)
+                  ),
+                },
+                ...(selectedRow.customerCredit > 0
+                  ? [{ label: "Credit", value: fmtMoney(selectedRow.customerCredit) }]
+                  : []),
                 { label: "Actual Profit", value: fmtMoney(selectedRow.actualProfit) },
               ]}
               lastUpdated={
@@ -1152,6 +1315,56 @@ export default function AdminFinance() {
         <DialogContent dividers>
           {selectedRow && (
             <Stack spacing={2}>
+              {selectedRow.customerCredit > 0 && (
+                <Alert severity="info">
+                  <Stack spacing={1.5}>
+                    <Typography variant="body2">
+                      Customer credit on this event: <strong>{fmtMoney(selectedRow.customerCredit)}</strong>.
+                      {selectedRow.event?.status === "canceled"
+                        ? " This canceled event has no balance due. No refund is automatic; refunds cannot exceed the amount approved for review."
+                        : " Refunds cannot exceed the available credit."}
+                    </Typography>
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "flex-start" }}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        label="Refund amount"
+                        value={refundAmount}
+                        onChange={(event) => setRefundAmount(event.target.value)}
+                        inputProps={{ min: 0.01, max: refundMax, step: 0.01 }}
+                        helperText={`Maximum ${fmtMoney(refundMax)}`}
+                      />
+                      <FormControl size="small" sx={{ minWidth: 180 }}>
+                        <InputLabel id="finance-refund-method-label">Refund method</InputLabel>
+                        <Select
+                          labelId="finance-refund-method-label"
+                          label="Refund method"
+                          value={refundMethod}
+                          onChange={(event) => setRefundMethod(event.target.value)}
+                        >
+                          {REFUND_METHODS.map(([value, label]) => (
+                            <MenuItem key={value} value={value}>{label}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <Button
+                        variant="contained"
+                        color="warning"
+                        onClick={refundCustomerCredit}
+                        disabled={
+                          refunding ||
+                          !refundMethod ||
+                          !(Number(refundAmount) > 0) ||
+                          Number(refundAmount) > refundMax
+                        }
+                      >
+                        {refunding ? "Refunding..." : "Refund"}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Alert>
+              )}
+
               <Paper variant="outlined" sx={{ p: 2 }}>
                 <Stack spacing={1}>
                   <Typography variant="subtitle1" fontWeight={700}>
@@ -1165,13 +1378,16 @@ export default function AdminFinance() {
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {selectedRow.event?.startAt
-                      ? `${new Date(
+                      ? `${formatEventTimestamp(
+                          selectedRow.event,
                           selectedRow.event.startAt
-                        ).toLocaleString()}${
+                        )}${
                           selectedRow.event?.endAt
-                            ? ` to ${new Date(
-                                selectedRow.event.endAt
-                              ).toLocaleString()}`
+                            ? ` to ${formatEventTimestamp(
+                                selectedRow.event,
+                                selectedRow.event.endAt,
+                                { includeDate: false }
+                              )}`
                             : ""
                         }`
                       : "Date not recorded"}

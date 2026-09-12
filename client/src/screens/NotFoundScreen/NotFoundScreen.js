@@ -31,7 +31,7 @@ const NotFoundScreen = () => {
       >
         <BrokenImageIcon sx={{ fontSize: 100, color: "#ccc", mb: 2 }} />
 
-        <Typography variant="h4" gutterBottom fontWeight="bold">
+        <Typography component="h1" variant="h4" gutterBottom fontWeight="bold">
           Oops! Page Not Found
         </Typography>
 

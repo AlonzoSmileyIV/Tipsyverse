@@ -1,6 +1,7 @@
+@use './globalVariables';
+
 /* ===== Google Font Import - Poppins ===== */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600&display=swap');
-@import './globalVariables.scss';
 *{
     margin: 0;
     padding: 0;
@@ -28,6 +29,42 @@ a{
     text-decoration: none;
 }
 
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #1d70b8;
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 2000;
+  transform: translateY(-160%);
+  padding: 0.75rem 1rem;
+  border-radius: 0.25rem;
+  background: #fff;
+  color: #26384a;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 /******* KNOWN CLASSES ******/
 .d-flex-ai-center{
     display: flex;
@@ -36,6 +73,30 @@ a{
 
 .MuiTypography-root{
     font-family: 'Poppins', sans-serif !important;
+}
+
+/* Keep shared Material UI navigation and actions on the brand palette. */
+.MuiTabs-root .MuiTabs-indicator {
+  background-color: var(--primary-color) !important;
+}
+
+.MuiTab-root.Mui-selected {
+  color: var(--primary-color) !important;
+}
+
+.MuiButton-root.MuiButton-contained {
+  background-color: var(--primary-color) !important;
+  color: #fff !important;
+}
+
+.MuiButton-root.MuiButton-outlined {
+  border-color: var(--primary-color) !important;
+  color: var(--primary-color) !important;
+}
+
+.MuiButton-root.Mui-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /*=============== REUSABLE CSS CLASSES ===============*/
@@ -119,13 +180,65 @@ a{
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 800px) {
   .MuiDataGrid-root {
-    overflow-x: auto !important;
+    overflow-x: hidden !important;
 
     .MuiDataGrid-main,
     .MuiDataGrid-virtualScroller {
-      min-width: 640px;
+      min-width: 0;
+    }
+
+    .MuiDataGrid-columnHeader[aria-colindex]:not([aria-colindex="1"]):not([aria-colindex="2"]),
+    .MuiDataGrid-cell[aria-colindex]:not([aria-colindex="1"]):not([aria-colindex="2"]) {
+      display: none !important;
+    }
+
+    .MuiDataGrid-columnHeader[aria-colindex="1"],
+    .MuiDataGrid-cell[aria-colindex="1"] {
+      left: 0 !important;
+      width: 50% !important;
+      min-width: 50% !important;
+      max-width: 50% !important;
+    }
+
+    .MuiDataGrid-columnHeader[aria-colindex="2"],
+    .MuiDataGrid-cell[aria-colindex="2"] {
+      left: 50% !important;
+      width: 50% !important;
+      min-width: 50% !important;
+      max-width: 50% !important;
+    }
+
+    &:has(.MuiDataGrid-columnHeader[data-field="actions"]) {
+      .MuiDataGrid-columnHeader[aria-colindex="2"]:not([data-field="actions"]),
+      .MuiDataGrid-cell[aria-colindex="2"]:not([data-field="actions"]) {
+        display: none !important;
+      }
+
+      .MuiDataGrid-columnHeader[data-field="actions"],
+      .MuiDataGrid-cell[data-field="actions"] {
+        display: flex !important;
+        left: 50% !important;
+        width: 50% !important;
+        min-width: 50% !important;
+        max-width: 50% !important;
+      }
+    }
+  }
+
+  table {
+    table-layout: fixed;
+    width: 100%;
+
+    th:nth-child(n + 3),
+    td:nth-child(n + 3) {
+      display: none;
+    }
+
+    th:nth-child(-n + 2),
+    td:nth-child(-n + 2) {
+      width: 50%;
     }
   }
 }

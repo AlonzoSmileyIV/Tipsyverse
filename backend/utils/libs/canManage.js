@@ -62,10 +62,6 @@ export const canManage = ({
 }) => {
   if (!actor) return { ok: false, reason: "No actor" };
 
-  const actorName = getHierarchyName(actor);
-  const actorIdx = getIndex(actorName);
-  if (actorIdx === -1) return { ok: false, reason: "Actor hierarchy missing" };
-
   // Nobody can delete themselves
   if (action === "delete" && targetId && targetId.toString() === actor._id.toString()) {
     return { ok: false, reason: "You cannot delete yourself." };
@@ -75,6 +71,12 @@ export const canManage = ({
   if (action === "edit" && isStatusChange && targetId && targetId.toString() === actor._id.toString()) {
     return { ok: false, reason: "You cannot change your own status." };
   }
+
+  if (actor.role === "admin") return { ok: true };
+
+  const actorName = getHierarchyName(actor);
+  const actorIdx = getIndex(actorName);
+  if (actorIdx === -1) return { ok: false, reason: "Actor hierarchy missing" };
 
   // Team Leader and below cannot add/edit/delete anyone
   const teamLeaderIdx = getIndex("Team Leader");
@@ -133,4 +135,3 @@ export const validateOwnerReportTo = ({ targetPositionName, reportToEmail }) => 
 };
 
 export const idxOf = (name) => HIERARCHY_ORDER.indexOf(String(name || ""));
-

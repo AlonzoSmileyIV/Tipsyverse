@@ -23,6 +23,7 @@ import {
   DialogContent,
   TextField,
   DialogActions,
+  Alert,
 } from "@mui/material";
 import {
   CalendarMonth,
@@ -49,6 +50,17 @@ import moment from "moment";
 import api from "../../services/api";
 import { CollapseAlert } from "../../components/CollapseAlert/CollapseAlert";
 import { buildSnapshotFromEvent } from "../../components/DetailedEventForm/DetailedEventForm.pricing";
+import getCustomerPaymentStatus from "../../utils/customerPaymentStatus";
+import getEventPaymentPolicyView from "../../utils/eventPaymentPolicy";
+import {
+  getEventPaidTotal,
+  getEventPaymentTotal,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
+import {
+  formatEventTimestamp,
+  getEventTimeZone,
+} from "../../utils/timestamps";
 
 /* helpers */
 const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
@@ -135,20 +147,9 @@ const formatLabel = (value) => {
     .join(" ");
 };
 
-const getEventPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
-
 const getEventTotal = (event) => {
   const snapshotTotal = (buildSnapshotFromEvent(event)?.totals?.totalC || 0) / 100;
-  return Math.max(
-    Number(event?.payment?.total) || 0,
-    Number(event?.payment?.totalAfterDiscount) || 0,
-    Number(event?.pricing?.estimatedTotal) || 0,
-    snapshotTotal || 0
-  );
+  return getEventPaymentTotal(event, snapshotTotal);
 };
 
 const getEventBalance = (event) => {
@@ -207,10 +208,14 @@ function StatCard({ label, value, detail }) {
 }
 
 function EventCard({ event, onCancel, onView, onVerifyAttendance }) {
-  const balance = getEventBalance(event);
   const paidTotal = getEventPaidTotal(event);
-  const bartenders =
-    event?.pricing?.bartendersRequested ?? event?.counts?.neededBartenders ?? 1;
+  const paymentTotal = getEventTotal(event);
+  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal, event);
+  const paymentPolicy = getEventPaymentPolicyView(event, {
+    total: paymentTotal,
+    paid: paidTotal,
+  });
+  const bartenders = getRequiredBartenderCount(event, 1);
   const start = event?.startAt ? moment(event.startAt) : null;
   const end = event?.endAt ? moment(event.endAt) : null;
   const now = moment();
@@ -244,16 +249,30 @@ function EventCard({ event, onCancel, onView, onVerifyAttendance }) {
           </Typography>
           <Typography variant="body2" sx={{ mt: 0.5 }}>
             {start?.isValid?.() && end?.isValid?.()
-              ? `${start.format("MMM D, YYYY • h:mm a")} to ${end.format("h:mm a")} ${tzAbbr(event.timezone || "")}`
+              ? `${formatEventTimestamp(event, event.startAt)} to ${formatEventTimestamp(
+                  event,
+                  event.endAt,
+                  { includeDate: false }
+                )}`
               : "Date pending"}
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1 }}>
             <Chip size="small" variant="outlined" label={`${bartenders} bartender${bartenders === 1 ? "" : "s"}`} />
-            <Chip size="small" variant="outlined" label={`Paid ${fmtMoney(paidTotal)}`} />
             <Chip
               size="small"
-              color={balance > 0 ? "warning" : "success"}
-              label={balance > 0 ? `Balance ${fmtMoney(balance)}` : "Paid in full"}
+              variant="outlined"
+              label={paidTotal > 0 ? `Paid ${fmtMoney(paidTotal)}` : "No payments yet"}
+            />
+            <Chip
+              size="small"
+              color={
+                paymentPolicy.severity === "error"
+                  ? "error"
+                  : paymentPolicy.severity === "warning"
+                  ? "warning"
+                  : paymentStatus.color
+              }
+              label={paymentPolicy.label}
             />
           </Stack>
         </Box>
@@ -357,11 +376,16 @@ export default function EventsHub() {
       } catch (err) {
         setDetailsOpen(false);
         setSelectedEvent(null);
+        setAlert({
+          message: "Event not found or you do not have permission to view it.",
+          severity: "error",
+        });
+        navigate("/my-events", { replace: true });
       }
     };
 
     run();
-  }, [eventId, tab, dispatch]);
+  }, [eventId, tab, dispatch, navigate]);
 
   const handleRefresh = () => {
     fetchAllData();
@@ -412,9 +436,11 @@ export default function EventsHub() {
     const header = [
       "Type",
       "Formatted Address",
-      "Start",
-      "End",
-      "TZ",
+      "Start UTC",
+      "End UTC",
+      "Event Start",
+      "Event End",
+      "Event Timezone",
       "Status",
     ].join(",");
     const body = filteredEvents.map((e) =>
@@ -422,12 +448,14 @@ export default function EventsHub() {
         JSON.stringify(e?.type ?? ""),
         JSON.stringify(e?.location?.formatted ?? ""),
         JSON.stringify(
-          e?.startAt ? moment(e.startAt).format("YYYY-MM-DD HH:mm") : ""
+          e?.startAt ? new Date(e.startAt).toISOString() : ""
         ),
         JSON.stringify(
-          e?.endAt ? moment(e.endAt).format("YYYY-MM-DD HH:mm") : ""
+          e?.endAt ? new Date(e.endAt).toISOString() : ""
         ),
-        JSON.stringify(tzAbbr(e?.timezone || "")),
+        JSON.stringify(formatEventTimestamp(e, e?.startAt)),
+        JSON.stringify(formatEventTimestamp(e, e?.endAt)),
+        JSON.stringify(getEventTimeZone(e)),
         JSON.stringify(e?.status ?? ""),
       ].join(",")
     );
@@ -782,6 +810,12 @@ export default function EventsHub() {
               Are you sure you want to cancel this event?
             </Typography>
 
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Cancellation stops pending payment requests and sets the event balance to $0.00.
+              No refund is issued automatically. Any recorded payment is sent to staff for
+              refund review under the cancellation policy.
+            </Alert>
+
             {eventToCancel && (
               <Box sx={{ mb: 2, p: 2, bgcolor: "#f7f7f7", borderRadius: 2 }}>
                 <Typography>
@@ -789,7 +823,7 @@ export default function EventsHub() {
                 </Typography>
                 <Typography>
                   <strong>Start:</strong>{" "}
-                  {new Date(eventToCancel.startAt).toLocaleString()}
+                  {formatEventTimestamp(eventToCancel, eventToCancel.startAt)}
                 </Typography>
               </Box>
             )}

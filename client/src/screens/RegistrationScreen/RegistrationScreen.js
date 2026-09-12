@@ -27,6 +27,7 @@ import HelmetHeader from "../../components/HelmetHeader/Helmet";
 import api from "../../services/api";
 import { isAtLeastAge } from "../../utils/dateOnly";
 import { useNavigate } from "react-router-dom";
+import DateTextField from "../../components/DateTextField/DateTextField";
 
 const passwordCriteria = {
   length: (value) => value.length >= 6,
@@ -189,7 +190,7 @@ const RegistrationScreen = () => {
         description="Create a Tipsyverse account to save cocktail recipes, book bartending events, submit support tickets, and apply for bartender opportunities."
         keywords="Tipsyverse registration, create account, cocktail account, book bartenders, bartender signup"
       />
-      <Typography variant="h5" fontWeight={600} gutterBottom>
+      <Typography component="h1" variant="h5" fontWeight={600} gutterBottom>
         Register
       </Typography>
 
@@ -278,11 +279,10 @@ const RegistrationScreen = () => {
           helperText={errors.username}
         />
 
-        <TextField
+        <DateTextField
           fullWidth
           label="Date of Birth"
           name="dob"
-          placeholder="MM/DD/YYYY"
           margin="normal"
           value={form.dob}
           onChange={(e) => {
@@ -300,11 +300,6 @@ const RegistrationScreen = () => {
           }}
           error={!!errors.dob}
           helperText={errors.dob || "Use MM/DD/YYYY, like 07/02/1998."}
-          inputProps={{
-            inputMode: "numeric",
-            maxLength: 10,
-          }}
-          InputLabelProps={{ shrink: true }}
         />
         <TextField
           fullWidth
@@ -320,6 +315,7 @@ const RegistrationScreen = () => {
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                 >
@@ -379,7 +375,7 @@ const RegistrationScreen = () => {
           Already have an account?{" "}
           <Link
             href="/login"
-            underline="hover"
+            underline="always"
             sx={{ color: "var(--primary-color)" }}
           >
             Login

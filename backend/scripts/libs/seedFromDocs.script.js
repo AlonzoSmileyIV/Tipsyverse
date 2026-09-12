@@ -2,9 +2,14 @@
 import "dotenv/config";
 import XLSX from "xlsx";
 import mongoose from "mongoose";
-import fs from 'fs';
+import fs from "node:fs";
+
+// The ESM build of SheetJS does not automatically load Node's filesystem
+// implementation. Register it so XLSX.readFile() can access local workbooks.
+XLSX.set_fs(fs);
 
 //NODE_ENV=development node scripts/libs/seedFromDocs.script.js
+//NODE_ENV=staging node scripts/libs/seedFromDocs.script.js
 
 import {
   LiquorModel as Liquor,
@@ -15,6 +20,7 @@ import {
 } from "../../models/index.js";
 
 import { cloudinary } from "../../middleware/libs/cloudinary.middleware.js";
+import seedBiancaRequiredCourseProgress from "./seedQaBartenderProgress.js";
 
 import path from "path";
 import { fileURLToPath } from "url";
@@ -441,6 +447,7 @@ async function seedDrinks() {
     await seedDrinks();
     console.log("🔄 Seeding Tipsyverse Bartending Foundations course...");
     await seedCourses();
+    await seedBiancaRequiredCourseProgress();
 
     await mongoose.disconnect();
 

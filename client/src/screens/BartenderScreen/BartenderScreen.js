@@ -82,8 +82,8 @@ import HowToGuide from "../../components/HowToGuide/HowToGuide";
 import PhoneTextField from "../../components/PhoneTextField/PhoneTextField";
 import LocationInput from "../../components/LocationInput/LocationInput";
 import {
-  formatDistanceLabel,
   computeDistanceMiles,
+  getDistanceDisplayLabel,
 } from "../../utils/formatDistanceLabel";
 import api from "../../services/api";
 import { fetchMyBids } from "../../features/bids/bidSlice";
@@ -118,20 +118,46 @@ const getRewardQuestions = (rewardName = "") => {
   const name = String(rewardName || "").toLowerCase();
   if (name.includes("polo")) {
     return [
-      { key: "shirtSize", label: "Size", type: "select", options: REWARD_SIZES },
-      { key: "poloColor", label: "Polo color", type: "select", options: POLO_COLORS },
+      {
+        key: "shirtSize",
+        label: "Size",
+        type: "select",
+        options: REWARD_SIZES,
+      },
+      {
+        key: "poloColor",
+        label: "Polo color",
+        type: "select",
+        options: POLO_COLORS,
+      },
     ];
   }
-  if (name.includes("t-shirt") || name.includes("hoodie") || name.includes("jacket")) {
-    return [{ key: "shirtSize", label: "Size", type: "select", options: REWARD_SIZES }];
+  if (
+    name.includes("t-shirt") ||
+    name.includes("hoodie") ||
+    name.includes("jacket")
+  ) {
+    return [
+      {
+        key: "shirtSize",
+        label: "Size",
+        type: "select",
+        options: REWARD_SIZES,
+      },
+    ];
   }
-  if (name.includes("mixing glass") || name.includes("personalized") || name.includes("engraved")) {
+  if (
+    name.includes("mixing glass") ||
+    name.includes("personalized") ||
+    name.includes("engraved")
+  ) {
     return [
       {
         key: "personalizationText",
         label: "Personalization text",
         type: "text",
-        helperText: "Use 1-24 letters, numbers, spaces, periods, apostrophes, or hyphens.",
+        helperText:
+          "Use 1-24 letters, numbers, spaces, periods, apostrophes, or hyphens.",
       },
     ];
   }
@@ -141,7 +167,8 @@ const getRewardQuestions = (rewardName = "") => {
         key: "personalizationText",
         label: "Embroidery name",
         type: "text",
-        helperText: "Use 1-24 letters, numbers, spaces, periods, apostrophes, or hyphens.",
+        helperText:
+          "Use 1-24 letters, numbers, spaces, periods, apostrophes, or hyphens.",
       },
     ];
   }
@@ -198,11 +225,17 @@ const ONBOARDING_DOCUMENTS = [
   {
     key: "service_standards",
     title: "Service Standards Acknowledgement",
-    summary: "Confirm attendance, conduct, safety, and incident-reporting expectations.",
+    summary:
+      "Confirm attendance, conduct, safety, and incident-reporting expectations.",
   },
 ];
 const DOCUMENT_TASK_TYPES = ["documents", "sign_documents", "signed_documents"];
-const PROFILE_TASK_TYPES = ["profile", "approval", "bartender_profile", "profile_approved"];
+const PROFILE_TASK_TYPES = [
+  "profile",
+  "approval",
+  "bartender_profile",
+  "profile_approved",
+];
 
 const getId = (value) => value?._id || value?.id || value;
 const sameId = (a, b) => {
@@ -319,9 +352,11 @@ function BartenderHomeTab({
       loggedInUser?.bartenderProfile?.onboardingDocuments ||
       [];
     const map = {};
-    (Array.isArray(bartenderDocuments) ? bartenderDocuments : []).forEach((doc) => {
-      if (doc?.key || doc?.documentKey) map[doc.key || doc.documentKey] = doc;
-    });
+    (Array.isArray(bartenderDocuments) ? bartenderDocuments : []).forEach(
+      (doc) => {
+        if (doc?.key || doc?.documentKey) map[doc.key || doc.documentKey] = doc;
+      }
+    );
     return map;
   }, [bartenderInfo?.onboardingDocuments, loggedInUser]);
   const allRequiredDocumentsReceived = useMemo(
@@ -395,7 +430,8 @@ function BartenderHomeTab({
       const event = assignment.event || {};
       const endAt = event.endAt || event.startAt;
       return (
-        (event.status === "completed" || (endAt && new Date(endAt) < new Date())) &&
+        (event.status === "completed" ||
+          (endAt && new Date(endAt) < new Date())) &&
         isDateInRange(endAt, bounds)
       );
     });
@@ -414,7 +450,13 @@ function BartenderHomeTab({
         0
       ),
     };
-  }, [customEnd, customStart, myAssignments, productivityRange, reviewSummary?.total]);
+  }, [
+    customEnd,
+    customStart,
+    myAssignments,
+    productivityRange,
+    reviewSummary?.total,
+  ]);
 
   const upcomingAssignments = useMemo(() => {
     const now = new Date();
@@ -443,7 +485,11 @@ function BartenderHomeTab({
         return endAt && new Date(endAt) >= now;
       });
     } else {
-      const bounds = getRangeBounds(readyRange, readyCustomStart, readyCustomEnd);
+      const bounds = getRangeBounds(
+        readyRange,
+        readyCustomStart,
+        readyCustomEnd
+      );
       list = list.filter((evt) => isDateInRange(evt.startAt, bounds));
     }
 
@@ -583,7 +629,8 @@ function BartenderHomeTab({
           <Box>
             <Typography variant="h6">Earnings</Typography>
             <Typography variant="body2" color="text.secondary">
-              Track your worked events, upcoming jobs, reviews, and estimated pay.
+              Track your worked events, upcoming jobs, reviews, and estimated
+              pay.
             </Typography>
           </Box>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
@@ -648,7 +695,8 @@ function BartenderHomeTab({
       </Paper>
 
       {/* Onboarding Card */}
-      <Paper variant="outlined" sx={{ p: 2, order: 1 }}>
+      {!eligible && (
+        <Paper variant="outlined" sx={{ p: 2, order: 1 }}>
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={2}
@@ -700,7 +748,9 @@ function BartenderHomeTab({
                   <ListItem
                     key={item.key}
                     secondaryAction={
-                      PROFILE_TASK_TYPES.includes(item.key || item.type) ? null : item.type === "documents" ? (
+                      PROFILE_TASK_TYPES.includes(
+                        item.key || item.type
+                      ) ? null : item.type === "documents" ? (
                         <Button
                           size="small"
                           onClick={() => setDocumentsOpen(true)}
@@ -761,13 +811,15 @@ function BartenderHomeTab({
             </>
           )}
         </Paper>
-
+      )}
       <Dialog
         open={documentsOpen}
         onClose={() => setDocumentsOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { maxHeight: { xs: "calc(100% - 24px)", sm: "92vh" } } }}
+        PaperProps={{
+          sx: { maxHeight: { xs: "calc(100% - 24px)", sm: "92vh" } },
+        }}
       >
         <DialogTitle>Required Documents</DialogTitle>
         <DialogContent dividers sx={{ px: { xs: 2, sm: 3 }, py: 2.5 }}>
@@ -777,11 +829,16 @@ function BartenderHomeTab({
             </Alert>
             <Stack spacing={1.25}>
               {ONBOARDING_DOCUMENTS.map((doc, index) => {
-                const status = documentStatusByKey[doc.key]?.status || "not_sent";
+                const status =
+                  documentStatusByKey[doc.key]?.status || "not_sent";
                 const receivedAt = documentStatusByKey[doc.key]?.receivedAt;
                 return (
                   <Paper key={doc.key} variant="outlined" sx={{ p: 1.5 }}>
-                    <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                    <Stack
+                      direction="row"
+                      spacing={1.5}
+                      alignItems="flex-start"
+                    >
                       <Chip label={index + 1} size="small" />
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Stack
@@ -795,11 +852,23 @@ function BartenderHomeTab({
                           </Typography>
                           <Chip
                             size="small"
-                            color={status === "received" ? "success" : status === "sent" ? "info" : status === "rejected" ? "error" : "default"}
+                            color={
+                              status === "received"
+                                ? "success"
+                                : status === "sent"
+                                ? "info"
+                                : status === "rejected"
+                                ? "error"
+                                : "default"
+                            }
                             label={formatStatus(status)}
                           />
                         </Stack>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{ mt: 0.5 }}
+                        >
                           {doc.summary}
                         </Typography>
                         {receivedAt && (
@@ -814,7 +883,8 @@ function BartenderHomeTab({
               })}
             </Stack>
             <Typography variant="body2" color="text.secondary">
-              Your checklist is completed when admin marks every required document as received.
+              Your checklist is completed when admin marks every required
+              document as received.
             </Typography>
           </Stack>
         </DialogContent>
@@ -853,7 +923,10 @@ function BartenderHomeTab({
             to="/bartend/schedule"
             size="small"
             variant="outlined"
-            sx={{ color: "var(--primary-color)", borderColor: "var(--primary-color)" }}
+            sx={{
+              color: "var(--primary-color)",
+              borderColor: "var(--primary-color)",
+            }}
           >
             View Schedule
           </Button>
@@ -868,7 +941,11 @@ function BartenderHomeTab({
               const event = assignment.event || {};
               const loc = event.location || {};
               return (
-                <Paper key={assignment._id} variant="outlined" sx={{ p: 1.5, bgcolor: "grey.50" }}>
+                <Paper
+                  key={assignment._id}
+                  variant="outlined"
+                  sx={{ p: 1.5, bgcolor: "grey.50" }}
+                >
                   <Stack
                     direction={{ xs: "column", sm: "row" }}
                     justifyContent="space-between"
@@ -888,11 +965,17 @@ function BartenderHomeTab({
                             })
                           : "Date pending"}
                         {[loc.city, loc.state].filter(Boolean).length
-                          ? ` • ${[loc.city, loc.state].filter(Boolean).join(", ")}`
+                          ? ` • ${[loc.city, loc.state]
+                              .filter(Boolean)
+                              .join(", ")}`
                           : ""}
                       </Typography>
                     </Box>
-                    <Chip size="small" label={formatStatus(assignment.status || "active")} color="success" />
+                    <Chip
+                      size="small"
+                      label={formatStatus(assignment.status || "active")}
+                      color="success"
+                    />
                   </Stack>
                 </Paper>
               );
@@ -921,7 +1004,10 @@ function BartenderHomeTab({
             to="/bartend/rewards"
             size="small"
             variant="outlined"
-            sx={{ color: "var(--primary-color)", borderColor: "var(--primary-color)" }}
+            sx={{
+              color: "var(--primary-color)",
+              borderColor: "var(--primary-color)",
+            }}
           >
             View Rewards
           </Button>
@@ -948,18 +1034,34 @@ function BartenderHomeTab({
             to="/bartend/reviews"
             size="small"
             variant="outlined"
-            sx={{ color: "var(--primary-color)", borderColor: "var(--primary-color)" }}
+            sx={{
+              color: "var(--primary-color)",
+              borderColor: "var(--primary-color)",
+            }}
           >
             View Reviews
           </Button>
         </Stack>
 
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 1.5 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          sx={{ mt: 1.5 }}
+        >
           {[
-            ["Average Rating", reviewsOverview.total ? `${reviewsOverview.average.toFixed(1)}/5` : "0.0/5"],
+            [
+              "Average Rating",
+              reviewsOverview.total
+                ? `${reviewsOverview.average.toFixed(1)}/5`
+                : "0.0/5",
+            ],
             ["Total Reviews", reviewsOverview.total],
           ].map(([label, value]) => (
-            <Paper key={label} variant="outlined" sx={{ p: 1.5, flex: 1, bgcolor: "grey.50" }}>
+            <Paper
+              key={label}
+              variant="outlined"
+              sx={{ p: 1.5, flex: 1, bgcolor: "grey.50" }}
+            >
               <Typography variant="caption" color="text.secondary">
                 {label}
               </Typography>
@@ -971,7 +1073,10 @@ function BartenderHomeTab({
         </Stack>
 
         {reviewsOverview.latest?.comment ? (
-          <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, bgcolor: "grey.50" }}>
+          <Paper
+            variant="outlined"
+            sx={{ p: 1.5, mt: 1.5, bgcolor: "grey.50" }}
+          >
             <Typography variant="caption" color="text.secondary">
               Latest review
             </Typography>
@@ -1011,8 +1116,9 @@ function BartenderHomeTab({
           sx={{ mb: 2 }}
         >
           <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 180 } }}>
-            <InputLabel>Event Date Range</InputLabel>
+            <InputLabel id="ready-event-date-range-label">Event Date Range</InputLabel>
             <Select
+              labelId="ready-event-date-range-label"
               label="Event Date Range"
               value={readyRange}
               onChange={(e) => setReadyRange(e.target.value)}
@@ -1097,7 +1203,8 @@ function BartenderHomeTab({
         {!filteredEvents || filteredEvents.length === 0 ? (
           search !== "" || readyRange !== "upcoming" ? (
             <Typography variant="body2" color="text.secondary">
-              No ready-to-assign events match these filters. Try a wider date range or clear the search.
+              No ready-to-assign events match these filters. Try a wider date
+              range or clear the search.
             </Typography>
           ) : (
             <Typography variant="body2" color="text.secondary">
@@ -1119,10 +1226,13 @@ function BartenderHomeTab({
                 const remaining = Math.max(0, needed - assigned);
 
                 // 🔹 NEW: compute distance if we have liveCoords + event coords
-                const distanceLabel =
-                  shareLiveEnabled && liveCoords
-                    ? formatDistanceLabel(liveCoords, evt.location?.point)
-                    : null;
+                const distanceLabel = getDistanceDisplayLabel({
+                  sharingEnabled: shareLiveEnabled,
+                  from: liveCoords,
+                  eventLocationPoint: evt.location?.point,
+                });
+                const distanceUnavailable =
+                  distanceLabel && !distanceLabel.includes(" away");
 
                 //const bidStatus = evt.myBidStatus || "none";
                 //console.log("bidStatus: ", bidStatus);
@@ -1154,7 +1264,11 @@ function BartenderHomeTab({
                         {distanceLabel && (
                           <Typography
                             variant="caption"
-                            color="text.secondary"
+                            color={
+                              distanceUnavailable
+                                ? "warning.main"
+                                : "text.secondary"
+                            }
                             display="block"
                           >
                             {distanceLabel}
@@ -1401,12 +1515,17 @@ function ReviewsTab({ myReviews = [] }) {
             Review Breakdown
           </Typography>
 
-          {!filteredReviewSummary?.total || filteredReviewSummary.total === 0 ? (
+          {!filteredReviewSummary?.total ||
+          filteredReviewSummary.total === 0 ? (
             <Typography variant="body2" color="text.secondary">
               You do not have any reviews for this range yet.
             </Typography>
           ) : (
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems="center"
+            >
               <Box sx={{ flex: 1, minWidth: 220 }}>
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
@@ -1901,7 +2020,11 @@ function RewardsTab() {
                         {actionLabel}
                       </Button>
                     ) : (
-                      <Chip size="small" variant="outlined" label={actionLabel} />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={actionLabel}
+                      />
                     )}
                   </Stack>
                 </Stack>
@@ -2178,57 +2301,63 @@ function ScheduleTab({ myAssignments = [] }) {
 
   const normalizeStr = (v) => (v ?? "").toString().trim().toLowerCase();
 
-  const filterByStatus = useCallback((assignment) => {
-    const now = new Date();
-    const status = assignment.status || "active";
-    const evt = assignment.event || {};
-    const startAt = evt.startAt ? new Date(evt.startAt) : null;
-    const endAt = evt.endAt ? new Date(evt.endAt) : startAt;
+  const filterByStatus = useCallback(
+    (assignment) => {
+      const now = new Date();
+      const status = assignment.status || "active";
+      const evt = assignment.event || {};
+      const startAt = evt.startAt ? new Date(evt.startAt) : null;
+      const endAt = evt.endAt ? new Date(evt.endAt) : startAt;
 
-    const isRemoved = status === "removed";
-    const isUpcoming = endAt && endAt >= now;
-    const isPast = endAt && endAt < now;
+      const isRemoved = status === "removed";
+      const isUpcoming = endAt && endAt >= now;
+      const isPast = endAt && endAt < now;
 
-    switch (statusFilter) {
-      case "removed":
-        return isRemoved;
-      case "upcoming":
-        return !isRemoved && isUpcoming;
-      case "past":
-        return !isRemoved && isPast;
-      case "all":
-      default:
-        return true;
-    }
-  }, [statusFilter]);
+      switch (statusFilter) {
+        case "removed":
+          return isRemoved;
+        case "upcoming":
+          return !isRemoved && isUpcoming;
+        case "past":
+          return !isRemoved && isPast;
+        case "all":
+        default:
+          return true;
+      }
+    },
+    [statusFilter]
+  );
 
-  const matchesSearch = useCallback((assignment) => {
-    if (!search.trim()) return true;
+  const matchesSearch = useCallback(
+    (assignment) => {
+      if (!search.trim()) return true;
 
-    const q = normalizeStr(search);
+      const q = normalizeStr(search);
 
-    const evt = assignment.event || {};
-    const loc = evt.location || {};
+      const evt = assignment.event || {};
+      const loc = evt.location || {};
 
-    const startAt = evt.startAt ? new Date(evt.startAt) : null;
-    const dateStr = startAt
-      ? `${startAt.toLocaleDateString()} ${startAt.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}`
-      : "";
+      const startAt = evt.startAt ? new Date(evt.startAt) : null;
+      const dateStr = startAt
+        ? `${startAt.toLocaleDateString()} ${startAt.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}`
+        : "";
 
-    const city = normalizeStr(loc.city);
-    const state = normalizeStr(loc.state);
-    const zipcode = normalizeStr(loc.zipcode);
+      const city = normalizeStr(loc.city);
+      const state = normalizeStr(loc.state);
+      const zipcode = normalizeStr(loc.zipcode);
 
-    return (
-      dateStr.toLowerCase().includes(q) ||
-      city.includes(q) ||
-      state.includes(q) ||
-      zipcode.includes(q)
-    );
-  }, [search]);
+      return (
+        dateStr.toLowerCase().includes(q) ||
+        city.includes(q) ||
+        state.includes(q) ||
+        zipcode.includes(q)
+      );
+    },
+    [search]
+  );
 
   // 👇 Filter + search
   const filtered = useMemo(
@@ -2272,10 +2401,10 @@ function ScheduleTab({ myAssignments = [] }) {
 
   const ms48h = 48 * 60 * 60 * 1000;
 
-  const shouldShowFullDetails = (startAt, myStatus, eventStatus = 'active') => {
+  const shouldShowFullDetails = (startAt, myStatus, eventStatus = "active") => {
     if (!startAt) return false;
     if (myStatus !== "active") return false;
-    if (eventStatus === 'completed') return false;
+    if (eventStatus === "completed") return false;
     const start = new Date(startAt);
     const now = new Date();
     const diff = start.getTime() - now.getTime();
@@ -2302,7 +2431,6 @@ function ScheduleTab({ myAssignments = [] }) {
       setRemoveReason("");
       setConfirmRemoveOpen(false);
       setRemoving(false);
-
       fetchMyAssignments();
     } catch (err) {
       setAlert({
@@ -2319,8 +2447,13 @@ function ScheduleTab({ myAssignments = [] }) {
 
   const handleClock = async (assignment, action) => {
     try {
-      const res = await api.post(`/attendance/assignments/${assignment._id}/${action}`);
-      setAlert({ severity: "success", message: res.data?.message || "Attendance updated." });
+      const res = await api.post(
+        `/attendance/assignments/${assignment._id}/${action}`
+      );
+      setAlert({
+        severity: "success",
+        message: res.data?.message || "Attendance updated.",
+      });
       await loadAttendance();
     } catch (err) {
       setAlert({
@@ -2349,7 +2482,8 @@ function ScheduleTab({ myAssignments = [] }) {
     } catch (err) {
       setAlert({
         severity: "error",
-        message: err?.response?.data?.message || "Failed to submit incident report.",
+        message:
+          err?.response?.data?.message || "Failed to submit incident report.",
       });
     }
   };
@@ -2435,13 +2569,18 @@ function ScheduleTab({ myAssignments = [] }) {
               .filter(Boolean)
               .join(", ");
 
-            const showFull = shouldShowFullDetails(evt.startAt, a.status, evt.status);
+            const showFull = shouldShowFullDetails(
+              evt.startAt,
+              a.status,
+              evt.status
+            );
             const attendance = attendanceByAssignmentId[String(a._id)];
             const canShowEventActions =
               a.status === "active" &&
               evt.status !== "completed" &&
               isEventActionWindowOpen(evt.startAt);
-            const canRemove = a.status === "active" && evt.status !== "completed";
+            const canRemove =
+              a.status === "active" && evt.status !== "completed";
             const canClock = canShowEventActions;
             const hasClockedIn = !!attendance?.clockInAt;
             const hasClockedOut = !!attendance?.clockOutAt;
@@ -2473,7 +2612,12 @@ function ScheduleTab({ myAssignments = [] }) {
                       />
                     </Stack>
                     {canRemove && (
-                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        flexWrap="wrap"
+                        useFlexGap
+                      >
                         {canClock && !hasClockedIn && (
                           <Button
                             variant="contained"
@@ -2492,7 +2636,11 @@ function ScheduleTab({ myAssignments = [] }) {
                           </Button>
                         )}
                         {hasClockedOut && (
-                          <Chip size="small" color="success" label="Clocked out" />
+                          <Chip
+                            size="small"
+                            color="success"
+                            label="Clocked out"
+                          />
                         )}
                         {canShowEventActions && (
                           <Button
@@ -2561,11 +2709,28 @@ function ScheduleTab({ myAssignments = [] }) {
                   )}
 
                   {attendance && (
-                    <Alert severity={attendance.status === "disputed" ? "warning" : "info"} sx={{ mt: 1 }}>
+                    <Alert
+                      severity={
+                        attendance.status === "disputed" ? "warning" : "info"
+                      }
+                      sx={{ mt: 1 }}
+                    >
                       Attendance: {formatStatus(attendance.status)}{" "}
-                      {attendance.clockInAt ? `• In ${new Date(attendance.clockInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                      {attendance.clockInAt
+                        ? `• In ${new Date(
+                            attendance.clockInAt
+                          ).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}`
+                        : ""}
                       {attendance.clockOutAt
-                        ? ` • Out ${new Date(attendance.clockOutAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                        ? ` • Out ${new Date(
+                            attendance.clockOutAt
+                          ).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}`
                         : " • Out not recorded"}
                     </Alert>
                   )}
@@ -2682,20 +2847,29 @@ function ScheduleTab({ myAssignments = [] }) {
           <Stack spacing={2}>
             <Alert severity="info">
               Use this when something happens during an event, such as injury,
-              underage drinking attempt, refused service, property damage, or misconduct.
+              underage drinking attempt, refused service, property damage, or
+              misconduct.
             </Alert>
             <FormControl fullWidth>
               <InputLabel>Incident Type</InputLabel>
               <Select
                 label="Incident Type"
                 value={incidentForm.type}
-                onChange={(e) => setIncidentForm((p) => ({ ...p, type: e.target.value }))}
+                onChange={(e) =>
+                  setIncidentForm((p) => ({ ...p, type: e.target.value }))
+                }
               >
                 <MenuItem value="guest_injury">Guest injury</MenuItem>
-                <MenuItem value="underage_drinking_attempt">Underage drinking attempt</MenuItem>
-                <MenuItem value="intoxicated_guest_refused_service">Intoxicated guest refused service</MenuItem>
+                <MenuItem value="underage_drinking_attempt">
+                  Underage drinking attempt
+                </MenuItem>
+                <MenuItem value="intoxicated_guest_refused_service">
+                  Intoxicated guest refused service
+                </MenuItem>
                 <MenuItem value="property_damage">Property damage</MenuItem>
-                <MenuItem value="bartender_misconduct">Bartender misconduct</MenuItem>
+                <MenuItem value="bartender_misconduct">
+                  Bartender misconduct
+                </MenuItem>
                 <MenuItem value="other">Other</MenuItem>
               </Select>
             </FormControl>
@@ -2704,7 +2878,9 @@ function ScheduleTab({ myAssignments = [] }) {
               <Select
                 label="Severity"
                 value={incidentForm.severity}
-                onChange={(e) => setIncidentForm((p) => ({ ...p, severity: e.target.value }))}
+                onChange={(e) =>
+                  setIncidentForm((p) => ({ ...p, severity: e.target.value }))
+                }
               >
                 <MenuItem value="low">Low</MenuItem>
                 <MenuItem value="medium">Medium</MenuItem>
@@ -2718,13 +2894,17 @@ function ScheduleTab({ myAssignments = [] }) {
               minRows={4}
               fullWidth
               value={incidentForm.description}
-              onChange={(e) => setIncidentForm((p) => ({ ...p, description: e.target.value }))}
+              onChange={(e) =>
+                setIncidentForm((p) => ({ ...p, description: e.target.value }))
+              }
             />
             <TextField
               label="Witnesses"
               fullWidth
               value={incidentForm.witnesses}
-              onChange={(e) => setIncidentForm((p) => ({ ...p, witnesses: e.target.value }))}
+              onChange={(e) =>
+                setIncidentForm((p) => ({ ...p, witnesses: e.target.value }))
+              }
             />
             <TextField
               label="Action taken"
@@ -2732,17 +2912,24 @@ function ScheduleTab({ myAssignments = [] }) {
               minRows={2}
               fullWidth
               value={incidentForm.actionTaken}
-              onChange={(e) => setIncidentForm((p) => ({ ...p, actionTaken: e.target.value }))}
+              onChange={(e) =>
+                setIncidentForm((p) => ({ ...p, actionTaken: e.target.value }))
+              }
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button sx={{color: 'var(--primary-color)'}} onClick={() => setIncidentOpen(false)}>Cancel</Button>
+          <Button
+            sx={{ color: "var(--primary-color)" }}
+            onClick={() => setIncidentOpen(false)}
+          >
+            Cancel
+          </Button>
           <Button
             variant="contained"
             disabled={!incidentForm.description.trim()}
             onClick={handleSubmitIncident}
-            sx={{backgroundColor: 'var(--primary-color)'}}
+            sx={{ backgroundColor: "var(--primary-color)" }}
           >
             Submit Report
           </Button>
@@ -2814,7 +3001,8 @@ function EarningsTab({ myAssignments = [], loggedInUser }) {
     (payouts || []).forEach((payout) => {
       const assignmentId = payout.assignment?._id || payout.assignment;
       if (!assignmentId || payout.status === "failed") return;
-      map[assignmentId] = (map[assignmentId] || 0) + (Number(payout.amount) || 0);
+      map[assignmentId] =
+        (map[assignmentId] || 0) + (Number(payout.amount) || 0);
     });
     return map;
   }, [payouts]);
@@ -2849,7 +3037,9 @@ function EarningsTab({ myAssignments = [], loggedInUser }) {
           assignment,
           event,
           eventLabel: event.shortCode || event.type || "Event",
-          when: event.startAt ? new Date(event.startAt).toLocaleDateString() : "TBD",
+          when: event.startAt
+            ? new Date(event.startAt).toLocaleDateString()
+            : "TBD",
           expected,
           paid,
           remaining,
@@ -2996,12 +3186,18 @@ function EarningsTab({ myAssignments = [], loggedInUser }) {
       <Box>
         <Typography variant="h6">Earnings</Typography>
         <Typography variant="body2" color="text.secondary">
-          Expected earnings include hourly pay plus your estimated share of event gratuity. Actual payouts show what Tipsyverse has recorded as paid.
+          Expected earnings include hourly pay plus your estimated share of
+          event gratuity. Actual payouts show what Tipsyverse has recorded as
+          paid.
         </Typography>
       </Box>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          alignItems={{ xs: "stretch", sm: "center" }}
+        >
           <FormControl size="small" sx={{ minWidth: 180 }}>
             <InputLabel>Date Range</InputLabel>
             <Select
@@ -3066,7 +3262,7 @@ function EarningsTab({ myAssignments = [], loggedInUser }) {
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-          <AccountBalanceWallet sx={{color: 'var(--primary-color)'}} />
+          <AccountBalanceWallet sx={{ color: "var(--primary-color)" }} />
           <Typography variant="subtitle1" fontWeight={700}>
             Payout Links
           </Typography>
@@ -3092,16 +3288,67 @@ function EarningsTab({ myAssignments = [], loggedInUser }) {
             </Select>
           </FormControl>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-            <TextField size="small" label="Cash App" helperText={PAYOUT_HELPER_TEXT.cashApp} value={linksForm.cashApp} onChange={(e) => setLinksForm((p) => ({ ...p, cashApp: e.target.value }))} fullWidth />
-            <TextField size="small" label="Zelle" helperText={PAYOUT_HELPER_TEXT.zelle} value={linksForm.zelle} onChange={(e) => setLinksForm((p) => ({ ...p, zelle: e.target.value }))} fullWidth />
+            <TextField
+              size="small"
+              label="Cash App"
+              helperText={PAYOUT_HELPER_TEXT.cashApp}
+              value={linksForm.cashApp}
+              onChange={(e) =>
+                setLinksForm((p) => ({ ...p, cashApp: e.target.value }))
+              }
+              fullWidth
+            />
+            <TextField
+              size="small"
+              label="Zelle"
+              helperText={PAYOUT_HELPER_TEXT.zelle}
+              value={linksForm.zelle}
+              onChange={(e) =>
+                setLinksForm((p) => ({ ...p, zelle: e.target.value }))
+              }
+              fullWidth
+            />
           </Stack>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-            <TextField size="small" label="PayPal" helperText={PAYOUT_HELPER_TEXT.paypal} value={linksForm.paypal} onChange={(e) => setLinksForm((p) => ({ ...p, paypal: e.target.value }))} fullWidth />
-            <TextField size="small" label="Venmo" helperText={PAYOUT_HELPER_TEXT.venmo} value={linksForm.venmo} onChange={(e) => setLinksForm((p) => ({ ...p, venmo: e.target.value }))} fullWidth />
+            <TextField
+              size="small"
+              label="PayPal"
+              helperText={PAYOUT_HELPER_TEXT.paypal}
+              value={linksForm.paypal}
+              onChange={(e) =>
+                setLinksForm((p) => ({ ...p, paypal: e.target.value }))
+              }
+              fullWidth
+            />
+            <TextField
+              size="small"
+              label="Venmo"
+              helperText={PAYOUT_HELPER_TEXT.venmo}
+              value={linksForm.venmo}
+              onChange={(e) =>
+                setLinksForm((p) => ({ ...p, venmo: e.target.value }))
+              }
+              fullWidth
+            />
           </Stack>
-          <TextField size="small" label="Payout notes" value={linksForm.notes} onChange={(e) => setLinksForm((p) => ({ ...p, notes: e.target.value }))} fullWidth multiline minRows={2} />
+          <TextField
+            size="small"
+            label="Payout notes"
+            value={linksForm.notes}
+            onChange={(e) =>
+              setLinksForm((p) => ({ ...p, notes: e.target.value }))
+            }
+            fullWidth
+            multiline
+            minRows={2}
+          />
           <Box>
-            <Button sx={{backgroundColor: 'var(--primary-color)'}} variant="contained" onClick={saveLinks} disabled={savingLinks}>
+            <Button
+              sx={{ backgroundColor: "var(--primary-color)" }}
+              variant="contained"
+              onClick={saveLinks}
+              disabled={savingLinks}
+            >
               {savingLinks ? "Saving..." : "Save Payout Links"}
             </Button>
           </Box>
@@ -3361,7 +3608,11 @@ function LicensesTab() {
           variant="outlined"
           startIcon={<VisibilityIcon fontSize="small" />}
           onClick={() => handleView(params.row)}
-          sx={{ textTransform: "none", color: 'var(--primary-color)', borderColor: 'var(--primary-color)' }}
+          sx={{
+            textTransform: "none",
+            color: "var(--primary-color)",
+            borderColor: "var(--primary-color)",
+          }}
         >
           View
         </Button>
@@ -3656,7 +3907,8 @@ function PreferencesTab() {
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Keep this current so Tipsyverse can reach you before or during events.
-          Emergency contact information is used only if there is a safety concern.
+          Emergency contact information is used only if there is a safety
+          concern.
         </Typography>
 
         <Stack spacing={2}>
@@ -3759,13 +4011,14 @@ function PreferencesTab() {
             size="small"
             onClick={handleManualRefresh}
             disabled={updating || !enabled}
-            sx={{color: 'var(--primary-color)', borderColor: 'var(--primary-color)'}}
+            sx={{
+              color: "var(--primary-color)",
+              borderColor: "var(--primary-color)",
+            }}
           >
             {updating ? "Updating..." : "Refresh Location"}
           </Button>
         </Stack>
-
-       
 
         {shareLive?.lastPoint && (
           <Typography
@@ -4099,27 +4352,41 @@ function BartenderHubInner() {
   );
 
   useEffect(() => {
-  dispatch(fetchMe());
-}, [dispatch]);
+    dispatch(fetchMe());
+  }, [dispatch]);
 
+  useEffect(() => {
+    if (!loggedInUser?._id) return;
 
-useEffect(() => {
-  if (!loggedInUser?._id) return;
+    dispatch(fetchMyBartenderInfo());
+    dispatch(fetchMyBids());
+    dispatch(fetchMyAssignments());
+    dispatch(fetchMyReviews());
+  }, [dispatch, loggedInUser?._id]);
 
-  dispatch(fetchMyBartenderInfo());
-  dispatch(fetchMyBids());
-  dispatch(fetchMyAssignments());
-  dispatch(fetchMyReviews());
-}, [dispatch, loggedInUser?._id]);
+  // Admin assignment changes can happen in another browser. Refresh the
+  // schedule when the bartender returns to this tab so removed events leave
+  // Upcoming immediately and appear only in Removed/All history.
+  useEffect(() => {
+    if (!loggedInUser?._id) return undefined;
+    const refreshAssignments = () => {
+      if (document.visibilityState === "visible") {
+        dispatch(fetchMyAssignments());
+      }
+    };
+    window.addEventListener("focus", refreshAssignments);
+    document.addEventListener("visibilitychange", refreshAssignments);
+    return () => {
+      window.removeEventListener("focus", refreshAssignments);
+      document.removeEventListener("visibilitychange", refreshAssignments);
+    };
+  }, [dispatch, loggedInUser?._id]);
 
-
-useEffect(() => {
-  if (bartenderInfo?.eligible) {
-    dispatch(fetchAvailableEvents());
-  }
-}, [dispatch, bartenderInfo?.eligible]);
-
-
+  useEffect(() => {
+    if (bartenderInfo?.eligible) {
+      dispatch(fetchAvailableEvents());
+    }
+  }, [dispatch, bartenderInfo?.eligible]);
 
   // 🔹 Global auto-geolocation for the entire Bartender Screen
   useEffect(() => {

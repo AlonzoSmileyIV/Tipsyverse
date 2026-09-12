@@ -262,6 +262,7 @@ const ProfileForm = ({ user }) => {
             <IconButton
               component="label"
               size="small"
+              aria-label="Upload profile photo"
               
               sx={{
                 backgroundColor: "var(--primary-color)",
@@ -276,6 +277,7 @@ const ProfileForm = ({ user }) => {
               <input
                 type="file"
                 hidden
+                aria-label="Choose profile photo"
                 accept="image/*"
                 disabled={uploadingImage}
                 onChange={(e) => handleFileChange(e, "image")}

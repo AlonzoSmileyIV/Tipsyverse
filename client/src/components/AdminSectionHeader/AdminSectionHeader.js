@@ -22,11 +22,18 @@ function AdminSectionHeader({
 }) {
   return (
     <Stack
-      direction={{ xs: "column", sm: "row" }}
+      direction="row"
       justifyContent="space-between"
-      alignItems={{ xs: "flex-start", sm: "center" }}
+      alignItems="center"
       spacing={1}
-      sx={{ minWidth: 0, width: "100%" }}
+      sx={{
+        minWidth: 0,
+        width: "100%",
+        "@media (max-width: 1000px)": {
+          flexDirection: "column",
+          alignItems: "flex-start",
+        },
+      }}
     >
       <Box sx={{ minWidth: 0 }}>
         <Typography variant="h5" fontWeight={800}>

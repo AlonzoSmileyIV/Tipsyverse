@@ -35,8 +35,8 @@ const clearOldFiles = (
 
     console.log("✅ Temp file cleanup complete.");
   } catch (error) {
-    console.error("❌ Error during temp file cleanup:", err.message);
-    console.error(err); // full error object for debugging
+    console.error("❌ Error during temp file cleanup:", error.message);
+    console.error(error); // full error object for debugging
   }
 };
 
@@ -44,7 +44,7 @@ const clearOldFiles = (
  * Schedules the cleanup of old temp files every hour
  */
 const hourlyTempFileCleanupJob = () => {
-  cron.schedule("0 * * * *", async () => {
+  return cron.schedule("0 * * * *", async () => {
     console.log("🧹 Hourly temp file cleanup job triggered.");
     clearOldFiles("public/temp", 1000 * 60 * 60); // 1 hour
   });

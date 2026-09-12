@@ -4,10 +4,14 @@ import { uploadImage } from "../../utils/index.js";
 import {
   auth,
   authEmployee,
+  authManager,
   createRateLimit,
   dedupeSuccessfulRequests,
   optionalAuth,
+  schemas,
   uploadExcel,
+  uploadComplianceDocument,
+  validateBody,
 } from "../../middleware/index.js";
 
 
@@ -33,7 +37,7 @@ const bookingEligibilityLimit = createRateLimit({
 const userActionDedupe = dedupeSuccessfulRequests({ ttlMs: 30 * 1000 });
 
 // -------- BULK --------
-userRouter.post('/bulk', auth, authEmployee, uploadExcel.single('file'), userCtrl.bulkEmployeeBulker);
+userRouter.post('/bulk', auth, authManager, uploadExcel.single('file'), userCtrl.bulkEmployeeBulker);
 
 
 userRouter.get('/me', auth, userCtrl.getMyInfo);
@@ -49,15 +53,16 @@ userRouter.get(
 );
 
 // -------- BARTENDER LICENSES --------
+userRouter.get("/compliance-policy", auth, userCtrl.getStateCompliancePolicy);
 
 // Bartender: create new license
-userRouter.post("/me/licenses", auth, userCtrl.createMyLicense);
+userRouter.post("/me/licenses", auth, uploadComplianceDocument.single("verificationDocument"), userCtrl.createMyLicense);
 
 // Bartender: view ONE of their own licenses
 userRouter.get("/me/licenses/:licenseId", auth, userCtrl.getLicenseById);
 
 // Bartender: update own license
-userRouter.patch("/me/licenses/:licenseId", auth, userCtrl.updateMyLicense);
+userRouter.patch("/me/licenses/:licenseId", auth, uploadComplianceDocument.single("verificationDocument"), userCtrl.updateMyLicense);
 
 // Bartender: get current location
 userRouter.patch("/me/bartender/location", auth, userCtrl.updateCurrentLocation);
@@ -73,6 +78,7 @@ userRouter.get(
   auth, authEmployee,
   userCtrl.getLicenseById
 );
+userRouter.get("/licenses/:licenseId/verification-document", auth, userCtrl.getLicenseVerificationDocument);
 
 // Employee/Admin: view ANY bartenders info
 userRouter.get(
@@ -82,11 +88,11 @@ userRouter.get(
 );
 
 // Employee/Admin: update approved or denied status to Bartender profile
-userRouter.post("/bartenders/:userId/profile/decision", auth, authEmployee, userCtrl.reviewBartenderProfileForAdmin);
+userRouter.post("/bartenders/:userId/profile/decision", auth, authManager, userCtrl.reviewBartenderProfileForAdmin);
 userRouter.patch(
   "/bartenders/:userId/compensation",
   auth,
-  authEmployee,
+  authManager,
   userCtrl.updateBartenderCompensationForAdmin
 );
 
@@ -94,19 +100,19 @@ userRouter.patch(
 userRouter.patch(
   "/bartenders/:userId/documents/:documentKey",
   auth,
-  authEmployee,
+  authManager,
   userCtrl.updateBartenderOnboardingDocumentForAdmin
 );
 userRouter.post(
   "/bartenders/:userId/documents/send-all",
   auth,
-  authEmployee,
+  authManager,
   userCtrl.sendBartenderOnboardingDocumentsForAdmin
 );
 userRouter.post(
   "/bartenders/:userId/documents/request-email",
   auth,
-  authEmployee,
+  authManager,
   userCtrl.sendBartenderOnboardingDocumentsForAdmin
 );
 
@@ -117,14 +123,14 @@ userRouter.post(
 userRouter.patch(
   "/:userId/licenses/:licenseId/decision",
   auth,
-  authEmployee,
+  authManager,
   userCtrl.reviewLicenseForAdmin
 );
 
 
 // -------- AUTH --------
-userRouter.post('/login', authLimit, userCtrl.login);
-userRouter.post('/logout', optionalAuth, userCtrl.logout);
+userRouter.post('/login', authLimit, validateBody(schemas.login), userCtrl.login);
+userRouter.post('/logout', optionalAuth, validateBody(schemas.logout), userCtrl.logout);
 userRouter.post('/refresh-token', userCtrl.refreshToken);
 
 
@@ -137,18 +143,19 @@ userRouter.post('/register', authLimit, optionalAuth, userCtrl.registerUser);
 // -------- PASSWORD RESET --------
 userRouter.post('/forgot-password', passwordResetLimit, userCtrl.forgotPassword);
 userRouter.post('/reset-password', passwordResetLimit, userCtrl.resetPassword);
+userRouter.post('/activate-account', passwordResetLimit, userCtrl.activateAccount);
 userRouter.put('/update-password', auth, userCtrl.updatePassword);
 userRouter.patch("/me/username", auth, userCtrl.updateMyUsername);
 
 
 
 // -------- READ --------
-userRouter.get('/', userCtrl.viewAllUsers);
-userRouter.get('/regulars', userCtrl.viewAllRegulars);
-userRouter.get('/employees', userCtrl.viewAllEmployees);
-userRouter.get('/employees/not-reporting', userCtrl.viewEmployeesNotReporting);
+userRouter.get('/', auth, authEmployee, userCtrl.viewAllUsers);
+userRouter.get('/regulars', auth, authEmployee, userCtrl.viewAllRegulars);
+userRouter.get('/employees', auth, authEmployee, userCtrl.viewAllEmployees);
+userRouter.get('/employees/not-reporting', auth, authEmployee, userCtrl.viewEmployeesNotReporting);
 userRouter.get('/booking-eligibility', bookingEligibilityLimit, userCtrl.checkBookingEligibility);
-userRouter.get('/:id', userCtrl.viewUser);
+userRouter.get('/:id', auth, authEmployee, userCtrl.viewUser);
 
 
 
@@ -159,16 +166,16 @@ userRouter.post('/deactivate', auth, userCtrl.deactivateUser);
 userRouter.patch('/me/turn-off-tutorial', auth, userCtrl.turnOffTutorial);
 userRouter.post('/me/delete', auth, userCtrl.deleteMyAccount);
 
-userRouter.put('/:id', auth, userCtrl.updateUser);
-userRouter.post('/upload-image', uploadImage.single('photo'), auth, userCtrl.uploadUserPhoto);
-userRouter.post('/:id/suspend', auth, authEmployee, userActionDedupe, userCtrl.suspendUser);
-userRouter.post('/:id/unsuspend', auth, authEmployee, userActionDedupe, userCtrl.unsuspendUser);
-userRouter.put('/:id/terminate', auth, authEmployee, userCtrl.terminateEmployee);
+userRouter.put('/:id', auth, authManager, userCtrl.updateUser);
+userRouter.post('/upload-image', auth, uploadImage.single('photo'), userCtrl.uploadUserPhoto);
+userRouter.post('/:id/suspend', auth, authManager, userActionDedupe, userCtrl.suspendUser);
+userRouter.post('/:id/unsuspend', auth, authManager, userActionDedupe, userCtrl.unsuspendUser);
+userRouter.put('/:id/terminate', auth, authManager, userCtrl.terminateEmployee);
 
 
 
 // -------- DELETE --------
-userRouter.delete("/:id/delete", auth, userCtrl.deleteUserPermanently);
+userRouter.delete("/:id/delete", auth, authManager, userCtrl.deleteUserPermanently);
 
 
 export default userRouter;

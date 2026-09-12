@@ -37,6 +37,11 @@ Thumbs.db
 # Test and coverage output
 coverage/
 .nyc_output/
+client/test-results/
+client/playwright-report/
+client/blob-report/
+.lighthouseci/
+client/.lighthouseci/
 
 # Temporary files
 tmp/

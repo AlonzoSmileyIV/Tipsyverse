@@ -220,7 +220,7 @@ const MyLearningCoursesScreen = () => {
         >
           {/* Header */}
           <Stack spacing={1} sx={{ mb: 2 }}>
-            <Typography variant="h4" fontWeight={800}>
+            <Typography component="h1" variant="h4" fontWeight={800}>
               My Courses
             </Typography>
             <Typography variant="body2" color="text.secondary">
@@ -234,9 +234,9 @@ const MyLearningCoursesScreen = () => {
               <Card>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <SchoolOutlinedIcon fontSize="small" />
-                  <Typography variant="subtitle2">In Progress</Typography>
+                  <Typography component="span" variant="subtitle2">In Progress</Typography>
                 </Stack>
-                <Typography variant="h5" sx={{ mt: 1 }}>
+                <Typography component="p" variant="h5" sx={{ mt: 1 }}>
                   {loading ? <Skeleton width={40} /> : summary.inProgress}
                 </Typography>
               </Card>
@@ -245,9 +245,9 @@ const MyLearningCoursesScreen = () => {
               <Card>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <CheckCircleOutlineIcon fontSize="small" />
-                  <Typography variant="subtitle2">Completed</Typography>
+                  <Typography component="span" variant="subtitle2">Completed</Typography>
                 </Stack>
-                <Typography variant="h5" sx={{ mt: 1 }}>
+                <Typography component="p" variant="h5" sx={{ mt: 1 }}>
                   {loading ? <Skeleton width={40} /> : summary.completed}
                 </Typography>
               </Card>
@@ -256,9 +256,9 @@ const MyLearningCoursesScreen = () => {
               <Card>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <TimelineIcon fontSize="small" />
-                  <Typography variant="subtitle2">Modules Finished</Typography>
+                  <Typography component="span" variant="subtitle2">Modules Finished</Typography>
                 </Stack>
-                <Typography variant="h5" sx={{ mt: 1 }}>
+                <Typography component="p" variant="h5" sx={{ mt: 1 }}>
                   {loading ? <Skeleton width={60} /> : summary.modulesDone}
                 </Typography>
               </Card>

@@ -144,12 +144,10 @@ async function runLicenseExpiryPass() {
       const expSafe = normalizeDateOnlyUTC(expRaw);
       const expYMD = ymdInTZ(expSafe, TZ);
 
-      // console.log("expYMD: ", expYMD);
       const daysLeft = daysBetweenYMD(todayYMD, expYMD);
       if (!Number.isFinite(daysLeft)) continue;
 
       // Debug log (keep until you trust it)
-      // console.log({ todayYMD, expYMD, daysLeft, licId: String(lic._id) });
 
       const isExpired = daysLeft < 0;
 
@@ -230,6 +228,7 @@ async function runLicenseExpiryPass() {
           { arrayFilters: [{ "l._id": lic._id }] }
         );
       }
+
     }
   }
 
@@ -240,11 +239,8 @@ async function runLicenseExpiryPass() {
 
 /* ----------------------- cron wrapper ----------------------- */
 const dailyLicenseExpiryReminderJob = () => {
-  // TEST: every minute
-  // cron.schedule("* * * * *", async () => { ... }, { timezone: TZ });
-
   // Run shortly after local midnight so expired licenses are marked early.
-  cron.schedule(
+  return cron.schedule(
     "5 0 * * *",
     async () => {
       console.log("⏱️ Daily license expiry job triggered.");

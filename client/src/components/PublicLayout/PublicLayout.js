@@ -11,8 +11,9 @@ const PublicLayout = ({children}) => {
       flexDirection="column"
       minHeight="100vh"
     >
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <Header />
-      <Box component="main" flex="1">
+      <Box component="main" id="main-content" flex="1">
         {children}
       </Box>
       <Footer />

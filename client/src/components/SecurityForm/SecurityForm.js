@@ -136,6 +136,7 @@ const SecurityForm = ({ user }) => {
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
+                  aria-label={showPassword ? "Hide new password" : "Show new password"}
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                 >
@@ -159,6 +160,7 @@ const SecurityForm = ({ user }) => {
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
+                  aria-label={showConfirmPassword ? "Hide password confirmation" : "Show password confirmation"}
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   edge="end"
                 >

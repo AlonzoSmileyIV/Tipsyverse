@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Button } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
-import * as XLSX from "xlsx";
 import AdminCustomers from "../AdminCustomers/AdminCustomers";
 import AdminBartenders from "../AdminBartenders/AdminBartenders";
 import AdminBartenderLicenses from "../AdminBartenderLicenses/AdminBartenderLicenses";
@@ -14,6 +13,7 @@ import {
 } from "../../features/users/userSlice";
 import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminSummaryCards from "../AdminSummaryCards/AdminSummaryCards";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const primaryButtonSx = {
   color: "var(--primary-color)",
@@ -35,7 +35,8 @@ const toArray = (payload) => {
   return [];
 };
 
-const downloadRows = (rows, sheetName) => {
+const downloadRows = async (rows, sheetName) => {
+  const XLSX = await loadSpreadsheet();
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
@@ -99,9 +100,9 @@ function AdminUsers() {
     refreshAll();
   }, [refreshAll]);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (tab === "customers") {
-      downloadRows(
+      await downloadRows(
         customers.map((user) => ({
           Name: user.fullName,
           Email: user.email,
@@ -119,7 +120,7 @@ function AdminUsers() {
         Email: user.email,
         Status: user.bartenderStatus || "",
       }));
-      downloadRows(rows, "Bartenders");
+      await downloadRows(rows, "Bartenders");
       return;
     }
 
@@ -137,11 +138,14 @@ function AdminUsers() {
         Status: license.status || "",
         Expires: license.expiresAt || "",
       }));
-      downloadRows(rows, licensesNeedReviewOnly ? "Licenses Need Review" : "Licenses");
+      await downloadRows(
+        rows,
+        licensesNeedReviewOnly ? "Licenses Need Review" : "Licenses"
+      );
       return;
     }
 
-    downloadRows(
+    await downloadRows(
       team.map((employee) => ({
         Name: employee.fullName,
         Email: employee.email,
@@ -175,6 +179,15 @@ function AdminUsers() {
 
       <AdminSummaryCards
         cards={summaryCards}
+        sx={{
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+          "@media (max-width: 1500px)": {
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          },
+          "@media (max-width: 599.95px)": {
+            gridTemplateColumns: "1fr",
+          },
+        }}
         selectedKey={tab}
         onSelect={(key) => {
           setTab(key);
