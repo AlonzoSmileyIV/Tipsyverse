@@ -17,6 +17,7 @@ describe("eventSummary", () => {
     expect(getEventPaymentSummary(event, 600)).toEqual({
       total: 300,
       paid: 125,
+      retained: 0,
       balance: 175,
       credit: 0,
     });
@@ -54,6 +55,22 @@ describe("eventSummary", () => {
   it("rounds payment summaries to currency precision", () => {
     expect(
       getEventPaymentSummary({ payment: { total: 0.3, paidTotal: 0.1 + 0.2 } })
-    ).toEqual({ total: 0.3, paid: 0.3, balance: 0, credit: 0 });
+    ).toEqual({ total: 0.3, paid: 0.3, retained: 0, balance: 0, credit: 0 });
+  });
+
+  it("turns a canceled event's net payment into reviewable credit", () => {
+    expect(
+      getEventPaymentSummary({
+        status: "canceled",
+        payment: { total: 500, paidTotal: 200 },
+        cancellation: { retainedAmount: 25 },
+      })
+    ).toEqual({
+      total: 500,
+      paid: 200,
+      retained: 25,
+      balance: 0,
+      credit: 175,
+    });
   });
 });

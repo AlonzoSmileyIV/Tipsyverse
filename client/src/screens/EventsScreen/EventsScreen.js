@@ -23,6 +23,7 @@ import {
   DialogContent,
   TextField,
   DialogActions,
+  Alert,
 } from "@mui/material";
 import {
   CalendarMonth,
@@ -209,7 +210,7 @@ function StatCard({ label, value, detail }) {
 function EventCard({ event, onCancel, onView, onVerifyAttendance }) {
   const paidTotal = getEventPaidTotal(event);
   const paymentTotal = getEventTotal(event);
-  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal);
+  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal, event);
   const paymentPolicy = getEventPaymentPolicyView(event, {
     total: paymentTotal,
     paid: paidTotal,
@@ -808,6 +809,12 @@ export default function EventsHub() {
             <Typography sx={{ mb: 2 }}>
               Are you sure you want to cancel this event?
             </Typography>
+
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Cancellation stops pending payment requests and sets the event balance to $0.00.
+              No refund is issued automatically. Any recorded payment is sent to staff for
+              refund review under the cancellation policy.
+            </Alert>
 
             {eventToCancel && (
               <Box sx={{ mb: 2, p: 2, bgcolor: "#f7f7f7", borderRadius: 2 }}>

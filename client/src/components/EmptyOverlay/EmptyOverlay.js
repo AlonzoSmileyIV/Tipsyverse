@@ -17,9 +17,11 @@ const EmptyOverlay = ({
   secondaryButton,
   onSecondaryClick,
   imageHeight = 180,
+  inGrid = true,
 }) => {
   return (
     <Box
+      role={inGrid ? "row" : undefined}
       sx={{
         height: "100%",
         minHeight: 350,
@@ -30,7 +32,12 @@ const EmptyOverlay = ({
         p: 4,
       }}
     >
-      <Stack spacing={2} alignItems="center" maxWidth={450}>
+      <Stack
+        role={inGrid ? "gridcell" : undefined}
+        spacing={2}
+        alignItems="center"
+        maxWidth={450}
+      >
         <Box
           component="img"
           src={image}

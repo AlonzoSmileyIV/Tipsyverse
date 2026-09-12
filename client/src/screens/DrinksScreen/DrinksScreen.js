@@ -454,11 +454,14 @@ const DrinksScreen = () => {
         description="Find trending cocktail recipes, share your creations, and sip your way through inspiration."
         keywords="cocktail recipes, trending drinks, mixology, tipsyverse, find cocktail recipes, recipe drinks"
       />
+      <Typography component="h1" className="visually-hidden">
+        Explore Drinks
+      </Typography>
       {isLoading ? (
         <LoadingSkeleton />
       ) : (
         <Box sx={{ px: { xs: 2, md: 6 }, py: 4 }}>
-          <Typography variant="h4" gutterBottom>
+          <Typography component="h2" variant="h4" gutterBottom>
             Explore Drinks
           </Typography>
 

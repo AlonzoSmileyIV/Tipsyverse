@@ -38,6 +38,11 @@ import {
 import { assertBartendersCompliantForEvent } from "../../utils/libs/bartenderCompliance.js";
 import { resolveVenueTimezone } from "../../utils/libs/resolveVenueTimezone.js";
 import { cancelStripePaymentIntents } from "../../utils/libs/cancelStripePaymentIntents.js";
+import {
+  CUSTOMER_CANCELLATION_REASONS,
+  STAFF_CANCELLATION_REASONS,
+  deriveCancellationPolicy,
+} from "../../utils/libs/cancellationPolicy.js";
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
@@ -3157,14 +3162,56 @@ const eventCtrl = {
           .json({ success: false, message: "Event is already canceled" });
       }
 
+      const staffCancellation = ["admin", "employee"].includes(req.user?.role);
+      const permittedReasons = new Set(
+        staffCancellation
+          ? STAFF_CANCELLATION_REASONS
+          : CUSTOMER_CANCELLATION_REASONS
+      );
+      if (!permittedReasons.has(normalizedReason)) {
+        return res.status(400).json({
+          success: false,
+          message: "Select a valid cancellation reason for your role.",
+        });
+      }
+
       // Claim the transition atomically. Concurrent cancel requests cannot
       // both send notifications or append duplicate activity records.
       const canceledAt = new Date();
-      const cancelableStripeRequests = await PaymentRequest.find({
-        event: id,
-        status: "sent",
-        stripePaymentIntentId: { $exists: true, $ne: "" },
-      }).select("stripePaymentIntentId").lean();
+      const [
+        cancelableStripeRequests,
+        activeAssignmentsBeforeCancellation,
+        activeBidsBeforeCancellation,
+        paidRows,
+      ] = await Promise.all([
+        PaymentRequest.find({
+          event: id,
+          status: "sent",
+          stripePaymentIntentId: { $exists: true, $ne: "" },
+        }).select("stripePaymentIntentId").lean(),
+        Assignment.find({ event: id, status: "active" })
+          .select("bartenderUser")
+          .lean(),
+        Bid.find({ event: id, status: { $in: ["interested", "waitlist", "selected"] } })
+          .select("bartenderUser")
+          .lean(),
+        Payment.aggregate([
+          { $match: { event: evt._id, status: "recorded" } },
+          {
+            $group: {
+              _id: "$event",
+              total: {
+                $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
+              },
+            },
+          },
+        ]),
+      ]);
+      const cancellationPolicy = deriveCancellationPolicy({
+        event: evt,
+        paid: Number(paidRows[0]?.total) || 0,
+        now: canceledAt,
+      });
       const session = await mongoose.startSession();
       let canceledEvent = null;
       try {
@@ -3182,11 +3229,24 @@ const eventCtrl = {
                 cancelReason: normalizedReason,
                 cancelReasonOther:
                   normalizedReason === "other" ? normalizedOtherReason : null,
+                cancellation: {
+                  policyVersion: cancellationPolicy.policyVersion,
+                  timingTier: cancellationPolicy.timingTier,
+                  cancellationFee: cancellationPolicy.cancellationFee,
+                  retainedAmount: cancellationPolicy.retainedAmount,
+                  paidAtCancellation: cancellationPolicy.paidAtCancellation,
+                  refundEligibleAmount: cancellationPolicy.refundEligibleAmount,
+                  refundReviewStatus: cancellationPolicy.refundReviewStatus,
+                  automaticRefund: false,
+                },
                 "visibility.onBiddingBoard": false,
                 "counts.assigned": 0,
-                ...(normalizedReason === "nonpayment"
-                  ? { "payment.policyStatus": "canceled_nonpayment" }
-                  : {}),
+                "payment.balance": 0,
+                "payment.overpayment": cancellationPolicy.refundEligibleAmount,
+                "payment.policyStatus":
+                  normalizedReason === "nonpayment"
+                    ? "canceled_nonpayment"
+                    : "canceled",
               },
             },
             { new: true, runValidators: true, session }
@@ -3228,17 +3288,14 @@ const eventCtrl = {
       );
 
       // notify interested + assigned bartenders
-      const [assignments, bids] = await Promise.all([
-        Assignment.find({ event: id }),
-        Bid.find({ event: id }),
+      const recipientIds = new Set([
+        ...activeAssignmentsBeforeCancellation.map((row) => String(row.bartenderUser)),
+        ...activeBidsBeforeCancellation.map((row) => String(row.bartenderUser)),
       ]);
-
-      const recipients = [
-        ...assignments.map((a) => ({ id: a.bartenderUser })),
-        ...bids
-          .filter((b) => ["interested", "waitlist"].includes(b.status))
-          .map((b) => ({ id: b.bartenderUser })),
-      ];
+      const actorId = String(req.user?.id || req.user?._id || "");
+      const customerId = String(evt.organizer || evt.contact?.userId || "");
+      if (customerId && customerId !== actorId) recipientIds.add(customerId);
+      const recipients = [...recipientIds].filter(Boolean).map((id) => ({ id }));
 
       if (recipients.length) {
         await sendNotification?.({
@@ -3292,6 +3349,12 @@ const eventCtrl = {
       ${reasonText}
     </p>
 
+    <p><strong>Payment handling:</strong><br/>
+      No automatic refund was issued. ${cancellationPolicy.paidAtCancellation > 0
+        ? `$${cancellationPolicy.refundEligibleAmount.toFixed(2)} is marked for staff refund review.`
+        : "No recorded payment requires refund review."}
+    </p>
+
     <p>If this cancellation was made in error or you’d like to submit a new event request, feel free to reach out anytime.</p>
 
     <p>Thank you,<br/>The Tipsyverse Team</p>
@@ -3314,6 +3377,7 @@ const eventCtrl = {
         meta: {
           cancelReason: evt.cancelReason,
           cancelReasonOther: evt.cancelReasonOther,
+          cancellation: evt.cancellation,
         },
       });
 

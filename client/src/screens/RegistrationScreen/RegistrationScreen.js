@@ -190,7 +190,7 @@ const RegistrationScreen = () => {
         description="Create a Tipsyverse account to save cocktail recipes, book bartending events, submit support tickets, and apply for bartender opportunities."
         keywords="Tipsyverse registration, create account, cocktail account, book bartenders, bartender signup"
       />
-      <Typography variant="h5" fontWeight={600} gutterBottom>
+      <Typography component="h1" variant="h5" fontWeight={600} gutterBottom>
         Register
       </Typography>
 
@@ -315,6 +315,7 @@ const RegistrationScreen = () => {
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                 >
@@ -374,7 +375,7 @@ const RegistrationScreen = () => {
           Already have an account?{" "}
           <Link
             href="/login"
-            underline="hover"
+            underline="always"
             sx={{ color: "var(--primary-color)" }}
           >
             Login

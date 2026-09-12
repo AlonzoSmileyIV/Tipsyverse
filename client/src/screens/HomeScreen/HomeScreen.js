@@ -255,6 +255,9 @@ const HomeScreen = () => {
         description="Book professional bartending services, take practical bartending courses, and discover cocktail inspiration with Tipsyverse."
         keywords="event bartenders, bartender booking, bartending courses, cocktail recipes, tipsyverse"
       />
+      <Typography component="h1" className="visually-hidden">
+        Discover cocktails, bartending services, and courses with Tipsyverse
+      </Typography>
       {isLoading ? (
         <LoadingSkeleton />
       ) : (

@@ -57,6 +57,35 @@ test("login is keyboard navigable and has no serious axe violations", async ({
   expect(secondFocus).toBeTruthy();
 });
 
+test("registration and booking have no serious accessibility violations", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("ageVerified", "true");
+    localStorage.setItem("hasSeenTutorial", "true");
+  });
+
+  for (const route of ["/register", "/book"]) {
+    await page.goto(route);
+    const analysis = await new AxeBuilder({ page }).analyze();
+    expect(
+      analysis.violations.filter(({ impact }) =>
+        ["serious", "critical"].includes(impact)
+      ),
+      `${route} should have no serious or critical accessibility violations`
+    ).toEqual([]);
+  }
+});
+
+test("tutorial does not interrupt a direct booking visit", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("ageVerified", "true"));
+  await page.goto("/book");
+  await expect(page.getByRole("heading", { name: "Book an Event" })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: /welcome to tipsyverse/i })
+  ).toBeHidden();
+});
+
 test("age verification persists after a full page reload", async ({ page }) => {
   await page.goto("/");
   const dialog = page.getByRole("dialog", { name: /welcome to tipsyverse/i });

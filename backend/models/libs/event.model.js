@@ -133,6 +133,7 @@ const PaymentSnapshotSchema = new mongoose.Schema(
         "action_required",
         "arrangement",
         "paid",
+        "canceled",
         "canceled_nonpayment",
       ],
       default: "not_priced",
@@ -350,6 +351,24 @@ const EventSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: null,
+    },
+    cancellation: {
+      policyVersion: { type: String, trim: true, default: null },
+      timingTier: {
+        type: String,
+        enum: ["unscheduled", "before_48_hours", "inside_48_hours", "event_started"],
+        default: null,
+      },
+      cancellationFee: { type: Number, min: 0, default: 0 },
+      retainedAmount: { type: Number, min: 0, default: 0 },
+      paidAtCancellation: { type: Number, min: 0, default: 0 },
+      refundEligibleAmount: { type: Number, min: 0, default: 0 },
+      refundReviewStatus: {
+        type: String,
+        enum: ["not_required", "pending", "resolved"],
+        default: "not_required",
+      },
+      automaticRefund: { type: Boolean, default: false },
     },
 
     visibility: {

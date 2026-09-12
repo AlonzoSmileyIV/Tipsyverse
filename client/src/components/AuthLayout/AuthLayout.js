@@ -30,8 +30,10 @@ const AuthLayout = ({
         flexDirection: isSmallScreen ? "column" : "row",
       }}
     >
-      {/* 🔁 Auth Form Panel */}
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <Box
+        component="main"
+        id="main-content"
         sx={{
           width: isSmallScreen ? "100%" : "50%",
           order: isSmallScreen ? 1 : isLeft ? 1 : 0, // ⬅️ switch order
@@ -57,6 +59,8 @@ const AuthLayout = ({
 
       {/* 🔁 Circle Message Panel */}
       <Box
+        component="aside"
+        aria-label="Account access information"
         sx={{
           width: isSmallScreen ? "100%" : "50%",
           order: isSmallScreen ? 0 : isLeft ? 0 : 1, // ⬅️ switch order
@@ -71,7 +75,7 @@ const AuthLayout = ({
           textAlign: "center",
         }}
       >
-        <Typography variant="h4" fontWeight="bold" sx={{ mb: 6 }}>
+        <Typography component="h2" variant="h4" fontWeight="bold" sx={{ mb: 6 }}>
           {message}
         </Typography>
 

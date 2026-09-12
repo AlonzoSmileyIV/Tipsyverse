@@ -67,8 +67,11 @@ export default defineConfig(({ mode }) => {
             if (/node_modules\/(@mui|@emotion)\//.test(id)) {
               return "vendor-mui";
             }
-            if (/node_modules\/(@stripe|@sentry)\//.test(id)) {
-              return "vendor-integrations";
+            if (/node_modules\/@sentry\//.test(id)) {
+              return "vendor-sentry";
+            }
+            if (/node_modules\/@stripe\//.test(id)) {
+              return "vendor-stripe";
             }
             return undefined;
           },

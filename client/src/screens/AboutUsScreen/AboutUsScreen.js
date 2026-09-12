@@ -12,17 +12,17 @@ const AboutUsScreen = () => {
         keywords="about Tipsyverse, cocktail community, bartending services, mobile bartenders, cocktail discovery, bartender training"
       />
     <Container maxWidth="md" sx={{ py: 6 }}>
-        <Typography variant="h3" gutterBottom textAlign="center" fontWeight={700}>
+        <Typography component="h1" variant="h3" gutterBottom textAlign="center" fontWeight={700}>
           About Us
         </Typography>
 
-        <Typography variant="h6" textAlign="center" color="text.secondary" mb={4}>
+        <Typography component="p" variant="h6" textAlign="center" color="text.secondary" mb={4}>
           Tipsyverse is your digital lounge to discover, share, and enjoy cocktail recipes from around the world.
         </Typography>
 
         <Grid container spacing={4}>
           <Grid item xs={12} md={6}>
-            <Typography variant="h5" fontWeight={600} gutterBottom>
+            <Typography component="h2" variant="h5" fontWeight={600} gutterBottom>
               Who We Are
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -33,7 +33,7 @@ const AboutUsScreen = () => {
           </Grid>
 
           <Grid item xs={12} md={6}>
-            <Typography variant="h5" fontWeight={600} gutterBottom>
+            <Typography component="h2" variant="h5" fontWeight={600} gutterBottom>
               Why Tipsyverse?
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -44,7 +44,7 @@ const AboutUsScreen = () => {
           </Grid>
 
           <Grid item xs={12}>
-            <Typography variant="h5" fontWeight={600} gutterBottom>
+            <Typography component="h2" variant="h5" fontWeight={600} gutterBottom>
               What We Believe
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -55,7 +55,7 @@ const AboutUsScreen = () => {
           </Grid>
 
           <Grid item xs={12}>
-            <Typography variant="h5" fontWeight={600} gutterBottom>
+            <Typography component="h2" variant="h5" fontWeight={600} gutterBottom>
               Our Mission
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -68,7 +68,7 @@ const AboutUsScreen = () => {
         </Grid>
 
         <Box mt={6} textAlign="center">
-          <Typography variant="subtitle1" color="text.secondary">
+          <Typography component="p" variant="subtitle1" color="text.secondary">
             Always sip responsibly. Never drink and drive.
           </Typography>
         </Box>

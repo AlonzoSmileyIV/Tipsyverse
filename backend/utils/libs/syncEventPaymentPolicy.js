@@ -30,7 +30,7 @@ export const syncEventPaymentPolicy = async (eventId, { now = new Date() } = {})
   if (!mongoose.isValidObjectId(eventId)) return null;
 
   const event = await Event.findById(eventId)
-    .select("startAt timezone location.timezone createdAt updatedAt status payment")
+    .select("startAt timezone location.timezone createdAt updatedAt status payment cancellation cancelReason")
     .lean();
   if (!event) return null;
 
@@ -59,15 +59,40 @@ export const syncEventPaymentPolicy = async (eventId, { now = new Date() } = {})
       : paid > 0
       ? "partially_paid"
       : "none";
+  const isCanceled = event.status === "canceled";
+  const retainedAmount = Math.max(0, Number(event.cancellation?.retainedAmount) || 0);
+  const cancellationCredit = Math.max(
+    0,
+    Math.round((paid - retainedAmount) * 100) / 100
+  );
+  const paidAtCancellation = Math.max(
+    0,
+    Number(event.cancellation?.paidAtCancellation) || 0
+  );
   const update = {
     // Keep the event's denormalized payment summary aligned with the Payment
     // ledger. Workflow and customer event views can therefore render the same
     // values immediately, while the ledger remains the source of truth.
     "payment.paidTotal": paid,
-    "payment.balance": balance,
-    "payment.overpayment": overpayment,
+    "payment.balance": isCanceled ? 0 : balance,
+    "payment.overpayment": isCanceled ? cancellationCredit : overpayment,
     "payment.status": paymentStatus,
-    "payment.policyStatus": result.status,
+    "payment.policyStatus": isCanceled
+      ? event.cancelReason === "nonpayment"
+        ? "canceled_nonpayment"
+        : "canceled"
+      : result.status,
+    ...(isCanceled
+      ? {
+          "cancellation.refundEligibleAmount": cancellationCredit,
+          "cancellation.refundReviewStatus":
+            cancellationCredit > 0
+              ? "pending"
+              : paidAtCancellation > 0
+              ? "resolved"
+              : "not_required",
+        }
+      : {}),
     ...(schedule
       ? {
           "payment.balanceDueAt": schedule.dueAt,
@@ -85,8 +110,8 @@ export const syncEventPaymentPolicy = async (eventId, { now = new Date() } = {})
     event,
     paid,
     total,
-    balance,
-    overpayment,
+    balance: isCanceled ? 0 : balance,
+    overpayment: isCanceled ? cancellationCredit : overpayment,
     paymentStatus,
   };
 };

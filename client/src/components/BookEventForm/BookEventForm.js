@@ -857,7 +857,7 @@ export default function BookEventForm({
       <Card sx={{ borderRadius: 3 }}>
         <CardHeader
           title={
-            <Typography variant="h5" fontWeight={800}>
+            <Typography component="h1" variant="h5" fontWeight={800}>
               Book an Event
             </Typography>
           }
@@ -1187,6 +1187,8 @@ export default function BookEventForm({
               </Typography>
 
               <Box
+                tabIndex={0}
+                aria-label="Booking policies and service agreement"
                 sx={{
                   maxHeight: { xs: 380, sm: 460 },
                   overflowY: "auto",

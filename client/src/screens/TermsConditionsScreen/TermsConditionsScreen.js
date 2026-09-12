@@ -185,7 +185,7 @@ const TermsConditionsScreen = () => {
         keywords="Tipsyverse terms, terms and conditions, event booking terms, bartender agreement, platform rules, payment terms"
       />
       <Container maxWidth="md" sx={{ py: 6 }}>
-        <Typography variant="h3" gutterBottom textAlign="center" fontWeight={700}>
+        <Typography component="h1" variant="h3" gutterBottom textAlign="center" fontWeight={700}>
           Terms & Conditions
         </Typography>
 
@@ -200,7 +200,7 @@ const TermsConditionsScreen = () => {
 
         {termsSections.map((section) => (
           <Box key={section.title} sx={{ mt: 3 }}>
-            <Typography variant="h6" fontWeight={700} gutterBottom>
+            <Typography component="h2" variant="h6" fontWeight={700} gutterBottom>
               {section.title}
             </Typography>
             {section.body.map((paragraph) => (

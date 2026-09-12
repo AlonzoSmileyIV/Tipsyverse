@@ -15,4 +15,17 @@ describe("getCustomerPaymentStatus", () => {
     expect(getCustomerPaymentStatus(100, 25).key).toBe("partially_paid");
     expect(getCustomerPaymentStatus(100, 0).key).toBe("balance_due");
   });
+
+  it("shows refund review instead of a balance for a canceled event", () => {
+    expect(
+      getCustomerPaymentStatus(500, 200, {
+        status: "canceled",
+        cancellation: { retainedAmount: 25 },
+      })
+    ).toMatchObject({ key: "refund_review", label: "Refund review $175.00" });
+    expect(getCustomerPaymentStatus(500, 0, { status: "canceled" })).toMatchObject({
+      key: "canceled",
+      label: "Canceled — no balance due",
+    });
+  });
 });

@@ -30,11 +30,18 @@ export const getEventPaymentTotal = (event = {}, fallbackTotal = 0) => {
 export const getEventPaymentSummary = (event = {}, fallbackTotal = 0) => {
   const total = roundMoney(getEventPaymentTotal(event, fallbackTotal));
   const paid = roundMoney(getEventPaidTotal(event));
+  const canceled = String(event?.status || "").toLowerCase() === "canceled";
+  const retained = canceled
+    ? Math.min(paid, Math.max(0, roundMoney(event?.cancellation?.retainedAmount)))
+    : 0;
   return {
     total,
     paid,
-    balance: Math.max(0, roundMoney(total - paid)),
-    credit: Math.max(0, roundMoney(paid - total)),
+    retained,
+    balance: canceled ? 0 : Math.max(0, roundMoney(total - paid)),
+    credit: canceled
+      ? Math.max(0, roundMoney(paid - retained))
+      : Math.max(0, roundMoney(paid - total)),
   };
 };
 

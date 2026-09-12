@@ -1116,8 +1116,9 @@ function BartenderHomeTab({
           sx={{ mb: 2 }}
         >
           <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 180 } }}>
-            <InputLabel>Event Date Range</InputLabel>
+            <InputLabel id="ready-event-date-range-label">Event Date Range</InputLabel>
             <Select
+              labelId="ready-event-date-range-label"
               label="Event Date Range"
               value={readyRange}
               onChange={(e) => setReadyRange(e.target.value)}

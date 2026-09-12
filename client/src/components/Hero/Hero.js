@@ -114,6 +114,7 @@ const Hero = () => {
           }}
         >
           <Typography
+            component="h2"
             variant="h3"
             sx={{
               fontWeight: 800,
@@ -130,6 +131,7 @@ const Hero = () => {
           </Typography>
 
           <Typography
+            component="p"
             variant="h6"
             sx={{
               color: "rgba(255,255,255,0.9)",

@@ -200,6 +200,7 @@ const Header = () => {
   return (
     <>
     <AppBar
+      component="header"
       position="sticky"
       sx={{
         backgroundColor: "var(--background-color)",
@@ -240,6 +241,8 @@ const Header = () => {
         {/* Tabs + CTAs (desktop) */}
         {!isMobile ? (
           <Box
+            component="nav"
+            aria-label="Primary navigation"
             sx={{ display: "flex", alignItems: "center", gap: 2, mx: "auto" }}
           >
             <Tabs
@@ -322,11 +325,13 @@ const Header = () => {
           </Box>
         ) : (
           /* Mobile menu */
-          <>
+          <Box component="nav" aria-label="Primary navigation">
             <IconButton
               onClick={handleMenuOpen}
               color="inherit"
               aria-label="open navigation menu"
+              aria-haspopup="menu"
+              aria-expanded={open}
             >
               <MenuIcon />
             </IconButton>
@@ -420,7 +425,7 @@ const Header = () => {
                 </MenuItem>
               )}
             </Menu>
-          </>
+          </Box>
         )}
 
         {/* Notifications + Auth */}
@@ -454,12 +459,21 @@ const Header = () => {
 
           {user ? (
             <Box
+              component="button"
+              type="button"
+              aria-label="Open account menu"
+              aria-haspopup="menu"
+              aria-expanded={Boolean(userMenuAnchor)}
               onClick={handleUserClick}
               sx={{
                 display: "flex",
                 alignItems: "center",
                 gap: 1,
                 cursor: "pointer",
+                border: 0,
+                color: "inherit",
+                font: "inherit",
+                backgroundColor: "transparent",
                 px: 1.5,
                 py: 1,
                 borderRadius: 2,

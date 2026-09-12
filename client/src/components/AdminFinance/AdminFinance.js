@@ -237,7 +237,6 @@ const buildFinanceRows = ({
   (events || []).forEach((event) => {
     const eventId = getEventId(event);
     if (!eventId) return;
-    if (event.status === "canceled") return;
     if (!getEventTotal(event, 0)) return;
 
     map[eventId] = {
@@ -296,8 +295,19 @@ const buildFinanceRows = ({
         0
       );
       const customerTotal = getEventTotal(row.event, row.received);
-      const customerBalance = Math.max(0, customerTotal - row.received);
-      const customerCredit = Math.max(0, row.received - customerTotal);
+      const canceled = row.event?.status === "canceled";
+      const retainedAmount = canceled
+        ? Math.min(
+            row.received,
+            Math.max(0, Number(row.event?.cancellation?.retainedAmount) || 0)
+          )
+        : 0;
+      const customerBalance = canceled
+        ? 0
+        : Math.max(0, customerTotal - row.received);
+      const customerCredit = canceled
+        ? Math.max(0, row.received - retainedAmount)
+        : Math.max(0, row.received - customerTotal);
       const bartenderBalance = Math.max(0, bartenderExpected - bartenderPaid);
       const paymentPolicy = getEventPaymentPolicyView(row.event, {
         total: customerTotal,
@@ -309,7 +319,11 @@ const buildFinanceRows = ({
         customerTotal,
         customerBalance,
         customerCredit,
-        customerStatus: getCustomerPaymentStatus(row.received, customerTotal),
+        customerStatus: canceled
+          ? customerCredit > 0
+            ? "Canceled / Refund review"
+            : "Canceled / Settled"
+          : getCustomerPaymentStatus(row.received, customerTotal),
         paymentPolicy,
         bartenderExpected,
         bartenderPaid,
@@ -1158,7 +1172,7 @@ export default function AdminFinance() {
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
           slots={{
             noRowsOverlay: () => (
-              <EmptyOverlay message={emptyFinanceMessage} />
+              <EmptyOverlay inGrid message={emptyFinanceMessage} />
             ),
           }}
           // MUI v5 fallback (safe to keep)
@@ -1249,7 +1263,9 @@ export default function AdminFinance() {
                 selectedRow.customerBalance > 0
                   ? "This event has a customer balance due. Review payment records before sending reminders or closing the event."
                   : selectedRow.customerCredit > 0
-                    ? "This event has an overpayment recorded as customer credit. A refund is optional and should only be recorded if money is actually returned."
+                    ? selectedRow.event?.status === "canceled"
+                      ? "This event is canceled. The available customer credit is awaiting refund review; record a refund only after money is returned."
+                      : "This event has an overpayment recorded as customer credit. A refund is optional and should only be recorded if money is actually returned."
                   : selectedEventDone
                     ? "This completed event is paid from the customer side. Review bartender payouts before closing finance work."
                     : "This event is still active. Payout controls unlock after the event is completed."
@@ -1304,7 +1320,9 @@ export default function AdminFinance() {
                   <Stack spacing={1.5}>
                     <Typography variant="body2">
                       Customer credit on this event: <strong>{fmtMoney(selectedRow.customerCredit)}</strong>.
-                      Refunds cannot exceed the available credit.
+                      {selectedRow.event?.status === "canceled"
+                        ? " This canceled event has no balance due. No refund is automatic; refunds cannot exceed the amount approved for review."
+                        : " Refunds cannot exceed the available credit."}
                     </Typography>
                     <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "flex-start" }}>
                       <TextField

@@ -7,6 +7,11 @@ const appTheme = createTheme({
     primary: {
       main: PRIMARY_COLOR,
     },
+    text: {
+      primary: "#26384A",
+      secondary: "#526171",
+      disabled: "#626D78",
+    },
   },
   typography: {
     fontFamily: "'Poppins', sans-serif",
@@ -15,6 +20,8 @@ const appTheme = createTheme({
     MuiTab: {
       styleOverrides: {
         root: {
+          color: "#526171",
+          opacity: 1,
           "&.Mui-selected": {
             color: "var(--primary-color)",
           },

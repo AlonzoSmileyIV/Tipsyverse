@@ -56,6 +56,7 @@ export default function AppOverlays({
     !AGE_EXCLUDED_ROUTES.some((path) => location.pathname.startsWith(path));
   const showTutorial =
     !showAgeModal &&
+    ["/", "/home"].includes(location.pathname) &&
     !TUTORIAL_EXCLUDED_ROUTES.some((path) =>
       location.pathname.startsWith(path)
     ) &&

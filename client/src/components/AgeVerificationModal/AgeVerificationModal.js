@@ -73,6 +73,8 @@ const AgeVerificationModal = ({ open, onVerify }) => {
       TransitionProps={{ direction: "down" }}
     >
       <Box
+        tabIndex={0}
+        aria-label="Age verification form"
         sx={{
           p: 3,
           width: "100%",

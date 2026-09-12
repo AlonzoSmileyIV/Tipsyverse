@@ -46,7 +46,10 @@ const canViewEvent = async (user, eventId) => {
 
 const populatePayment = (query) =>
   query
-    .populate("event", "shortCode type description additionalInstructions status startAt endAt contact organizer payment pricing")
+    .populate(
+      "event",
+      "shortCode type description additionalInstructions status startAt endAt contact organizer payment pricing cancellation canceledAt cancelReason cancelReasonOther"
+    )
     .populate("paymentRequest")
     .populate("collectedBy", "fullName email role")
     .populate("voidedBy", "fullName email role")
@@ -666,7 +669,9 @@ const paymentCtrl = {
       }
 
       const [eventDoc, paidRows] = await Promise.all([
-        Event.findById(doc.event).select("payment.total").lean(),
+        Event.findById(doc.event)
+          .select("status payment.total cancellation.retainedAmount")
+          .lean(),
         Payment.aggregate([
           { $match: { event: doc.event, status: "recorded" } },
           {
@@ -681,9 +686,15 @@ const paymentCtrl = {
       ]);
       const eventTotal = getEventPaymentTotal(eventDoc);
       const eventPaid = Number(paidRows[0]?.total) || 0;
+      const retainedAmount = Math.max(
+        0,
+        Number(eventDoc?.cancellation?.retainedAmount) || 0
+      );
       const customerCredit = Math.max(
         0,
-        Math.round((eventPaid - eventTotal) * 100) / 100
+        Math.round(
+          (eventPaid - (eventDoc?.status === "canceled" ? retainedAmount : eventTotal)) * 100
+        ) / 100
       );
       if (requestedAmount > customerCredit + 0.001) {
         return res.status(400).json({

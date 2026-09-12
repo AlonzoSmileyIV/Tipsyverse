@@ -134,7 +134,7 @@ const LoginScreen = () => {
 
       {/* Login Box */}
       <Box>
-      <Typography variant="h5" fontWeight={600} gutterBottom>
+      <Typography component="h1" variant="h5" fontWeight={600} gutterBottom>
         Login
       </Typography>
       {message && (

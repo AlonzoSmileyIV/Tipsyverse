@@ -1,12 +1,12 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "npm --prefix client run preview -- --host 127.0.0.1 --port 4173",
+      "startServerCommand": "npm --prefix client run preview -- --host localhost --port 3000",
       "startServerReadyPattern": "Local:",
       "url": [
-        "http://127.0.0.1:4173/",
-        "http://127.0.0.1:4173/drinks",
-        "http://127.0.0.1:4173/book"
+        "http://localhost:3000/",
+        "http://localhost:3000/drinks",
+        "http://localhost:3000/book"
       ],
       "numberOfRuns": 3,
       "settings": { "chromeFlags": "--headless --no-sandbox" }

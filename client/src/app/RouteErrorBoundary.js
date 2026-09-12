@@ -134,6 +134,8 @@ export default class RouteErrorBoundary extends React.Component {
             </Typography>
             <Paper
               component="pre"
+              tabIndex={0}
+              aria-label="Error details"
               variant="outlined"
               sx={{
                 boxSizing: "border-box",
@@ -163,6 +165,8 @@ export default class RouteErrorBoundary extends React.Component {
               </Typography>
               <Paper
                 component="pre"
+                tabIndex={0}
+                aria-label="Error location"
                 variant="outlined"
                 sx={{
                   boxSizing: "border-box",

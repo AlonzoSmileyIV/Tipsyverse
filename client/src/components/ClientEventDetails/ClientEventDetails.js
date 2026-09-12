@@ -36,6 +36,7 @@ import { formatTimestamp, getEventTimeZone } from "../../utils/timestamps";
 import {
   getApprovedBartenderCount,
   getEventPaidTotal,
+  getEventPaymentSummary,
   getEventPaymentTotal,
   getRecommendedBartenderCount,
 } from "../../utils/eventSummary";
@@ -490,7 +491,16 @@ export default function ClientEventDetailsDrawer({
     getEventTimeZone(evt);
   const recordedPayments = payments.filter(isActivePayment);
   const paidTotal = payments.length
-    ? recordedPayments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+    ? recordedPayments.reduce(
+        (sum, payment) =>
+          sum +
+          Math.max(
+            0,
+            (Number(payment.amount) || 0) -
+              (Number(payment.refundedAmount) || 0)
+          ),
+        0
+      )
     : getEventPaidTotal(evt);
   const displayPayments =
     payments.length || paidTotal <= 0
@@ -510,9 +520,13 @@ export default function ClientEventDetailsDrawer({
     ["refunded", "voided"].includes(getPaymentStatus(payment))
   );
   const paymentTotal = getEventPaymentBaseTotal(evt);
-  const balance = Math.max(0, paymentTotal - paidTotal);
-  const overpayment = Math.max(0, paidTotal - paymentTotal);
-  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal);
+  const paymentSummary = getEventPaymentSummary(
+    { ...evt, payment: { ...evt?.payment, paidTotal } },
+    paymentTotal
+  );
+  const balance = paymentSummary.balance;
+  const overpayment = paymentSummary.credit;
+  const paymentStatus = getCustomerPaymentStatus(paymentTotal, paidTotal, evt);
   const paymentPolicy = getEventPaymentPolicyView(evt, {
     total: paymentTotal,
     paid: paidTotal,
@@ -801,7 +815,11 @@ export default function ClientEventDetailsDrawer({
                   </Grid>
 
                   <Alert severity={paymentStatus.severity}>
-                    {paymentStatus.key === "pricing_pending"
+                    {paymentStatus.key === "refund_review"
+                      ? `This event is canceled and no balance is due. ${fmtMoney(overpayment)} is awaiting staff refund review; no refund is issued automatically.`
+                      : paymentStatus.key === "canceled"
+                      ? "This event is canceled. No balance is due and no recorded payment requires refund review."
+                      : paymentStatus.key === "pricing_pending"
                       ? "Pricing has not been confirmed yet. No payment is currently due."
                       : balance > 0
                       ? `Current balance due: ${fmtMoney(balance)}. Contact Tipsyverse to make or discuss a payment.`

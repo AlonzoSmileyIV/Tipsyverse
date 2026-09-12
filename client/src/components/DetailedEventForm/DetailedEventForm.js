@@ -1345,8 +1345,20 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     ? recordedAmountPaid
     : eventSummaryPaidTotal;
 
-  const remainingBalance = Math.max(discountedTotal - amountPaid, 0);
-  const overpaymentCredit = Math.max(amountPaid - discountedTotal, 0);
+  const eventCanceled =
+    String(form.status || event?.status || "").toLowerCase() === "canceled";
+  const cancellationRetained = eventCanceled
+    ? Math.min(
+        amountPaid,
+        Math.max(0, Number(event?.cancellation?.retainedAmount) || 0)
+      )
+    : 0;
+  const remainingBalance = eventCanceled
+    ? 0
+    : Math.max(discountedTotal - amountPaid, 0);
+  const overpaymentCredit = eventCanceled
+    ? Math.max(amountPaid - cancellationRetained, 0)
+    : Math.max(amountPaid - discountedTotal, 0);
   const creditRefundPayment = activePayments.find(
     (payment) =>
       !String(payment?._id || "").startsWith("summary-") &&
@@ -2900,6 +2912,8 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               </Typography>
               <Box
                 component="pre"
+                tabIndex={0}
+                aria-label="Event details preview"
                 sx={{ fontFamily: "monospace", whiteSpace: "pre-wrap", m: 0 }}
               >
                 Subject: {md.subject}
@@ -2933,6 +2947,8 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               </Typography>
               <Box
                 component="pre"
+                tabIndex={0}
+                aria-label="Event details preview"
                 sx={{ fontFamily: "monospace", whiteSpace: "pre-wrap", m: 0 }}
               >
                 {md.body}
@@ -5183,7 +5199,10 @@ We wanted to confirm the details you entered and ask a few quick questions so we
           <Stack spacing={2}>
             <Alert severity="warning">
               This will mark the event as <strong>canceled</strong>. It will no
-              longer be moved to assignment or staffed.
+              longer be moved to assignment or staffed. Pending payment requests
+              will be canceled and the remaining balance will become $0.00. No
+              refund is issued automatically; recorded payments are placed in
+              staff refund review under the cancellation policy.
             </Alert>
 
             <TextField

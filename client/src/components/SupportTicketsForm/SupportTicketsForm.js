@@ -463,8 +463,13 @@ function SupportTicketsForm() {
           />
 
           <FormControl fullWidth>
-            <InputLabel>Category</InputLabel>
-            <Select label="Category" value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}>
+            <InputLabel id="support-ticket-category-label">Category</InputLabel>
+            <Select
+              labelId="support-ticket-category-label"
+              label="Category"
+              value={form.category}
+              onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+            >
               <MenuItem value="login">Login</MenuItem>
               <MenuItem value="booking">Booking</MenuItem>
               <MenuItem value="payments">Payments</MenuItem>
