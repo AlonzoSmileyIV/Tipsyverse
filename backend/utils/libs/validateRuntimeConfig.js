@@ -6,6 +6,14 @@ const isHttpsUrl = (value) => {
   }
 };
 
+const normalizedDatabaseName = (value) => {
+  try {
+    return new URL(value).pathname.replace(/^\//, "").split("?")[0];
+  } catch {
+    return "";
+  }
+};
+
 export default function validateRuntimeConfig(environment = process.env.NODE_ENV) {
   const mongoVariable = {
     development: "MONGO_DEV_URI",
@@ -21,6 +29,19 @@ export default function validateRuntimeConfig(environment = process.env.NODE_ENV
   ];
   if (["staging", "production"].includes(environment)) {
     required.push("CORS_ORIGINS", "PUBLIC_APP_URL");
+  }
+  if (environment === "production") {
+    required.push(
+      "FRONTEND_URL",
+      "ADMIN_PORTAL_URL",
+      "PUBLIC_SHARE_URL",
+      "RESEND_EMAIL_KEY",
+      "FROM_EMAIL",
+      "SUPPORT_EMAIL",
+      "CLOUDINARY_CLOUD_NAME",
+      "CLOUDINARY_API_KEY",
+      "CLOUDINARY_API_SECRET"
+    );
   }
   const missing = required.filter((name) => !process.env[name]?.trim());
   const errors = missing.map((name) => `${name} is required`);
@@ -39,8 +60,25 @@ export default function validateRuntimeConfig(environment = process.env.NODE_ENV
     if (!origins.length || origins.some((origin) => !isHttpsUrl(origin))) {
       errors.push("every production CORS origin must use HTTPS");
     }
-    if (!isHttpsUrl(process.env.PUBLIC_APP_URL)) {
-      errors.push("PUBLIC_APP_URL must use HTTPS in production");
+    for (const name of [
+      "FRONTEND_URL",
+      "PUBLIC_APP_URL",
+      "ADMIN_PORTAL_URL",
+      "PUBLIC_SHARE_URL",
+    ]) {
+      if (!isHttpsUrl(process.env[name])) {
+        errors.push(`${name} must use HTTPS in production`);
+      }
+    }
+    const productionDatabase = normalizedDatabaseName(process.env.MONGO_PROD_URI);
+    if (!productionDatabase) {
+      errors.push("MONGO_PROD_URI must include a dedicated database name");
+    }
+    for (const otherName of ["MONGO_DEV_URI", "MONGO_STAGING_URI"]) {
+      const otherDatabase = normalizedDatabaseName(process.env[otherName]);
+      if (otherDatabase && otherDatabase === productionDatabase) {
+        errors.push(`MONGO_PROD_URI must not use the same database as ${otherName}`);
+      }
     }
     const stripeEnabled =
       String(process.env.STRIPE_ENABLED).toLowerCase() === "true";

@@ -40,6 +40,8 @@ coverage/
 client/test-results/
 client/playwright-report/
 client/blob-report/
+.lighthouseci/
+client/.lighthouseci/
 
 # Temporary files
 tmp/

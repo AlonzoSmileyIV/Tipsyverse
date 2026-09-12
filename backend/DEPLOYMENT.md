@@ -55,9 +55,17 @@ Populate every value from `.env.example` in the deployment platform's encrypted
 secret store. Production additionally requires:
 
 - `NODE_ENV=production`
-- HTTPS values for `PUBLIC_APP_URL` and every `CORS_ORIGINS` entry
+- `FRONTEND_URL=https://tipsyverse.com`
+- `PUBLIC_APP_URL=https://tipsyverse.com`
+- `ADMIN_PORTAL_URL=https://tipsyverse.com`
+- `PUBLIC_SHARE_URL=https://api.tipsyverse.com`
+- `CORS_ORIGINS=https://tipsyverse.com,https://www.tipsyverse.com`
 - the production MongoDB URI in `MONGO_PROD_URI`
 - distinct access and refresh secrets of at least 32 characters
+- verified Resend credentials for `Tipsyverse <hello@tipsyverse.com>` and
+  `SUPPORT_EMAIL=hello@tipsyverse.com`
+- production Cloudinary credentials; runtime uploads are isolated under the
+  `production/images` and `production/videos` folders
 - `STRIPE_ENABLED=false` when card processing is disabled; when enabled,
   production Stripe secret and webhook signing keys
 - `GOOGLE_MAPS_API_KEY` using a server-restricted Google Maps Platform key with
@@ -67,6 +75,19 @@ secret store. Production additionally requires:
 
 Do not reuse MongoDB databases, Stripe keys, Cloudinary folders, email sending
 domains, Sentry environments, or token secrets between staging and production.
+
+For the frontend deployment, configure:
+
+```text
+REACT_APP_BASE_URL=https://api.tipsyverse.com/api/v1
+REACT_APP_SOCKET_URL=https://api.tipsyverse.com
+REACT_APP_PUBLIC_SITE_URL=https://tipsyverse.com
+REACT_APP_SHARE_BASE_URL=https://api.tipsyverse.com
+REACT_APP_STRIPE_ENABLED=false
+```
+
+These values belong in the hosting provider's environment configuration. Do
+not upload or commit local `.env` files.
 
 ## Deployment sequence
 
