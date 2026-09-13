@@ -153,6 +153,8 @@ export default function TutorialDialog({
       PaperProps={{
         sx: {
           borderRadius: 3,
+          m: { xs: 2, sm: 4 },
+          maxHeight: { xs: "calc(100% - 32px)", sm: "calc(100% - 64px)" },
         },
       }}
     >
@@ -160,7 +162,7 @@ export default function TutorialDialog({
         {current.title || "Welcome"}
       </DialogTitle>
 
-      <DialogContent sx={{ pt: 0 }}>
+      <DialogContent dividers tabIndex={0} sx={{ pt: 0 }}>
         <Box
           sx={{
             display: "grid",
@@ -173,7 +175,7 @@ export default function TutorialDialog({
           <Box
             sx={{
               width: "100%",
-              height: 400,
+              height: { xs: 210, sm: 300, md: 400 },
               aspectRatio: "16 / 10",
               overflow: "hidden",
               borderRadius: 2,
@@ -188,7 +190,7 @@ export default function TutorialDialog({
                 style={{
                   width: "100%",
                   height: "100%",
-                  objectFit: "cover",
+                  objectFit: "contain",
                   display: "block",
                 }}
                 loading="lazy"

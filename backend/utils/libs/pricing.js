@@ -15,8 +15,12 @@ function computeEventTotals(evt) {
 
   const bartenders = Math.max(
     1,
-    toNum(p.bartendersRequested || 1),
-    toNum(evt?.counts?.neededBartenders || 0)
+    toNum(
+      evt?.counts?.approvedBartenders ||
+        evt?.counts?.neededBartenders ||
+        p.bartendersRequested ||
+        1
+    )
   );
   const hourlyRate = toNum(p.hourlyRate);
   const bookingFee = toNum(p.bookingFee);

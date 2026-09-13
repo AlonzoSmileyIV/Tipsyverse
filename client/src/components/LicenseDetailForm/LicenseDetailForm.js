@@ -18,12 +18,15 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteIcon from "@mui/icons-material/Delete";
 import api from "../../services/api";
 import { Visibility } from "@mui/icons-material";
 import { parseDateOnlyParts } from "../../utils/dateOnly";
+import DateTextField from "../DateTextField/DateTextField";
 
 const US_STATES = [
   { value: "AL", label: "Alabama" },
@@ -211,7 +214,9 @@ const handleOpenInspectionSite = (stateCode) => {
 };
 
 const formatDateInput = (value) => {
-  const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+  const digits = String(value || "")
+    .replace(/\D/g, "")
+    .slice(0, 8);
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
@@ -254,7 +259,19 @@ function LicenseDetailForm({
   const [expiresAt, setExpiresAt] = useState(
     initialValue?.expiresAt ? datePartsToInput(initialValue.expiresAt) : ""
   );
-  const [status, setStatus] = useState(initialValue?.status || "pending");
+  const [verificationDocument, setVerificationDocument] = useState(null);
+  const [attested, setAttested] = useState(false);
+  const [trainingAttested, setTrainingAttested] = useState(
+    Boolean(initialValue?.serverTraining?.attestedRequiredTraining)
+  );
+  const [compliancePolicy, setCompliancePolicy] = useState({
+    permitRequired: true,
+    trainingAttestationRequired: true,
+    adminReviewRequired: true,
+  });
+  const [status, setStatus] = useState(
+    initialValue?.complianceStatus || initialValue?.status || "pending"
+  );
   const [denyDialogOpen, setDenyDialogOpen] = useState(false);
   const [denyReason, setDenyReason] = useState("");
   const [denyReasonError, setDenyReasonError] = useState("");
@@ -277,9 +294,25 @@ function LicenseDetailForm({
 
   const isFormValid =
     Boolean(state) &&
-    Boolean(licenseNumber) &&
-    Boolean(expiresAtParts) &&
-    compareDateParts(expiresAtParts, todayParts) >= 0;
+    (!compliancePolicy.permitRequired ||
+      (Boolean(licenseNumber) &&
+        Boolean(expiresAtParts) &&
+        compareDateParts(expiresAtParts, todayParts) >= 0)) &&
+    attested &&
+    (!compliancePolicy.trainingAttestationRequired || trainingAttested);
+
+  useEffect(() => {
+    if (!state) return;
+    let active = true;
+    api.get("/users/compliance-policy", { params: { state } })
+      .then((response) => {
+        if (active && response.data?.data) setCompliancePolicy(response.data.data);
+      })
+      .catch(() => {
+        if (active) setCompliancePolicy({ permitRequired: true, trainingAttestationRequired: true, adminReviewRequired: true });
+      });
+    return () => { active = false; };
+  }, [state]);
 
   useEffect(() => {
     if (!initialValue) return;
@@ -290,42 +323,47 @@ function LicenseDetailForm({
     setExpiresAt(
       initialValue.expiresAt ? datePartsToInput(initialValue.expiresAt) : ""
     );
-    setStatus(initialValue.status || "pending");
+    setStatus(
+      initialValue.complianceStatus || initialValue.status || "pending"
+    );
+    setTrainingAttested(
+      Boolean(initialValue.serverTraining?.attestedRequiredTraining)
+    );
   }, [initialValue]);
 
-const handleApprove = async () => {
-  if (!initialValue?.licenseId) return;
+  const handleApprove = async () => {
+    if (!initialValue?.licenseId) return;
 
-  const userId = getBartenderUserIdFromLicense(initialValue);
+    const userId = getBartenderUserIdFromLicense(initialValue);
 
-  if (!userId) {
-    setError("Missing bartender user ID for this license.");
-    return;
-  }
+    if (!userId) {
+      setError("Missing bartender user ID for this license.");
+      return;
+    }
 
-  try {
-    setSubmitting(true);
+    try {
+      setSubmitting(true);
 
-    const response = await api.patch(
-      `/users/${userId}/licenses/${initialValue.licenseId}/decision`,
-      {
-        action: "approve",
-      }
-    );
+      const response = await api.patch(
+        `/users/${userId}/licenses/${initialValue.licenseId}/decision`,
+        {
+          action: "approve",
+        }
+      );
 
-    setStatus(response.data?.data?.status || "approved");
+      setStatus(response.data?.data?.complianceStatus || "verified");
 
-    await onSaved?.();
-  } catch (e) {
-    console.error(e);
-    setError(
-      e?.response?.data?.message ||
-        "Failed to approve license. Please try again."
-    );
-  } finally {
-    setSubmitting(false);
-  }
-};
+      await onSaved?.();
+    } catch (e) {
+      console.error(e);
+      setError(
+        e?.response?.data?.message ||
+          "Failed to approve license. Please try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // This is just the entry point → opens the dialog
   const handleOpenDenyDialog = () => {
@@ -387,17 +425,17 @@ const handleApprove = async () => {
 
     const parsedExpiresAt = parseDateOnlyParts(expiresAt);
 
-    if (!state || !licenseNumber || !expiresAt) {
-      setError("State, license number, and expiration date are required.");
+    if (!state || (compliancePolicy.permitRequired && (!licenseNumber || !expiresAt))) {
+      setError("State is required. This state also requires a permit number and expiration date.");
       return;
     }
 
-    if (!parsedExpiresAt) {
+    if (expiresAt && !parsedExpiresAt) {
       setError("Please enter a valid expiration date.");
       return;
     }
 
-    if (compareDateParts(parsedExpiresAt, todayParts) < 0) {
+    if (parsedExpiresAt && compareDateParts(parsedExpiresAt, todayParts) < 0) {
       setError("Expiration date cannot be in the past.");
       return;
     }
@@ -405,11 +443,14 @@ const handleApprove = async () => {
     try {
       setSubmitting(true);
 
-      const payload = {
-        state,
-        permitNumber: licenseNumber,
-        expiresAt: datePartsToISODate(parsedExpiresAt),
-      };
+      const payload = new FormData();
+      payload.append("state", state);
+      payload.append("permitNumber", licenseNumber);
+      if (parsedExpiresAt) payload.append("expiresAt", datePartsToISODate(parsedExpiresAt));
+      payload.append("attestedAuthenticAndCurrent", String(attested));
+      payload.append("attestedRequiredTraining", String(trainingAttested));
+      if (verificationDocument)
+        payload.append("verificationDocument", verificationDocument);
 
       if (isEdit && initialValue?._id) {
         await api.patch(`/users/me/licenses/${initialValue?._id}`, payload);
@@ -447,6 +488,24 @@ const handleApprove = async () => {
     }
   };
 
+  const handleViewVerificationDocument = async () => {
+    try {
+      const licenseId = initialValue?.licenseId || initialValue?._id;
+      const response = await api.get(
+        `/users/licenses/${licenseId}/verification-document`,
+        { responseType: "blob" }
+      );
+      const url = URL.createObjectURL(response.data);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setError(
+        e?.response?.data?.message ||
+          "Failed to open the verification document."
+      );
+    }
+  };
+
   return (
     <Box sx={{ width: { xs: "100vw", sm: 420 }, p: 2 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -465,6 +524,9 @@ const handleApprove = async () => {
           {error}
         </Alert>
       )}
+      <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.5 }}>
+        License
+      </Typography>
 
       <Stack spacing={2}>
         <TextField
@@ -484,7 +546,7 @@ const handleApprove = async () => {
         </TextField>
 
         <TextField
-          label="License / Permit Number"
+          label={`License / Permit Number${compliancePolicy.permitRequired ? "" : " (optional)"}`}
           value={licenseNumber}
           disabled={disableFields}
           onChange={(e) => setLicenseNumber(e.target.value)}
@@ -492,9 +554,8 @@ const handleApprove = async () => {
           size="small"
         />
 
-        <TextField
-          label="Expiration Date"
-          placeholder="MM/DD/YYYY"
+        <DateTextField
+          label={`Expiration Date${compliancePolicy.permitRequired ? "" : " (optional)"}`}
           value={expiresAt}
           disabled={disableFields}
           onChange={(e) => {
@@ -503,10 +564,73 @@ const handleApprove = async () => {
           }}
           fullWidth
           size="small"
-          InputLabelProps={{ shrink: true }}
-          inputProps={{ inputMode: "numeric", maxLength: 10 }}
-          helperText="Use MM/DD/YYYY. Expiration date cannot be in the past."
+          helperText={compliancePolicy.permitRequired
+            ? "Use MM/DD/YYYY. Expiration date cannot be in the past."
+            : "Optional when this state does not require an individual permit."}
         />
+
+        {state && (
+          <>
+
+            {!disableFields && (
+              <Button variant="outlined" component="label">
+                {verificationDocument
+                  ? verificationDocument.name
+                  : initialValue?.serverTraining?.hasVerificationDocument
+                  ? "Replace permit document"
+                  : "Upload supporting document (optional)"}
+                <input
+                  hidden
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png"
+                  onChange={(e) =>
+                    setVerificationDocument(e.target.files?.[0] || null)
+                  }
+                />
+              </Button>
+            )}
+            {disableFields && (
+              <Typography variant="body2" color="text.secondary">
+                Required server training confirmed: {initialValue?.serverTraining?.attestedRequiredTraining ? "Yes" : "No"}
+              </Typography>
+            )}
+            <Typography variant="caption" color="text.secondary">
+              Upload only relevant permit or verification proof. Redact SSNs, driver-license
+              numbers, and unrelated personal information first.
+            </Typography>
+            {!disableFields && (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={attested}
+                    onChange={(e) => setAttested(e.target.checked)}
+                  />
+                }
+                label="I attest that this document is authentic and current."
+              />
+            )}
+            {!disableFields && compliancePolicy.trainingAttestationRequired && (
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={trainingAttested}
+                    onChange={(e) => setTrainingAttested(e.target.checked)}
+                  />
+                }
+                label="I confirm I completed any server training required for this permit."
+              />
+            )}
+            {isEmployee &&
+              initialValue?.serverTraining?.hasVerificationDocument && (
+                <Button
+                  variant="outlined"
+                  onClick={handleViewVerificationDocument}
+                >
+                  View verification document
+                </Button>
+              )}
+          </>
+        )}
 
         {isEdit && (
           <TextField

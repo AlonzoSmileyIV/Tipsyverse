@@ -120,8 +120,11 @@ const attendanceCtrl = {
       }
 
       const event = await Event.findById(attendance.event)
-        .select("organizer contact startAt endAt")
+        .select("organizer contact startAt endAt status")
         .lean();
+      if (event?.status === "canceled") {
+        return res.status(409).json({ success: false, message: "Attendance cannot be verified for a canceled event." });
+      }
       if (!canVerifyEventAttendance(event, req.user)) {
         return res.status(403).json({ success: false, message: "Only the event contact or staff can verify attendance." });
       }
@@ -158,8 +161,11 @@ const attendanceCtrl = {
       }
 
       const event = await Event.findById(assignment.event)
-        .select("organizer contact startAt endAt")
+        .select("organizer contact startAt endAt status")
         .lean();
+      if (event?.status === "canceled") {
+        return res.status(409).json({ success: false, message: "Attendance cannot be verified for a canceled event." });
+      }
       if (!canVerifyEventAttendance(event, req.user)) {
         return res.status(403).json({ success: false, message: "Only the event contact or staff can verify attendance." });
       }

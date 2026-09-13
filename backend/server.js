@@ -1,6 +1,5 @@
-import { } from "dotenv/config";
+import "dotenv/config";
 import express from "express";
-import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import http from "http";
@@ -12,25 +11,50 @@ import path from "path";
 import { fileURLToPath } from "url";
 import clearUploadsFolder from "./utils/libs/clearUploadsFolder.js";
 import initializeSocket from "./utils/libs/initializeSocket.js";
-import { attachLogActivity, ensureAnonId } from "./middleware/index.js";
+import { attachLogActivity, createRateLimit, ensureAnonId, validateWriteBody } from "./middleware/index.js";
 import initializeScheduledJobs from "./jobs/index.js";
-import { drinkCtrl } from "./controllers/index.js";
+import { drinkCtrl, paymentCtrl } from "./controllers/index.js";
+import errorHandler from "./utils/libs/errorHandler.js";
+import helmet from "helmet";
+import crypto from "crypto";
+import {
+  captureOperationalAlert,
+  initializeMonitoring,
+} from "./utils/libs/monitoring.js";
+import validateRuntimeConfig from "./utils/libs/validateRuntimeConfig.js";
+import { logger, requestLogger } from "./utils/libs/logger.js";
 
 
-// ─── Configs ────────────────────────────────────────────
+// Environment is validated immediately before startup. Keeping module import
+// side effects minimal allows tests to import `app` without opening a port.
 const api = process.env.API_URL;
 const PORT = process.env.PORT ?? 3000;
+const ENVIRONMENT = process.env.NODE_ENV || "development";
+initializeMonitoring();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ─── Express Setup ──────────────────────────────────────
+// Global request pipeline. Ordering is intentional: the Stripe webhook must
+// receive its raw body, while all other JSON routes use the normal parser.
 const app = express();
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", process.env.TRUST_PROXY === "true" ? 1 : process.env.TRUST_PROXY);
+}
+app.disable("x-powered-by");
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+app.use((req, res, next) => {
+  req.id = req.get("x-request-id") || crypto.randomUUID();
+  res.setHeader("X-Request-Id", req.id);
+  next();
+});
 
-// Static files (for image previews or temp uploads)
-app.use("/temp", express.static(path.join(__dirname, "public/temp")));
-
-app.use(morgan("tiny"));
+app.use(requestLogger);
 
 // CORS Setup
 const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:3000")
@@ -50,43 +74,46 @@ const corsConfig = {
 };
 
 app.use(cors(corsConfig));
-app.options("*", cors(corsConfig), (req, res) => res.sendStatus(204));
+app.options(/.*/, cors(corsConfig), (req, res) => res.sendStatus(204));
+
+// Stripe verifies the signature against the exact request bytes. Never move
+// this route below express.json(), which would make verification unreliable.
+if (String(process.env.STRIPE_ENABLED).toLowerCase() === "true") {
+  app.post(
+    `${api}/payments/webhook`,
+    express.raw({ type: "application/json", limit: "256kb" }),
+    paymentCtrl.handleStripeWebhook
+  );
+}
 
 // Body + cookies AFTER CORS
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 app.use(ensureAnonId);
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(validateWriteBody);
+// This is a broad abuse-control ceiling. Sensitive endpoints also apply
+// narrower domain-specific rate limits in their routers.
+app.use(
+  `${api}`,
+  createRateLimit({
+    keyPrefix: "api-global",
+    windowMs: 15 * 60 * 1000,
+    max: 600,
+  })
+);
 
 
-//This code is part of a setup that uses Prerender.io — a service that helps Google, Facebook, Twitter, and other crawlers see your dynamic JavaScript pages.
-prerender.set('prerenderToken', process.env.PRERENDER_TOKEN); // from prerender.io (free tier ok)
-prerender.whitelisted(['/drinks/.*']); // only those pages
+// Render public drink pages for crawlers and social-link previews.
+prerender.set("prerenderToken", process.env.PRERENDER_TOKEN);
+prerender.whitelisted(["/drinks/.*"]);
 app.use(prerender);
-
-// app.use(
-//   cors({
-//     origin: allowedOrigins,
-//     credentials: true,
-//   })
-// );
-
-// Error Middleware (basic)
-app.use((err, req, res, next) => {
-  if (err) {
-    res.status(500).json({ message: `Error in the server: ${err}` });
-  }
-});
 
 app.use(attachLogActivity);
 
 app.get(`${api}/health`, (req, res) => {
   const required = {
-    mongo:
-      !!process.env.MONGO_URI ||
-      !!process.env.MONGO_DEV_URI ||
-      !!process.env.MONGO_STAGING_URI ||
-      !!process.env.MONGO_PROD_URI,
+    mongo: connectDB.isReady(),
     auth: !!process.env.ACCESS_TOKEN_SECRET && !!process.env.REFRESH_TOKEN_SECRET,
     email: !!process.env.RESEND_EMAIL_KEY && !!process.env.FROM_EMAIL,
     cloudinary:
@@ -96,12 +123,27 @@ app.get(`${api}/health`, (req, res) => {
     frontend: !!process.env.FRONTEND_URL || !!process.env.PUBLIC_APP_URL,
   };
 
-  res.json({
-    success: true,
-    status: "ok",
+  const healthy = Object.values(required).every(Boolean);
+  res.status(healthy ? 200 : 503).json({
+    success: healthy,
+    status: healthy ? "ok" : "degraded",
     environment: ENVIRONMENT,
     uptimeSeconds: Math.round(process.uptime()),
-    checks: required,
+  });
+});
+
+app.get(`${api}/live`, (req, res) => {
+  res.json({ success: true, status: "alive" });
+});
+
+app.get(`${api}/ready`, (req, res) => {
+  const ready = connectDB.isReady();
+  if (!ready) {
+    captureOperationalAlert("readiness_failed", { requestId: req.id });
+  }
+  return res.status(ready ? 200 : 503).json({
+    success: ready,
+    status: ready ? "ready" : "not_ready",
   });
 });
 
@@ -139,28 +181,13 @@ app.use(`${api}/attendance`, routes.attendanceRouter);
 app.use(`${api}/rewards`, routes.rewardRouter);
 app.use(`${api}/promo-codes`, routes.promoCodeRouter);
 
-// ─── WIPING IF NEED ───────────────────────────────────────
-// IF YOU NEED TO WIPE DATABASE IT CLEAN AND ADD SEED, FOLLOW THESE STEPS:
-// 1.) In the package.json file, go to scripts object and MAKE SURE the following is present:
-// "wipe:collections": "NODE_ENV=development node scripts/libs/wipeAllCollections.script.js",
-// "seed": "NODE_ENV=development node scripts/libs/seedInitialData.script.js"
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: "Route not found." });
+});
+app.use(errorHandler);
 
-// 2.) make sure you run the following first in terminal: CONFIRM_WIPE=yes npm run wipe:collections
-
-// 3.) then run this in terminal: npm run seed 
-
-
-// ─── Housekeeping ───────────────────────────────────────
-// Optional clean-up on startup
-clearUploadsFolder();
-// Connect to DB
-const ENVIRONMENT = process.env.NODE_ENV || "development";
-connectDB(ENVIRONMENT);
-// Schedule jobs
-initializeScheduledJobs();
-
-// Create HTTP server and integrate Socket.IO
-// ─── Server + Socket.IO ─────────────────────────────────
+// Express and Socket.IO share the HTTP server so deployments expose one port
+// and both transports use the same CORS origin list.
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -171,17 +198,47 @@ const io = new Server(server, {
   },
 });
 
-const connectedUsers = new Map();
-
-initializeSocket(io); // 👈 Init Socket.IO listeners
-
-//migrateCloudinaryUrls();
+initializeSocket(io);
 
 // Export for usage in notification system, etc.
-export { io };
+export { app, io, server };
 
+let shuttingDown = false;
+let stopScheduledJobs = async () => {};
+export const startServer = async () => {
+  validateRuntimeConfig(ENVIRONMENT);
+  clearUploadsFolder();
+  await connectDB(ENVIRONMENT);
+  stopScheduledJobs = initializeScheduledJobs();
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}...`);
-});
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(PORT, () => {
+      server.off("error", reject);
+      logger.info("server_started", { port: Number(PORT) });
+      resolve();
+    });
+  });
+  return server;
+};
+
+const shutdown = async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info("server_shutdown_started", { signal });
+  // Stop producing background work before refusing new HTTP connections, then
+  // release database resources after in-flight requests have drained.
+  await stopScheduledJobs();
+  await new Promise((resolve) => server.close(resolve));
+  await connectDB.disconnect();
+  process.exit(0);
+};
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  startServer().catch((error) => {
+    logger.error("server_start_failed", { error });
+    process.exit(1);
+  });
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+}

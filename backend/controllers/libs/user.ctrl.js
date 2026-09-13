@@ -16,8 +16,15 @@ import {
   EventModel as Event,
   AssignmentModel as Assignment,
   ReviewModel as Review,
-  RewardClaimModel as RewardClaim
+  RewardClaimModel as RewardClaim,
+  AuthSessionModel as AuthSession,
 } from "../../models/index.js";
+import {
+  buildAccountActivationUrl,
+  createUnusablePassword,
+  hashAccountActivationToken,
+  issueAccountActivation,
+} from "../../utils/libs/accountActivation.js";
 
 import {
   clearRefreshCookie,
@@ -25,6 +32,19 @@ import {
   getRefreshCookieOptions,
   reactivateExpiredSuspension,
 } from "../../utils/libs/accountAccess.js";
+import { getPermitCompliance } from "../../utils/libs/bartenderCompliance.js";
+import { getStateCompliancePolicy } from "../../utils/libs/stateCompliancePolicy.js";
+import {
+  deleteComplianceDocument,
+  readComplianceDocument,
+  storeComplianceDocument,
+} from "../../utils/libs/complianceDocumentStore.js";
+
+const hasValidComplianceDocumentSignature = (file) => Boolean(file?.buffer) && (
+  file.mimetype === "application/pdf" ? file.buffer.subarray(0, 5).toString() === "%PDF-" :
+  file.mimetype === "image/jpeg" ? file.buffer[0] === 0xff && file.buffer[1] === 0xd8 :
+  file.mimetype === "image/png" ? file.buffer.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])) : false
+);
 
 import {
   toLocalDateOnly,
@@ -62,6 +82,13 @@ import {
   getCompletedBartenderEventsCount,
 } from "../../utils/index.js";
 import XLSX from "xlsx";
+import {
+  hashRefreshTokenId,
+  deriveNextRefreshTokenId,
+  newRefreshTokenId,
+  newSessionId,
+  refreshSessionExpiresAt,
+} from "../../utils/libs/refreshSession.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -486,24 +513,6 @@ const userCtrl = {
             continue;
           }
 
-          if (!password) {
-            errors.push(`Row ${rowNum} is invalid: Password is blank.`);
-            blankPasswords.push(rowNum);
-            continue;
-          }
-
-          if (
-            !validatePassword.checkLength(password) ||
-            !validatePassword.checkUppercase(password) ||
-            !validatePassword.checkNumber(password) ||
-            !validatePassword.checkSpecial(password)
-          ) {
-            errors.push(
-              `Row ${rowNum} is invalid: Password must be at least 6 characters long and include an uppercase letter, number, and special character.`
-            );
-            continue;
-          }
-
           if (birthday && !validateDate(birthday)) {
             errors.push(
               `Row ${rowNum} is invalid: Birthday is an invalid date input.`
@@ -614,7 +623,7 @@ const userCtrl = {
               username: usernameToUse,
               email,
               passwordHash: bcrypt.hashSync(
-                password,
+                createUnusablePassword(),
                 parseInt(process.env.SALT_ROUNDS)
               ),
               accountStatus: {
@@ -636,6 +645,9 @@ const userCtrl = {
                 directReports: directReports || null,
               },
             });
+            const activationToken = issueAccountActivation(newUser);
+            await newUser.save();
+            const activationUrl = buildAccountActivationUrl(activationToken);
 
             await logRow({
               targetId: newUser._id.toString(),
@@ -651,9 +663,9 @@ const userCtrl = {
             const emailContent = `
         <p>Dear ${fullName},</p>
         <p>Welcome to the Tipsyverse Team! You're now officially our new <strong>${existingPosition.name}</strong>.</p>
-        <p><strong>Email:</strong> ${email}<br/><strong>Username:</strong> ${usernameToUse}<br/><strong>Current Password:</strong> ${password}</p>
-        <p>Please log in and update your password as soon as possible.</p>
-        <a href="${process.env.ADMIN_PORTAL_URL}/login"class="button">Login Now</a>
+        <p><strong>Email:</strong> ${email}<br/><strong>Username:</strong> ${usernameToUse}</p>
+        <p>Create your password using this secure, single-use link. It expires in 30 minutes.</p>
+        <a href="${activationUrl}" class="button">Activate Account</a>
         <p>We're excited to have you aboard! 🚀</p>
       `;
             try {
@@ -1179,10 +1191,13 @@ const userCtrl = {
           .json({ success: false, message: "Invalid user role." });
       }
 
-      if (!fullName || !email || !username || !password) {
+      if (!fullName || !email || !username || (role === "regular" && !password)) {
         return res.status(400).json({
           success: false,
-          message: "Full name, email, username, and password are required.",
+          message:
+            role === "employee"
+              ? "Full name, email, and username are required."
+              : "Full name, email, username, and password are required.",
         });
       }
 
@@ -1215,10 +1230,11 @@ const userCtrl = {
       const usernameToUse = desiredUsername;
 
       if (
+        role === "regular" &&
         !validatePassword.checkLength(password) ||
-        !validatePassword.checkUppercase(password) ||
-        !validatePassword.checkNumber(password) ||
-        !validatePassword.checkSpecial(password)
+        (role === "regular" && !validatePassword.checkUppercase(password)) ||
+        (role === "regular" && !validatePassword.checkNumber(password)) ||
+        (role === "regular" && !validatePassword.checkSpecial(password))
       ) {
         return res.status(400).json({
           success: false,
@@ -1398,7 +1414,7 @@ const userCtrl = {
         email,
         username: usernameToUse,
         passwordHash: bcrypt.hashSync(
-          password,
+          role === "employee" ? createUnusablePassword() : password,
           parseInt(process.env.SALT_ROUNDS)
         ),
         accountStatus: {
@@ -1416,6 +1432,12 @@ const userCtrl = {
       });
 
       await newUser.save();
+      const activationToken =
+        role === "employee" ? issueAccountActivation(newUser) : null;
+      if (activationToken) await newUser.save();
+      const activationUrl = activationToken
+        ? buildAccountActivationUrl(activationToken)
+        : null;
 
       await Event.updateMany(
         {
@@ -1438,16 +1460,14 @@ const userCtrl = {
         <strong>${(await Position.findById(position)).name}</strong>.  
         Your journey begins now — and we're excited to see the impact you'll make.</p>
 
-        <p>Here are your account details:</p>  
+        <p>Here are your account details:</p>
         <p>
           <strong>Email:</strong> ${email}<br/>
-          <strong>Username:</strong> ${username}<br/>
-          <strong>Temporary Password:</strong> ${password}
+          <strong>Username:</strong> ${username}
         </p>
 
-         <p>For security, please log in and change your password immediately.</p>
-
-        <a href="${process.env.ADMIN_PORTAL_URL}/login" class="button">Log In to Your Account</a><br/>
+        <p>Create your password using this secure, single-use link. It expires in 30 minutes.</p>
+        <a href="${activationUrl}" class="button">Activate Account</a><br/>
         <br/> 
         <p>Once you're in, you’ll be able to:</p>
         <ul>
@@ -1511,7 +1531,7 @@ const userCtrl = {
   },
 
   refreshToken: async (req, res) => {
-    const token = req.cookies?.refreshToken || req.body?.refreshToken;
+    const token = req.cookies?.refreshToken;
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -1531,6 +1551,51 @@ const userCtrl = {
         code: "REFRESH_TOKEN_INVALID",
         message: "Your session expired. Please sign in again.",
       });
+    }
+
+    const session = await AuthSession.findOne({
+      sessionId: decoded.sid,
+      user: decoded.id,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    }).select("+currentTokenHash");
+    const presentedTokenHash = hashRefreshTokenId(decoded.jti);
+    let overlapReplayTokenId = null;
+    if (!session || session.currentTokenHash !== presentedTokenHash) {
+      // A hard navigation can briefly overlap the refresh request from the
+      // document being replaced. The first request rotates the cookie while
+      // the second may still carry the immediately preceding value. Do not
+      // classify that narrow window as malicious reuse or revoke the session;
+      // ask the client to retry after the browser applies Set-Cookie.
+      const rotationAgeMs = session?.lastRotatedAt
+        ? Date.now() - new Date(session.lastRotatedAt).getTime()
+        : Number.POSITIVE_INFINITY;
+      const expectedNextTokenId = deriveNextRefreshTokenId(
+        decoded.jti,
+        decoded.sid,
+        process.env.REFRESH_TOKEN_SECRET
+      );
+      if (
+        session &&
+        rotationAgeMs >= 0 &&
+        rotationAgeMs < 10_000 &&
+        session.currentTokenHash === hashRefreshTokenId(expectedNextTokenId)
+      ) {
+        overlapReplayTokenId = expectedNextTokenId;
+      } else {
+      if (session) {
+        session.revokedAt = new Date();
+        session.revokeReason = "refresh-token-reuse";
+        await session.save();
+      }
+      clearRefreshCookie(res);
+      return res.status(403).json({
+        success: false,
+        code: "REFRESH_TOKEN_REUSED",
+        forceLogout: true,
+        message: "Your session is no longer valid. Please sign in again.",
+      });
+      }
     }
 
     const sessionStartedAt = Number(
@@ -1606,14 +1671,32 @@ const userCtrl = {
         sessionStartedAt,
       });
 
-      // If the browser dropped the cookie but local storage still had a valid
-      // refresh token, restore the cookie so future refreshes use the safer path.
-      if (!req.cookies?.refreshToken && req.body?.refreshToken) {
-        res.cookie("refreshToken", token, {
-          ...getRefreshCookieOptions(),
-          maxAge: 7 * 24 * 60 * 60 * 1000,
-        });
+      const nextJti =
+        overlapReplayTokenId ||
+        deriveNextRefreshTokenId(
+          decoded.jti,
+          decoded.sid,
+          process.env.REFRESH_TOKEN_SECRET
+        );
+      const {
+        iat: _issuedAt,
+        exp: _expiresAt,
+        nbf: _notBefore,
+        ...refreshPayload
+      } = decoded;
+      const nextRefreshToken = createRefreshToken({
+        ...refreshPayload,
+        jti: nextJti,
+      });
+      if (!overlapReplayTokenId) {
+        session.currentTokenHash = hashRefreshTokenId(nextJti);
+        session.lastRotatedAt = new Date();
+        await session.save();
       }
+      res.cookie("refreshToken", nextRefreshToken, {
+        ...getRefreshCookieOptions(),
+        maxAge: Math.max(0, session.expiresAt.getTime() - Date.now()),
+      });
 
       // Don't let logging break refresh
       try {
@@ -1662,7 +1745,7 @@ const userCtrl = {
         ? { email: identTrimmed.toLowerCase() }
         : { username: normalizeUsername(identTrimmed) };
 
-      const user = await User.findOne(query).populate({
+      const user = await User.findOne(query).select("+passwordHash").populate({
           path: "employeeDetails.position",
           populate: [
             { path: "hierarchy", select: "name description" },
@@ -1672,6 +1755,15 @@ const userCtrl = {
 
       const invalid = { success: false, message: "Invalid credentials." };
       if (!user) return res.status(400).json(invalid);
+
+      if (user.mustSetPassword) {
+        return res.status(403).json({
+          success: false,
+          code: "ACCOUNT_ACTIVATION_REQUIRED",
+          message:
+            "Account activation is required. Use the secure link sent to your email.",
+        });
+      }
 
       const isMatch = await bcrypt.compare(password, user.passwordHash);
 
@@ -1785,7 +1877,20 @@ const userCtrl = {
       };
 
       const accessToken = createAccessToken(payload);
-      const refreshToken = createRefreshToken(payload);
+      const sessionId = newSessionId();
+      const refreshTokenId = newRefreshTokenId();
+      const refreshToken = createRefreshToken({
+        ...payload,
+        sid: sessionId,
+        jti: refreshTokenId,
+      });
+      await AuthSession.create({
+        sessionId,
+        user: user._id,
+        currentTokenHash: hashRefreshTokenId(refreshTokenId),
+        sessionStartedAt: new Date(sessionStartedAt),
+        expiresAt: refreshSessionExpiresAt(sessionStartedAt),
+      });
 
       await req.logActivity({
         action: "login",
@@ -1795,7 +1900,7 @@ const userCtrl = {
 
       res.cookie("refreshToken", refreshToken, {
         ...getRefreshCookieOptions(),
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        maxAge: 8 * 60 * 60 * 1000,
       });
 
       const userWithActivity = await withDrinkActivity(user);
@@ -1804,7 +1909,6 @@ const userCtrl = {
         success: true,
         message: "Login successful.",
         accessToken,
-        refreshToken,
         sessionStartedAt,
         user: { ...userWithActivity, passwordHash: undefined },
       });
@@ -1830,6 +1934,18 @@ const userCtrl = {
         : "manual";
 
       const userId = req.user?.id || req.user?._id || null;
+      const cookieToken = req.cookies?.refreshToken;
+      if (cookieToken) {
+        try {
+          const decodedRefresh = jwt.verify(cookieToken, process.env.REFRESH_TOKEN_SECRET);
+          await AuthSession.updateOne(
+            { sessionId: decodedRefresh.sid, user: decodedRefresh.id, revokedAt: null },
+            { $set: { revokedAt: new Date(), revokeReason: reason } }
+          );
+        } catch {
+          // Clearing the cookie is sufficient when it is already invalid.
+        }
+      }
 
       if (userId) {
         await User.findByIdAndUpdate(userId, {
@@ -2332,26 +2448,35 @@ const userCtrl = {
   /* ────────────────────────────────────────────────────────────── */
 
   createMyLicense: async (req, res) => {
+    let stagedDocumentId = null;
     try {
-      const { state, permitNumber, expiresAt } = req.body || {};
+      const { state, permitNumber, expiresAt, trainingProvider,
+        trainingCompletedAt, certificateNumber, attestedAuthenticAndCurrent,
+        attestedRequiredTraining } = req.body || {};
 
-      if (!state || !permitNumber || !expiresAt) {
+      if (!state) {
         return res.status(400).json({
           success: false,
-          message: "State, license number, and expiration date are required.",
+          message: "State is required.",
         });
       }
 
-      const expDate = new Date(expiresAt);
+      const policy = getStateCompliancePolicy(state);
+      if (policy.permitRequired && (!permitNumber || !expiresAt)) {
+        return res.status(400).json({ success: false,
+          message: "Permit number and expiration date are required for this state." });
+      }
+
+      const expDate = expiresAt ? new Date(expiresAt) : null;
       const today = startOfToday();
 
-      if (!(expDate instanceof Date) || isNaN(expDate.getTime())) {
+      if (expiresAt && (!(expDate instanceof Date) || isNaN(expDate.getTime()))) {
         return res
           .status(400)
           .json({ success: false, message: "Invalid expiration date." });
       }
 
-      if (expDate < today) {
+      if (expDate && expDate < today) {
         return res.status(400).json({
           success: false,
           message: "Expiration date cannot be in the past.",
@@ -2392,14 +2517,25 @@ const userCtrl = {
       }
 
       const normalizedState = String(state).toUpperCase().trim();
-      const normalizedPermit = String(permitNumber).trim().toLowerCase();
+      const trainingDate = trainingCompletedAt ? new Date(trainingCompletedAt) : null;
+      if (trainingDate && (Number.isNaN(trainingDate.getTime()) || trainingDate > new Date())) {
+        return res.status(400).json({ success: false, message: "Training completion date must be valid and not in the future." });
+      }
+      const hasValidDocument = hasValidComplianceDocumentSignature(req.file);
+      if (req.file && !hasValidDocument) return res.status(400).json({ success: false, message: "Verification document contents do not match its file type." });
+      if (String(attestedAuthenticAndCurrent) !== "true" ||
+          (policy.trainingAttestationRequired && String(attestedRequiredTraining) !== "true")) {
+        return res.status(400).json({ success: false,
+          message: "Confirm that the permit information is authentic and current and that required server training was completed." });
+      }
+      const normalizedPermit = String(permitNumber || "").trim().toLowerCase();
 
       // 🔹 Prevent duplicate (state + permitNumber)
       const hasDuplicate = (user.bartenderProfile.licenses || []).some(
         (lic) => {
           const s = (lic.state || "").toUpperCase().trim();
           const p = (lic.permitNumber || "").trim().toLowerCase();
-          return s === normalizedState && p === normalizedPermit;
+          return normalizedPermit && s === normalizedState && p === normalizedPermit;
         }
       );
 
@@ -2412,13 +2548,35 @@ const userCtrl = {
       }
 
       // 🔹 Push new license
+      const licenseId = new mongoose.Types.ObjectId();
+      if (hasValidDocument) {
+        stagedDocumentId = await storeComplianceDocument({
+          buffer: req.file.buffer,
+          mimeType: req.file.mimetype,
+          ownerId: user._id,
+          licenseId,
+        });
+      }
       user.bartenderProfile.licenses.push({
+        _id: licenseId,
         state: normalizedState,
-        permitNumber,
+        permitNumber: permitNumber || "",
         expiresAt: expDate,
         verified: false,
         status: "pending",
         decisionNote: "",
+        serverTraining: {
+          provider: trainingProvider || "",
+          completedAt: trainingCompletedAt ? new Date(trainingCompletedAt) : null,
+          certificateNumber: certificateNumber || "",
+          proofDocument: hasValidDocument ? { fileId: stagedDocumentId, mimeType: req.file.mimetype, size: req.file.size, uploadedAt: new Date() } : undefined,
+          attestedAuthenticAndCurrent: String(attestedAuthenticAndCurrent) === "true",
+          attestedAt: String(attestedAuthenticAndCurrent) === "true" ? new Date() : null,
+          attestedRequiredTraining: String(attestedRequiredTraining) === "true",
+          trainingAttestedAt: String(attestedRequiredTraining) === "true" ? new Date() : null,
+          status: "pending",
+        },
+        verificationHistory: [{ action: "submitted", at: new Date(), by: req.user.id }],
       });
 
       // Make sure Mongoose knows bartenderProfile changed
@@ -2455,11 +2613,18 @@ const userCtrl = {
         data: formatLicenseForResponse(user, latest),
       });
     } catch (err) {
+      if (stagedDocumentId) await deleteComplianceDocument(stagedDocumentId).catch(() => {});
       console.error("createMyLicense error", err);
       return res
         .status(500)
         .json({ success: false, message: "Failed to create license." });
     }
+  },
+
+  getStateCompliancePolicy: async (req, res) => {
+    const state = String(req.query.state || "").trim().toUpperCase();
+    if (!state) return res.status(400).json({ success: false, message: "State is required." });
+    return res.json({ success: true, data: getStateCompliancePolicy(state) });
   },
 
   /* ────────────────────────────────────────────────────────────── */
@@ -2469,7 +2634,7 @@ const userCtrl = {
   getLicenseById: async (req, res) => {
     try {
       const { licenseId } = req.params;
-      const isEmployee = req.user.role === "employee";
+      const isEmployee = ["admin", "employee"].includes(req.user.role);
 
       // Employees can view *any* bartender's license.
       // Bartenders can only view their own license.
@@ -2496,38 +2661,36 @@ const userCtrl = {
 
       const lic = user.bartenderProfile.licenses[0];
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const status =
-        lic.status ||
-        (lic.verified
-          ? new Date(lic.expiresAt) < today
-            ? "expired"
-            : "active"
-          : "pending");
-
       return res.json({
         success: true,
-        data: {
-          id: lic._id,
-          _id: lic._id,
-          state: lic.state,
-          permitNumber: lic.permitNumber,
-          expiresAt: lic.expiresAt,
-          verified: lic.verified,
-          status,
-          userId: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          userRole: user.role,
-        },
+        data: { ...formatLicenseForResponse(user, lic), _id: lic._id, userRole: user.role },
       });
     } catch (err) {
       console.error("getLicenseById error", err);
       return res
         .status(500)
         .json({ success: false, message: "Failed to load license." });
+    }
+  },
+
+  getLicenseVerificationDocument: async (req, res) => {
+    try {
+      const { licenseId } = req.params;
+      const isStaff = ["admin", "employee"].includes(req.user.role);
+      const query = isStaff
+        ? { "bartenderProfile.licenses._id": licenseId }
+        : { _id: req.user.id, "bartenderProfile.licenses._id": licenseId };
+      const user = await User.findOne(query);
+      const license = user?.bartenderProfile?.licenses?.id(licenseId);
+      const proof = license?.serverTraining?.proofDocument;
+      const document = proof?.fileId ? await readComplianceDocument(proof.fileId) : null;
+      if (!document) return res.status(404).json({ success: false, message: "Verification document not found." });
+      res.setHeader("Content-Type", document.mimeType || proof.mimeType || "application/octet-stream");
+      res.setHeader("Content-Disposition", "inline; filename=verification-document");
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(document.buffer);
+    } catch (err) {
+      return res.status(500).json({ success: false, message: "Failed to load verification document." });
     }
   },
 
@@ -2638,7 +2801,44 @@ const userCtrl = {
                   expiresAt: "$bartenderProfile.licenses.expiresAt",
                   verified: "$bartenderProfile.licenses.verified",
                   status: "$bartenderProfile.licenses.status",
+                  complianceStatus: {
+                    $switch: {
+                      branches: [
+                        { case: { $or: [
+                          { $eq: ["$bartenderProfile.licenses.status", "denied"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.status", "rejected"] },
+                        ] }, then: "rejected" },
+                        { case: { $or: [
+                          { $eq: ["$bartenderProfile.licenses.status", "expired"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.status", "expired"] },
+                          { $lte: ["$bartenderProfile.licenses.expiresAt", "$$NOW"] },
+                        ] }, then: "expired" },
+                        { case: { $and: [
+                          { $eq: ["$bartenderProfile.licenses.status", "active"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.status", "verified"] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.attestedAuthenticAndCurrent", true] },
+                          { $eq: ["$bartenderProfile.licenses.serverTraining.attestedRequiredTraining", true] },
+                        ] }, then: "verified" },
+                      ],
+                      default: "pending",
+                    },
+                  },
                   decisionNote: "$bartenderProfile.licenses.decisionNote",
+                  serverTraining: {
+                    provider: "$bartenderProfile.licenses.serverTraining.provider",
+                    completedAt: "$bartenderProfile.licenses.serverTraining.completedAt",
+                    certificateNumber: "$bartenderProfile.licenses.serverTraining.certificateNumber",
+                    status: "$bartenderProfile.licenses.serverTraining.status",
+                    verifiedAt: "$bartenderProfile.licenses.serverTraining.verifiedAt",
+                    hasVerificationDocument: { $and: [
+                      { $ne: ["$bartenderProfile.licenses.serverTraining.proofDocument.fileId", null] },
+                      { $ne: ["$bartenderProfile.licenses.serverTraining.proofDocument.uploadedAt", null] },
+                      { $gt: [{ $ifNull: ["$bartenderProfile.licenses.serverTraining.proofDocument.size", 0] }, 0] },
+                    ] },
+                    documentUploadedAt: "$bartenderProfile.licenses.serverTraining.proofDocument.uploadedAt",
+                    attestedRequiredTraining: "$bartenderProfile.licenses.serverTraining.attestedRequiredTraining",
+                  },
+                  verificationHistory: "$bartenderProfile.licenses.verificationHistory",
                 },
               },
             ],
@@ -2678,9 +2878,12 @@ const userCtrl = {
   /* ────────────────────────────────────────────────────────────── */
 
   updateMyLicense: async (req, res) => {
+    let stagedDocumentId = null;
     try {
       const { licenseId } = req.params;
-      const { state, permitNumber, expiresAt } = req.body || {};
+      const { state, permitNumber, expiresAt, trainingProvider,
+        trainingCompletedAt, certificateNumber, attestedAuthenticAndCurrent,
+        attestedRequiredTraining } = req.body || {};
 
       const user = await User.findById(req.user.id);
       if (!user || !user.bartenderProfile) {
@@ -2700,6 +2903,9 @@ const userCtrl = {
         return res
           .status(404)
           .json({ success: false, message: "License not found." });
+      }
+      if (req.file && !hasValidComplianceDocumentSignature(req.file)) {
+        return res.status(400).json({ success: false, message: "Verification document contents do not match its file type." });
       }
 
       if (state !== undefined) license.state = state;
@@ -2721,8 +2927,42 @@ const userCtrl = {
       license.verified = false;
       license.status = "pending";
       license.decisionNote = "";
+      if (trainingProvider !== undefined) license.serverTraining.provider = trainingProvider;
+      if (trainingCompletedAt !== undefined) license.serverTraining.completedAt = new Date(trainingCompletedAt);
+      if (certificateNumber !== undefined) license.serverTraining.certificateNumber = certificateNumber;
+      if (String(attestedAuthenticAndCurrent) === "true") {
+        license.serverTraining.attestedAuthenticAndCurrent = true;
+        license.serverTraining.attestedAt = new Date();
+      }
+      if (String(attestedRequiredTraining) === "true") {
+        license.serverTraining.attestedRequiredTraining = true;
+        license.serverTraining.trainingAttestedAt = new Date();
+      }
+      if (req.file?.buffer) {
+        stagedDocumentId = await storeComplianceDocument({ buffer: req.file.buffer,
+          mimeType: req.file.mimetype, ownerId: user._id, licenseId: license._id });
+        license.$locals.previousComplianceDocumentId = license.serverTraining.proofDocument?.fileId || null;
+        license.serverTraining.proofDocument = { fileId: stagedDocumentId, mimeType: req.file.mimetype, size: req.file.size, uploadedAt: new Date() };
+      }
+      const training = license.serverTraining;
+      const policy = getStateCompliancePolicy(license.state);
+      if (!training?.attestedAuthenticAndCurrent ||
+          (policy.trainingAttestationRequired && !training?.attestedRequiredTraining)) {
+        return res.status(400).json({ success: false,
+          message: "Confirm that the permit information is authentic and current and that required server training was completed." });
+      }
+      license.serverTraining.status = "pending";
+      license.serverTraining.verifiedAt = null;
+      license.serverTraining.verifiedBy = null;
+      license.verificationHistory.push({ action: "updated", at: new Date(), by: req.user.id });
+      if (license.verificationHistory.length > 20) license.verificationHistory.splice(0, license.verificationHistory.length - 20);
 
       await user.save();
+      if (license.$locals.previousComplianceDocumentId) {
+        await deleteComplianceDocument(license.$locals.previousComplianceDocumentId).catch((error) =>
+          console.error("Failed to remove replaced compliance document:", error.message)
+        );
+      }
 
       await req
         .logActivity({
@@ -2746,6 +2986,7 @@ const userCtrl = {
         data: formatLicenseForResponse(user, license),
       });
     } catch (err) {
+      if (stagedDocumentId) await deleteComplianceDocument(stagedDocumentId).catch(() => {});
       console.error("updateMyLicense error", err);
       return res
         .status(500)
@@ -2788,11 +3029,17 @@ const userCtrl = {
       // Capture fields for logging BEFORE removing
       const state = license.state;
       const permitNumber = license.permitNumber;
+      const complianceDocumentId = license.serverTraining?.proofDocument?.fileId;
 
       // Remove from the array
       licenses.splice(idx, 1);
 
       await user.save();
+      if (complianceDocumentId) {
+        await deleteComplianceDocument(complianceDocumentId).catch((error) =>
+          console.error("Failed to remove deleted license document:", error.message)
+        );
+      }
 
       // Activity log (best-effort, don't fail request if log fails)
       await req
@@ -2824,7 +3071,7 @@ const userCtrl = {
 
   reviewLicenseForAdmin: async (req, res) => {
     try {
-      if (req.user.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user.role)) {
         return res.status(403).json({
           success: false,
           message: "Only employees can approve/deny licenses.",
@@ -2864,22 +3111,44 @@ const userCtrl = {
       const today = startOfToday();
 
       if (action === "approve") {
+        {
+          const candidate = license.toObject();
+          candidate.verified = true;
+          candidate.status = "active";
+          candidate.serverTraining.status = "verified";
+          const compliance = getPermitCompliance(
+            { bartenderProfile: { licenses: [candidate] } },
+            candidate.state
+          );
+          if (!compliance.eligible) {
+            return res.status(400).json({ success: false,
+              message: "This permit cannot be verified until its required information and attestations are current.", reasons: compliance.reasons });
+          }
+        }
         license.verified = true;
         license.status =
           license.expiresAt && new Date(license.expiresAt) < today
             ? "expired"
             : "active";
         license.decisionNote = null;
+        license.serverTraining.status = "verified";
+        license.serverTraining.verifiedAt = new Date();
+        license.serverTraining.verifiedBy = req.user.id;
+        license.serverTraining.decisionNote = "";
       } else if (action === "deny") {
         license.verified = false;
         license.status = "denied";
         if (note !== undefined) {
           license.decisionNote = note;
         }
+        license.serverTraining.status = "rejected";
+        license.serverTraining.decisionNote = note || "Rejected by administrator";
       }
 
       license.lastStatusChangeAt = new Date();
       license.lastStatusChangedBy = req.user.id;
+      license.verificationHistory.push({ action: action === "approve" ? "verified" : "rejected", at: new Date(), by: req.user.id, note: note || "" });
+      if (license.verificationHistory.length > 20) license.verificationHistory.splice(0, license.verificationHistory.length - 20);
 
       license.reminders = {
         d90SentOn: null,
@@ -2924,7 +3193,7 @@ const userCtrl = {
 
   reviewBartenderProfileForAdmin: async (req, res) => {
     try {
-      if (req.user.role !== "employee") {
+      if (!["admin", "employee"].includes(req.user.role)) {
         return res.status(403).json({
           success: false,
           message: "Only employees can approve/deny bartender profiles.",
@@ -3338,7 +3607,7 @@ const userCtrl = {
           .status(400)
           .json({ success: false, message: "role is required" });
 
-      if (role === "bartender" && req.user?.role === "employee") {
+      if (role === "bartender" && ["admin", "employee"].includes(req.user?.role)) {
         return res.json({
           role,
           eligible: true,
@@ -3444,12 +3713,86 @@ const userCtrl = {
       return res.status(200).json({
         success: true,
         message: "Password reset email sent successfully.",
-        raw,
-        resetTokenExpires,
-        data: user,
       });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
+  activateAccount: async (req, res) => {
+    try {
+      const { activationToken, newPassword } = req.body;
+      if (!activationToken || !newPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "Activation token and new password are required.",
+        });
+      }
+      if (
+        !validatePassword.checkLength(newPassword) ||
+        !validatePassword.checkUppercase(newPassword) ||
+        !validatePassword.checkNumber(newPassword) ||
+        !validatePassword.checkSpecial(newPassword)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Password must meet complexity requirements.",
+        });
+      }
+
+      const user = await User.findOne({
+        activationTokenHash: hashAccountActivationToken(activationToken),
+        activationTokenExpiresAt: { $gt: new Date() },
+        mustSetPassword: true,
+      }).select(
+        "+activationTokenHash +activationTokenExpiresAt +passwordHash"
+      );
+      if (!user) {
+        return res.status(400).json({
+          success: false,
+          message: "This activation link is invalid, expired, or already used.",
+        });
+      }
+
+      user.passwordHash = await bcrypt.hash(
+        newPassword,
+        parseInt(process.env.SALT_ROUNDS)
+      );
+      user.activationTokenHash = null;
+      user.activationTokenExpiresAt = null;
+      user.activationCompletedAt = new Date();
+      user.mustSetPassword = false;
+      await user.save();
+      await AuthSession.updateMany(
+        { user: user._id, revokedAt: null },
+        {
+          $set: {
+            revokedAt: new Date(),
+            revokeReason: "account-activation",
+          },
+        }
+      );
+
+      await req.logActivity({
+        action: "update",
+        target: { model: "User", id: user._id },
+        actor: { type: "User", id: user._id },
+        summary: "Activated account and created password",
+        changes: [
+          { path: "passwordHash", from: "[unset]", to: "[redacted]" },
+          { path: "mustSetPassword", from: true, to: false },
+        ],
+      });
+
+      return res.json({
+        success: true,
+        message: "Account activated. You can now sign in.",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Unable to activate account.",
+      });
     }
   },
 
@@ -3470,7 +3813,7 @@ const userCtrl = {
       const user = await User.findOne({
         resetPasswordToken: hash,
         resetPasswordExpires: { $gt: Date.now() },
-      });
+      }).select("+resetPasswordToken +resetPasswordExpires");
 
       if (!user)
         return res
@@ -3616,27 +3959,6 @@ const userCtrl = {
   adminResetPassword: async (req, res) => {
     try {
       const { id } = req.params;
-      const { resetPassword } = req.body;
-
-      if (!resetPassword) {
-        return res.status(400).json({
-          success: false,
-          message: "Please provide a reset password.",
-        });
-      }
-
-      if (
-        !validatePassword.checkLength(resetPassword) ||
-        !validatePassword.checkUppercase(resetPassword) ||
-        !validatePassword.checkNumber(resetPassword) ||
-        !validatePassword.checkSpecial(resetPassword)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Password must meet complexity requirements.",
-        });
-      }
-
       const user = await User.findById(id);
       if (!user) {
         return res.status(404).json({
@@ -3644,26 +3966,17 @@ const userCtrl = {
           message: "User not found.",
         });
       }
-
-      const hashedPassword = bcrypt.hashSync(
-        resetPassword,
-        parseInt(process.env.SALT_ROUNDS)
-      );
-
-      user.passwordHash = hashedPassword;
+      const reqUser = await User.findById(req.user.id);
+      const activationToken = issueAccountActivation(user);
       await user.save();
+      const activationUrl = buildAccountActivationUrl(activationToken);
 
       const emailContent = `
         <p>Dear ${user.fullName},</p>
-        <p>Your password has been reset by an administrator.</p>
-        <p>Here are your new login details:</p>
-        <ul>
-            <li><strong>Email:</strong> ${user.email}</li>
-            <li><strong>Temporary Password:</strong> ${resetPassword}</li>
-        </ul>
-        <p>Please log in and update your password as soon as possible.</p>
-        <a href="${process.env.ADMIN_PORTAL_URL}/login" class="button">Log in Now</a>
-        <p>We're here to support you. If you have any questions, feel free to reach out.</p>
+        <p>An administrator requested that you create a new password.</p>
+        <p>This secure, single-use link expires in 30 minutes.</p>
+        <a href="${activationUrl}" class="button">Create New Password</a>
+        <p>If you did not expect this message, contact support immediately.</p>
       `;
 
       await sendEmail({
@@ -3685,16 +3998,16 @@ const userCtrl = {
             position: reqUser.position,
           },
         },
-        summary: "Admin reset password for user",
+        summary: "Admin issued password setup link",
         reason: "Admin initiated reset",
         changes: [
-          { path: "passwordHash", from: "[redacted]", to: "[redacted]" },
+          { path: "mustSetPassword", from: false, to: true },
         ],
       });
 
       return res.status(200).json({
         success: true,
-        message: `Password was reset successfully. The user can now log in with the new password sent to their email.`,
+        message: "A secure password setup link was sent to the user.",
       });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });
@@ -3704,6 +4017,9 @@ const userCtrl = {
   // VIEWS
   viewAllUsers: async (req, res) => {
     try {
+      if (!["admin", "employee"].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: "Employee resources access denied." });
+      }
       const users = await User.find()
         .populate({
           path: "employeeDetails.position",
@@ -3717,6 +4033,9 @@ const userCtrl = {
   },
   viewAllEmployees: async (req, res) => {
     try {
+      if (!["admin", "employee"].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: "Employee resources access denied." });
+      }
       const employees = await User.find({ role: "employee" })
         .populate({
           path: "employeeDetails.position",
@@ -3735,6 +4054,9 @@ const userCtrl = {
 
   viewAllRegulars: async (req, res) => {
     try {
+      if (!["admin", "employee"].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: "Employee resources access denied." });
+      }
       const customers = await User.find({ role: "regular" }).lean();
       return res.status(200).json({ success: true, data: customers });
     } catch (err) {
@@ -4146,7 +4468,9 @@ const userCtrl = {
         reviews: reviewRows,
         rewards: {
           completedEvents,
-          milestones: buildRewardProgress(completedEvents, rewardClaims),
+          milestones: buildRewardProgress(completedEvents, rewardClaims, {
+            includePurchaseLinks: true,
+          }),
         },
         eligibility: {
           eligible,
@@ -4176,6 +4500,9 @@ const userCtrl = {
 
   viewEmployeesNotReporting: async (req, res) => {
     try {
+      if (!["admin", "employee"].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: "Employee resources access denied." });
+      }
       const employees = await User.find({
         role: "employee",
         "employeeDetails.reportTo": null,
@@ -4199,6 +4526,9 @@ const userCtrl = {
 
   viewUser: async (req, res) => {
     try {
+      if (!["admin", "employee"].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: "Employee resources access denied." });
+      }
       const { id } = req.params;
       const user = await User.findById(id).populate({
           path: "employeeDetails.position",
@@ -4334,6 +4664,9 @@ const userCtrl = {
 
   updateUser: async (req, res) => {
     try {
+      if (!["admin", "employee"].includes(req.user?.role)) {
+        return res.status(403).json({ success: false, message: "Employee resources access denied." });
+      }
       const { id } = req.params;
       const {
         fullName,
@@ -4348,8 +4681,16 @@ const userCtrl = {
         ...otherFields
       } = req.body;
 
-      const user = await User.findById(id);
-      const reqUser = await User.findById(req.user.id);
+      const user = await User.findById(id).populate({
+        path: "employeeDetails.position",
+        populate: { path: "hierarchy", select: "name" },
+      });
+      const reqUser =
+        req.manager ||
+        (await User.findById(req.user.id).populate({
+          path: "employeeDetails.position",
+          populate: { path: "hierarchy", select: "name" },
+        }));
       if (!user) {
         return res
           .status(404)
@@ -4360,6 +4701,17 @@ const userCtrl = {
         return res
           .status(404)
           .json({ success: false, message: "Authorized user not found." });
+      }
+      const updatePermission = canManage({
+        actor: reqUser,
+        action: "edit",
+        targetHierarchyName:
+          user.employeeDetails?.position?.hierarchy?.name || "Employee",
+        targetId: user._id,
+        isStatusChange: Boolean(accountStatus || employeeDetails?.employmentStatus || role),
+      });
+      if (!updatePermission.ok) {
+        return res.status(403).json({ success: false, message: updatePermission.reason });
       }
 
       const before = user.toObject(); // take BEFORE you mutate, if you want true diff
@@ -4984,11 +5336,37 @@ const userCtrl = {
         indefinite = false,
       } = req.body;
 
-      const reqUser = await User.findById(req.user.id);
+      const reqUser =
+        req.manager ||
+        (await User.findById(req.user.id).populate({
+          path: "employeeDetails.position",
+          populate: { path: "hierarchy", select: "name" },
+        }));
       if (!reqUser) {
         return res
           .status(404)
           .json({ success: false, message: "Authorized user not found." });
+      }
+      const targetUser = await User.findById(id).populate({
+        path: "employeeDetails.position",
+        populate: { path: "hierarchy", select: "name" },
+      });
+      if (!targetUser) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(404).json({ success: false, message: "User not found." });
+      }
+      const deletePermission = canManage({
+        actor: reqUser,
+        action: "delete",
+        targetHierarchyName:
+          targetUser.employeeDetails?.position?.hierarchy?.name || "Employee",
+        targetId: targetUser._id,
+      });
+      if (!deletePermission.ok) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(403).json({ success: false, message: deletePermission.reason });
       }
 
       if (!reason || !reason.trim()) {
@@ -5519,6 +5897,11 @@ const userCtrl = {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
+      if (!["admin", "employee"].includes(req.user?.role)) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(403).json({ success: false, message: "Employee resources access denied." });
+      }
       const { id } = req.params;
       const reqUser = await User.findById(req.user.id);
 

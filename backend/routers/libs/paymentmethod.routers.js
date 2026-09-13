@@ -5,6 +5,7 @@ import { auth } from "../../middleware/index.js";
 const paymentMethodRouter = Router();
 
 // CREATE
+paymentMethodRouter.post('/setup-intent', auth, paymentMethodCtrl.createSetupIntent);
 paymentMethodRouter.post('/', auth, paymentMethodCtrl.createPaymentMethod);
 
 // VIEW 

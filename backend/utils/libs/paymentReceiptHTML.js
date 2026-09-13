@@ -10,6 +10,7 @@ export const paymentReceiptHTML = ({
   deposit,
   amountPaid = deposit,
   balanceDue,
+  balanceDueAt,
   coupon,
   lineItems = {},
   nextStep=null
@@ -23,6 +24,24 @@ export const paymentReceiptHTML = ({
       )}</p>`
     : "";
   const money = (value) => `$${(Number(value) || 0).toFixed(2)}`;
+  const eventTimezone =
+    evt.timezone ||
+    evt.location?.timezone ||
+    "America/Indiana/Indianapolis";
+  const dateTime = (value) =>
+    new Intl.DateTimeFormat("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: eventTimezone,
+    }).format(new Date(value));
+  const zoneName = (value) =>
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      timeZone: eventTimezone,
+      timeZoneName: "short",
+    })
+      .formatToParts(new Date(value))
+      .find((part) => part.type === "timeZoneName")?.value || eventTimezone;
   const paid = Number(amountPaid) || 0;
   const balance =
     balanceDue == null
@@ -47,9 +66,9 @@ export const paymentReceiptHTML = ({
 
         <h3 style="margin-top:25px;color:${primary}">Event Summary</h3>
         <p><strong>Event:</strong> ${displayEventType(evt.type)}</p>
-        <p><strong>Date:</strong> ${new Date(evt.startAt).toLocaleString()} – ${new Date(
+        <p><strong>Date:</strong> ${dateTime(evt.startAt)} – ${dateTime(
     evt.endAt
-  ).toLocaleString()}</p>
+  )} ${zoneName(evt.startAt)}</p>
         <p><strong>Bar Type:</strong> ${displayEventType(evt.options?.barType)}</p>
 
         <h3 style="margin-top:25px;color:${primary}">Payment Breakdown</h3>
@@ -67,6 +86,7 @@ export const paymentReceiptHTML = ({
         <p><strong>Total After Discounts:</strong> ${money(discountedTotal)}</p>
         <p><strong>Amount Paid:</strong> ${money(paid)}</p>
         <p><strong>Balance Due:</strong> ${money(balance)}</p>
+        ${balanceDueAt ? `<p><strong>Balance Due Date:</strong> ${dateTime(balanceDueAt)} ${zoneName(balanceDueAt)}</p>` : ""}
         
         ${
             nextStep && `<h3 style="margin-top:25px;color:${primary}">Next Steps</h3>

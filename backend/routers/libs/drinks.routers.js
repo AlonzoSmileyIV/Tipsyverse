@@ -5,13 +5,13 @@ import { uploadImage, uploadVideo } from "../../utils/index.js";
 
 const drinkRouter = Router();
 
-drinkRouter.post('/bulk', uploadExcel.single('file'), auth, authEmployee, drinkCtrl.bulkDrinkBulker);
+drinkRouter.post('/bulk', auth, authEmployee, uploadExcel.single('file'), drinkCtrl.bulkDrinkBulker);
 
 // -------- FILE UPLOAD --------
-drinkRouter.post('/upload-image', uploadImage.single('photo'), auth, drinkCtrl.uploadDrinkImage);
-drinkRouter.post('/upload-video', uploadVideo.single('video'), auth, drinkCtrl.uploadDrinkVideo);
+drinkRouter.post('/upload-image', auth, authEmployee, uploadImage.single('photo'), drinkCtrl.uploadDrinkImage);
+drinkRouter.post('/upload-video', auth, authEmployee, uploadVideo.single('video'), drinkCtrl.uploadDrinkVideo);
 // -------- CREATE --------
-drinkRouter.post('/create', auth, drinkCtrl.createDrink);
+drinkRouter.post('/create', auth, authEmployee, drinkCtrl.createDrink);
 
 // -------- READ --------
 drinkRouter.get('/', drinkCtrl.viewAllDrinks);

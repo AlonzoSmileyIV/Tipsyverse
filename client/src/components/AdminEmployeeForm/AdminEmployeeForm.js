@@ -38,16 +38,13 @@ import {
 } from "@mui/material";
 import {
   CameraAlt,
-  Visibility,
-  VisibilityOff,
-  CheckCircle,
   Save,
   Add,
   Close as CloseIcon,
 } from "@mui/icons-material";
-import { green, red } from "@mui/material/colors";
+import { red } from "@mui/material/colors";
 import { useDispatch, useSelector } from "react-redux";
-import ActivityLogsTable from "../ActivityLogsTable/ActivityLogsTable";
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
 import { fetchAllPositions } from "../../features/positions/positionSlice";
 import api from "../../services/api";
 import dayjs from "dayjs";
@@ -252,6 +249,27 @@ const terminationReasons = [
 
 const MAX_FILE_SIZE_MB = 10;
 
+const primaryTextButtonSx = {
+  color: "var(--primary-color)",
+};
+
+const primaryOutlinedButtonSx = {
+  borderColor: "var(--primary-color)",
+  color: "var(--primary-color)",
+  "&:hover": {
+    borderColor: "var(--primary-color)",
+    backgroundColor: "rgba(128, 0, 32, 0.06)",
+  },
+};
+
+const primaryContainedButtonSx = {
+  backgroundColor: "var(--primary-color)",
+  "&:hover": {
+    backgroundColor: "var(--primary-color)",
+    filter: "brightness(0.9)",
+  },
+};
+
 const isFileValid = (file, type = "image") => {
   const validTypes =
     type === "image"
@@ -269,7 +287,7 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
 
   const allPositions = useSelector((state) => state.positions?.allPositions);
   const positionsData = useMemo(
-    () => (allPositions?.data?.length ? allPositions?.data : mockPositions),
+    () => (Array.isArray(allPositions?.data) ? allPositions.data : []),
     [allPositions]
   );
 
@@ -297,7 +315,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
     [isView]
   );
 
-  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState("");
   const [searchDirect, setSearchDirect] = useState("");
@@ -310,7 +327,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
     fullName: "",
     email: "",
     username: "",
-    password: "",
     position: "",
     dateStarted: "",
     birthday: "",
@@ -332,7 +348,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
         fullName: employee.fullName,
         email: employee.email,
         username: employee.username || "",
-        password: "",
         birthday: employee.profile?.birthday?.split("T")[0] || "",
         bio: employee.profile?.bio || "",
         position: employee.employeeDetails?.position?._id || "",
@@ -363,7 +378,7 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
   );
 
   const selectedPosition =
-    filteredPositions.find((p) => p._id === formData.position) || null;
+    filteredPositions.find((p) => idEqual(p._id, formData.position)) || null;
   const rtc = reportToConstraints(loggedInUser, selectedPosition);
 
   useEffect(() => {
@@ -386,13 +401,22 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
 
   // Only show assignable positions
   const positionOptions = useMemo(() => {
-    if (!isAdd) return positionsData;
+    if (isView) return positionsData;
 
-    // Otherwise, filter by permissions
+    // A user's own position is protected and the control is disabled, but its
+    // saved value still needs to resolve to a label in edit mode.
+    const editingSelf =
+      isEdit && idEqual(loggedInUser?._id, employee?._id);
+    if (editingSelf) {
+      return positionsData.filter((position) =>
+        idEqual(position._id, formData.position)
+      );
+    }
+
     return positionsData.filter((p) =>
       canAssignPosition({
         actor: loggedInUser,
-        positionMode,
+        mode: positionMode,
         employee, // null on add
         position: p,
         selectedReportToId, // used for 1-level-below rule on add
@@ -405,6 +429,9 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
     positionMode,
     employee,
     selectedReportToId,
+    formData.position,
+    isEdit,
+    isView,
   ]);
 
   const isLastStep = activeStep === steps.length - 1;
@@ -416,12 +443,26 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
   // If user picks a position then changes reportTo such that it’s no longer valid,
   // clear the position to avoid illegal state.
   useEffect(() => {
-    if (!formData.position) return;
-    const stillOk = positionOptions.some((p) => p._id === formData.position);
+    // Do not erase the saved position during the initial async load.
+    if (!formData.position || positionsData.length === 0 || isView) return;
+    const editingSelf =
+      isEdit && idEqual(loggedInUser?._id, employee?._id);
+    if (editingSelf) return;
+    const stillOk = positionOptions.some((p) =>
+      idEqual(p._id, formData.position)
+    );
     if (!stillOk) {
       setFormData((prev) => ({ ...prev, position: "" }));
     }
-  }, [positionOptions, formData.position, setFormData]);
+  }, [
+    employee?._id,
+    formData.position,
+    isEdit,
+    isView,
+    loggedInUser?._id,
+    positionOptions,
+    positionsData.length,
+  ]);
 
   const fetchAllData = useCallback(() => {
     Promise.all([dispatch(fetchAllPositions())]);
@@ -516,6 +557,10 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
 
   const handleBack = () => setActiveStep((prev) => prev - 1);
 
+  const handleStepClick = (stepIndex) => {
+    if (!isAdd) setActiveStep(stepIndex);
+  };
+
   const handleReviewClick = () => {
     const newErrors = {};
 
@@ -545,20 +590,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
         "If you're going to terminate someone, the reason for termination needs to be listed.";
     }
 
-    if (isAdd) {
-      if (!formData.password) newErrors.passwordEmpty = "Password is required.";
-      if (formData.password.length < 6)
-        newErrors.passwordLength = "Password must be at least 6 characters.";
-      if (!/[A-Z]/.test(formData.password))
-        newErrors.passwordUppercase =
-          "Must include at least one uppercase letter.";
-      if (!/[a-z]/.test(formData.password))
-        newErrors.passwordLowercase =
-          "Must include at least one lowercase letter.";
-      if (!/[!@#$%^&*(),.?":{}|<>]/.test(formData.password))
-        newErrors.passwordSpecial =
-          "Must include at least one special character.";
-    }
     setErrors(newErrors);
     if (Object.keys(newErrors).length === 0) {
       setReviewDialogOpen(true);
@@ -576,7 +607,6 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
         fullName: formData.fullName,
         email: formData.email,
         username: formData.username.toLowerCase(),
-        password: formData.password,
         birthday: formData.birthday,
         bio: formData.bio,
         photo: formData.photo,
@@ -694,33 +724,27 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
     }
   };
 
-  const passwordValidations = [
-    {
-      label: "At least 6 characters",
-      isValid: formData.password.length >= 6,
-    },
-    {
-      label: "One uppercase letter",
-      isValid: /[A-Z]/.test(formData.password),
-    },
-    {
-      label: "One lowercase letter",
-      isValid: /[a-z]/.test(formData.password),
-    },
-    {
-      label: "One special character",
-      isValid: /[!@#$%^&*(),.?":{}|<>]/.test(formData.password),
-    },
-  ];
+  const filteredDirectReports = employeesData.filter((emp) => {
+    const currentManager =
+      typeof emp.employeeDetails?.reportTo === "object"
+        ? emp.employeeDetails?.reportTo?._id
+        : emp.employeeDetails?.reportTo;
+    const alreadyReportsToEmployee = idEqual(
+      currentManager,
+      employee?._id
+    );
+    const isSelected = formData.directReports.some((id) =>
+      idEqual(id, emp._id)
+    );
 
-  const filteredDirectReports = employeesData.filter(
-    (emp) =>
-      emp._id !== employee?._id && // exclude self
-      emp._id !== formData.reportTo && // exclude current manager
-      emp.employeeDetails?.position?.name?.toLowerCase() !== "owner" && // exclude owners
-      !emp.employeeDetails?.reportTo && // exclude users who already report to someone
+    return (
+      emp._id !== employee?._id &&
+      emp._id !== formData.reportTo &&
+      emp.employeeDetails?.position?.name?.toLowerCase() !== "owner" &&
+      (!currentManager || alreadyReportsToEmployee || isSelected) &&
       emp.fullName.toLowerCase().includes(searchDirect.toLowerCase())
-  );
+    );
+  });
 
   return (
     <Box sx={{ p: 3 }}>
@@ -738,15 +762,31 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
       </IconButton>
 
       <Stepper activeStep={activeStep} alternativeLabel>
-        {steps.map((label) => (
-          <Step key={label}>
-            <StepLabel StepIconProps={{
-         sx: {
-            color: 'grey',             // idle
-            '&.Mui-active': { color: 'var(--primary-color) !important' },
-            '&.Mui-completed': { color: 'var(--primary-color) !important' },
-          },
-        }}>{label}</StepLabel>
+        {steps.map((label, index) => (
+          <Step
+            key={label}
+            onClick={() => handleStepClick(index)}
+            sx={{ cursor: isAdd ? "default" : "pointer" }}
+          >
+            <StepLabel
+              StepIconProps={{
+                sx: {
+                  color: "grey",
+                  "&.Mui-active": {
+                    color: "var(--primary-color) !important",
+                  },
+                  "&.Mui-completed": {
+                    color: "var(--primary-color) !important",
+                  },
+                },
+              }}
+              sx={{
+                cursor: isAdd ? "default" : "pointer",
+                userSelect: "none",
+              }}
+            >
+              {label}
+            </StepLabel>
           </Step>
         ))}
       </Stepper>
@@ -899,6 +939,7 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
                       <Button
                         variant="text"
                         size="small"
+                        sx={primaryTextButtonSx}
                         onClick={() => {
                           const lower = String(u).toLowerCase();
                           setFormData((f) => ({ ...f, username: lower }));
@@ -916,74 +957,10 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
           )}
 
           {isAdd && (
-            <>
-              <TextField
-                label="Password"
-                type={showPassword ? "text" : "password"}
-                fullWidth
-                margin="normal"
-                value={formData.password}
-                onChange={(e) => handleChange("password", e.target.value)}
-                InputProps={{
-                  endAdornment: (
-                    <IconButton onClick={() => setShowPassword(!showPassword)}>
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  ),
-                }}
-                error={
-                  hasError("passwordEmpty") ||
-                  hasError("passwordLength") ||
-                  hasError("passwordUppercase") ||
-                  hasError("passwordLowercase") ||
-                  hasError("passwordSpecial")
-                }
-                helperText={
-                  <>
-                    {hasError("passwordEmpty") && (
-                      <div>{errors.passwordEmpty}</div>
-                    )}
-                    {hasError("passwordLength") && (
-                      <div>{errors.passwordLength}</div>
-                    )}
-                    {hasError("passwordUppercase") && (
-                      <div>{errors.passwordUppercase}</div>
-                    )}
-                    {hasError("passwordLowercase") && (
-                      <div>{errors.passwordLowercase}</div>
-                    )}
-                    {hasError("passwordSpecial") && (
-                      <div>{errors.passwordSpecial}</div>
-                    )}
-                  </>
-                }
-              />
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="caption" display="block">
-                  Password must include:
-                </Typography>
-                <ul style={{ marginLeft: 20, marginTop: 4, paddingLeft: 0 }}>
-                  {passwordValidations.map((rule, idx) => (
-                    <li
-                      key={idx}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        color: rule.isValid ? green[600] : undefined,
-                      }}
-                    >
-                      {rule.isValid && (
-                        <CheckCircle
-                          fontSize="small"
-                          sx={{ color: green[600], mr: 1 }}
-                        />
-                      )}
-                      {rule.label}
-                    </li>
-                  ))}
-                </ul>
-              </Box>
-            </>
+            <Alert severity="info" sx={{ mt: 2, mb: 1 }}>
+              The employee will receive a secure, single-use link to create
+              their password. The link expires after 30 minutes.
+            </Alert>
           )}
           <TextField
             label="Birthday"
@@ -1199,30 +1176,60 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
             )}
           />
           {isView ? (
-            <List dense>
-              {employeesData
-                .filter((emp) => formData.directReports.includes(emp._id))
-                .map((emp) => (
-                  <ListItem key={emp._id}>
-                    <ListItemAvatar>
-                      <Avatar src={emp.profile?.photo} />
-                    </ListItemAvatar>
-                    <ListItemText primary={emp.fullName} />
-                  </ListItem>
-                ))}
-            </List>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+                Direct Reports
+              </Typography>
+              <TextField
+                placeholder="Search direct reports..."
+                fullWidth
+                value={searchDirect}
+                onChange={(e) => setSearchDirect(e.target.value)}
+                size="small"
+                sx={{ mb: 1 }}
+              />
+              {employeesData.some(
+                (emp) =>
+                  formData.directReports.some((id) =>
+                    idEqual(id, emp._id)
+                  ) &&
+                  emp.fullName
+                    .toLowerCase()
+                    .includes(searchDirect.trim().toLowerCase())
+              ) ? (
+                <List dense>
+                  {employeesData
+                    .filter(
+                      (emp) =>
+                        formData.directReports.some((id) =>
+                          idEqual(id, emp._id)
+                        ) &&
+                        emp.fullName
+                          .toLowerCase()
+                          .includes(searchDirect.trim().toLowerCase())
+                    )
+                    .map((emp) => (
+                      <ListItem key={emp._id}>
+                        <ListItemAvatar>
+                          <Avatar src={emp.profile?.photo} />
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={emp.fullName}
+                          secondary={emp.email}
+                        />
+                      </ListItem>
+                    ))}
+                </List>
+              ) : (
+                <Typography color="text.secondary" variant="body2" sx={{ py: 2 }}>
+                  {formData.directReports.length > 0
+                    ? "No direct reports match this search."
+                    : "No direct reports assigned."}
+                </Typography>
+              )}
+            </Box>
           ) : (
             <FormControl fullWidth margin="normal">
-              {filteredDirectReports.length > 0 && (
-                <TextField
-                  placeholder="Search for direct reports..."
-                  fullWidth
-                  value={searchDirect}
-                  onChange={(e) => setSearchDirect(e.target.value)}
-                  size="small"
-                  sx={{ mb: 1 }}
-                />
-              )}
               <TextField
                 placeholder="Search for direct reports..."
                 fullWidth
@@ -1245,7 +1252,9 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
                   filteredDirectReports.map((emp) => (
                     <Box key={emp._id} display="flex" alignItems="center">
                       <Checkbox
-                        checked={formData.directReports.includes(emp._id)}
+                        checked={formData.directReports.some((id) =>
+                          idEqual(id, emp._id)
+                        )}
                         onChange={(e) => {
                           const checked = e.target.checked;
                           setFormData((prev) => ({
@@ -1253,7 +1262,7 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
                             directReports: checked
                               ? [...prev.directReports, emp._id]
                               : prev.directReports.filter(
-                                  (id) => id !== emp._id
+                                  (id) => !idEqual(id, emp._id)
                                 ),
                           }));
                         }}
@@ -1266,7 +1275,11 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
                     </Box>
                   ))
                 ) : (
-                  <Typography>No direct reports to select.</Typography>
+                  <Typography>
+                    {formData.directReports.length > 0
+                      ? "No additional direct reports match this search."
+                      : "No eligible direct reports to select."}
+                  </Typography>
                 )}
               </Box>
               {formData.directReports.length > 0 && (
@@ -1286,7 +1299,9 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
                     <List dense>
                       {employeesData
                         .filter((emp) =>
-                          formData.directReports.includes(emp._id)
+                          formData.directReports.some((id) =>
+                            idEqual(id, emp._id)
+                          )
                         )
                         .map((emp) => (
                           <ListItem key={emp._id}>
@@ -1303,12 +1318,11 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
               {formData.directReports.length > 0 && (
                 <Button
                   variant="outlined"
-                  color="secondary"
                   size="small"
                   onClick={() =>
                     setFormData((prev) => ({ ...prev, directReports: [] }))
                   }
-                  sx={{ mb: 1 }}
+                  sx={{ ...primaryOutlinedButtonSx, mb: 1 }}
                 >
                   Clear All Direct Reports
                 </Button>
@@ -1347,11 +1361,19 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
 
       {/* Step Controls */}
       <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4 }}>
-        <Button disabled={activeStep === 0} onClick={handleBack}>
+        <Button
+          disabled={activeStep === 0}
+          onClick={handleBack}
+          sx={primaryTextButtonSx}
+        >
           Back
         </Button>
         {showNextBtn && (
-          <Button variant="contained" onClick={handleNext}>
+          <Button
+            variant="contained"
+            onClick={handleNext}
+            sx={primaryContainedButtonSx}
+          >
             {isLastStep ? "Review" : "Next"}
           </Button>
         )}
@@ -1400,8 +1422,8 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
             {isAdd && (
               <ListItem>
                 <ListItemText
-                  primary="Password"
-                  secondary={formData.password ? "●●●●●●●●" : "N/A"}
+                  primary="Account activation"
+                  secondary="A secure password-creation link will be emailed."
                 />
               </ListItem>
             )}
@@ -1525,14 +1547,17 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={() => setReviewDialogOpen(false)} color="secondary">
+          <Button
+            onClick={() => setReviewDialogOpen(false)}
+            sx={primaryTextButtonSx}
+          >
             Cancel
           </Button>
           <Button
             onClick={handleCreateOrSave}
             startIcon={isEdit ? <Save /> : <Add />}
             variant="contained"
-            color="primary"
+            sx={primaryContainedButtonSx}
           >
             {isEdit ? "Save Employee" : "Create Employee"}
           </Button>
@@ -1552,7 +1577,10 @@ const AdminEmployeeForm = ({ mode, employee, onClose }) => {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)} color="primary">
+          <Button
+            onClick={() => setDeleteDialogOpen(false)}
+            sx={primaryTextButtonSx}
+          >
             Cancel
           </Button>
           <Button onClick={handleDelete} color="error" variant="contained">

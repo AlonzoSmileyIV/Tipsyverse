@@ -71,7 +71,11 @@ CONFIRM_WIPE=true npm run wipe:collections
 
 ## Production Checks
 
-Before deploying, review [docs/deployment-checklist.md](docs/deployment-checklist.md).
+Before deploying, review
+[docs/deployment-checklist.md](docs/deployment-checklist.md), use
+[docs/release-evidence-template.md](docs/release-evidence-template.md), and
+keep [docs/incident-response.md](docs/incident-response.md) available to the
+on-call team.
 
 Minimum checks:
 

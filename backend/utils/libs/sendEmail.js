@@ -1,11 +1,17 @@
-//import sgMail from '@sendgrid/mail';
 import dotenv from "dotenv";
 dotenv.config();
 import { Resend } from "resend";
+import { EmailOutboxModel as EmailOutbox } from "../../models/index.js";
+import appendEmailButtonFallbacks from "./emailButtonFallbacks.js";
 
-const resend = new Resend(process.env.RESEND_EMAIL_KEY);
-
-//sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+let resend;
+const getResendClient = () => {
+  if (!process.env.RESEND_EMAIL_KEY) {
+    throw new Error("RESEND_EMAIL_KEY is not configured.");
+  }
+  if (!resend) resend = new Resend(process.env.RESEND_EMAIL_KEY);
+  return resend;
+};
 
 const emailTemplate = (title, content) => `
 <!DOCTYPE html>
@@ -159,7 +165,16 @@ const emailTemplate = (title, content) => `
 `;
 
 
-const sendEmail = async ({ to, cc, bcc, subject, title, html, attachments }) => {
+const sendEmail = async ({
+  to,
+  cc,
+  bcc,
+  subject,
+  title,
+  html,
+  attachments,
+  queueOnFailure = true,
+}) => {
   try {
     const msg = {
       to: to,
@@ -168,10 +183,10 @@ const sendEmail = async ({ to, cc, bcc, subject, title, html, attachments }) => 
       ...(attachments?.length ? { attachments } : {}),
       from: process.env.FROM_EMAIL,
       subject: subject,
-      html: emailTemplate(title, html), // Wrap content in the template
+      html: emailTemplate(title, appendEmailButtonFallbacks(html)),
     };
 
-    await resend.emails.send(msg);
+    await getResendClient().emails.send(msg);
     console.log(`✅ Email sent to ${to}`);
     return { success: true, message: "Email sent successfully." };
   } catch (error) {
@@ -179,7 +194,16 @@ const sendEmail = async ({ to, cc, bcc, subject, title, html, attachments }) => 
       "❌ Email sending error:",
       error.response?.body || error.message
     );
-    return { success: false, message: "Email failed to send." };
+    if (queueOnFailure) {
+      await EmailOutbox.create({
+        payload: { to, cc, bcc, subject, title, html, attachments },
+        lastError: error.message || "Email provider error",
+        nextAttemptAt: new Date(Date.now() + 60_000),
+      }).catch((queueError) =>
+        console.error("❌ Failed to queue email retry:", queueError.message)
+      );
+    }
+    return { success: false, queued: queueOnFailure, message: "Email failed to send." };
   }
 };
 

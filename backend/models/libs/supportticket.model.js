@@ -41,14 +41,38 @@ const TicketMessageSchema = new mongoose.Schema(
   { _id: true }
 );
 
+const TicketNoteSchema = new mongoose.Schema(
+  {
+    author: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    content: { type: String, trim: true, required: true, maxlength: 4000 },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const SupportTicketSchema = new mongoose.Schema(
   {
     ticketNumber: { type: String, unique: true, sparse: true, index: true },
-    submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    submittedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required() {
+        return this.submissionSource !== "anonymous_error";
+      },
+      default: null,
+      index: true,
+    },
+    submissionSource: {
+      type: String,
+      enum: ["user", "anonymous_error"],
+      default: "user",
+      index: true,
+    },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     category: {
       type: String,
-      enum: ["login", "booking", "payments", "bartender_portal", "drink_content", "notifications", "other"],
+      enum: ["login", "booking", "payments", "bartender_portal", "drink_content", "notifications", "technical_issue", "other"],
       default: "other",
       index: true,
     },
@@ -66,8 +90,10 @@ const SupportTicketSchema = new mongoose.Schema(
     },
     subject: { type: String, trim: true, required: true, maxlength: 140 },
     description: { type: String, trim: true, required: true, maxlength: 2000 },
+    errorFingerprint: { type: String, trim: true, default: null },
     attachments: [AttachmentSchema],
     notes: { type: String, trim: true, maxlength: 4000, default: "" },
+    noteEntries: [TicketNoteSchema],
     resolution: { type: String, trim: true, maxlength: 2000 },
     canceledAt: { type: Date, default: null },
     canceledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
@@ -79,17 +105,27 @@ const SupportTicketSchema = new mongoose.Schema(
 );
 
 SupportTicketSchema.index({ status: 1, priority: 1, createdAt: -1 });
+SupportTicketSchema.index(
+  { errorFingerprint: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      errorFingerprint: { $type: "string" },
+      status: { $in: ["open", "in_progress", "waiting_on_user"] },
+    },
+  }
+);
 
 SupportTicketSchema.path("ticketNumber").validate(function (value) {
   if (value == null) return true;
-  return /^TKT-\d{6}$/.test(value);
+  return /^TKT-\d{5}$/.test(value);
 }, "Invalid ticket number format.");
 
 SupportTicketSchema.pre("save", async function (next) {
   try {
     if (this.ticketNumber) return next();
     const nextSeq = await getNextSeq("support-ticket");
-    this.ticketNumber = `TKT-${String(nextSeq).padStart(6, "0")}`;
+    this.ticketNumber = `TKT-${String(nextSeq).padStart(5, "0")}`;
     return next();
   } catch (err) {
     return next(err);

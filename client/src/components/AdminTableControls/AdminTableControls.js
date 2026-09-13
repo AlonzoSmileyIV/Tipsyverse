@@ -25,7 +25,7 @@ export default function AdminTableControls({
 
   return (
     <Box sx={{ mb: 2, ...sx }}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+      <Stack direction="column" spacing={1.5}>
         <TextField
           fullWidth
           size="small"
@@ -49,13 +49,20 @@ export default function AdminTableControls({
               color: "var(--primary-color)",
               borderColor: "var(--primary-color)",
               whiteSpace: "nowrap",
+              alignSelf: "flex-start",
             }}
           >
             Filters
           </Button>
         )}
         {hasFilters && !isMobile && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Stack
+            direction="row"
+            spacing={1}
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ width: "100%" }}
+          >
             {children}
           </Stack>
         )}

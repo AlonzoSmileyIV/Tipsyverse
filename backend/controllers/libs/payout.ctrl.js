@@ -27,6 +27,7 @@ const getExpectedAssignmentPay = (event) => {
     (Number(pricing.breakdownHours) || 0);
   const hourlyPay = hours * (Number(pricing.hourlyRate) || 0);
   const bartenderCount =
+    Number(event?.counts?.approvedBartenders) ||
     Number(event?.counts?.neededBartenders) ||
     Number(pricing.bartendersRequested) ||
     1;

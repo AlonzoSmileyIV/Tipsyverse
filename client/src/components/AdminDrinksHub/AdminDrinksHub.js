@@ -1,9 +1,12 @@
-import React, { useState } from "react";
-import { Box, Paper, Tab, Tabs } from "@mui/material";
-import AdminDrinks from "../AdminDrinks/AdminDrinks";
-import AdminDrinkForm from "../AdminDrinkForm/AdminDrinkForm";
-import AdminDrinkAnalytics from "../AdminDrinkAnalytics/AdminDrinkAnalytics";
+import React, { lazy, Suspense, useState } from "react";
+import { Box, CircularProgress, Paper, Tab, Tabs } from "@mui/material";
 import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
+
+const AdminDrinks = lazy(() => import("../AdminDrinks/AdminDrinks"));
+const AdminDrinkForm = lazy(() => import("../AdminDrinkForm/AdminDrinkForm"));
+const AdminDrinkAnalytics = lazy(() =>
+  import("../AdminDrinkAnalytics/AdminDrinkAnalytics")
+);
 
 const tabsSx = {
   "& .MuiTabs-indicator": { backgroundColor: "var(--primary-color)" },
@@ -48,14 +51,27 @@ function AdminDrinksHub() {
         </Tabs>
       </Paper>
 
-      {tab === "library" && (
-        <AdminDrinks
-          handleAddClick={() => setTab("create")}
-          onActionsReady={setTabActions}
-        />
-      )}
-      {tab === "create" && <AdminDrinkForm />}
-      {tab === "analytics" && <AdminDrinkAnalytics onActionsReady={setTabActions} />}
+      <Suspense
+        fallback={
+          <Box sx={{ display: "grid", minHeight: 280, placeItems: "center" }}>
+            <CircularProgress
+              aria-label="Loading drinks section"
+              sx={{ color: "var(--primary-color)" }}
+            />
+          </Box>
+        }
+      >
+        {tab === "library" && (
+          <AdminDrinks
+            handleAddClick={() => setTab("create")}
+            onActionsReady={setTabActions}
+          />
+        )}
+        {tab === "create" && <AdminDrinkForm />}
+        {tab === "analytics" && (
+          <AdminDrinkAnalytics onActionsReady={setTabActions} />
+        )}
+      </Suspense>
     </Box>
   );
 }

@@ -20,7 +20,10 @@ import Statistics from "../../components/Statistics/Statistics";
 import Hero from "../../components/Hero/Hero";
 import PublicLayout from "../../components/PublicLayout/PublicLayout";
 import LoadingSkeleton from "../../components/LoadingSkeleton/LoadingSkeleton";
+import EventServicesPromo from "../../components/EventServicesPromo/EventServicesPromo";
 
+// Keep homepage merchandising policy outside the component so additions do not
+// become entangled with rendering and request lifecycle code.
 const SEASONAL_CATEGORIES = ["Fall", "Winter", "Spring", "Summer"];
 const CATEGORY_ICONS = {
   Classic: "🍸",
@@ -48,6 +51,8 @@ const getCategoryHeader = (category) => {
 };
 
 const drinkRows = (value) => {
+  // Drink endpoints were introduced with more than one response envelope.
+  // Normalize at this boundary while those contracts are consolidated.
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.data)) return value.data;
   if (Array.isArray(value?.items)) return value.items;
@@ -120,6 +125,71 @@ const BartenderCoursePromo = ({ onStart }) => (
   </Box>
 );
 
+const EventServicePromo = ({ onStart }) => (
+  <Box sx={{ px: { xs: 2, md: 4 }, my: { xs: 3, md: 5 } }}>
+    <Paper
+      elevation={0}
+      sx={{
+        maxWidth: 1180,
+        mx: "auto",
+        p: { xs: 2.5, md: 3 },
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 2,
+        background:
+          "linear-gradient(135deg, rgba(128,0,32,0.08), rgba(255,255,255,0.96))",
+      }}
+    >
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={2}
+        alignItems={{ xs: "flex-start", md: "center" }}
+        justifyContent="space-between"
+      >
+        <Stack direction="row" spacing={1.5} alignItems="flex-start">
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              bgcolor: "var(--primary-color)",
+              color: "#fff",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <SchoolOutlinedIcon />
+          </Box>
+          <Box>
+            <Typography variant="h6" fontWeight={800}>
+              Looking for a bartender for your event?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Share your event details and Tipsyverse will help you plan staffing, timing, bar setup, and the service your guests need.
+            </Typography>
+          </Box>
+        </Stack>
+
+        <Button
+          component={RouterLink}
+          to="/book"
+          onClick={onStart}
+          variant="contained"
+          endIcon={<ArrowForwardIcon />}
+          sx={{
+            bgcolor: "var(--primary-color)",
+            whiteSpace: "nowrap",
+            "&:hover": { bgcolor: "var(--primary-color)" },
+          }}
+        >
+          Book an Event
+        </Button>
+      </Stack>
+    </Paper>
+  </Box>
+);
+
 
 
 const HomeScreen = () => {
@@ -132,6 +202,8 @@ const HomeScreen = () => {
     useSelector((state) => state.drinks);
 
   const [showContent, setShowContent] = useState(false);
+
+  // Recompute on a full page load so only the current seasonal lane is fetched.
   const categoriesToShow = useMemo(() => {
     const currentSeason = getCurrentSeason();
     return [
@@ -144,6 +216,8 @@ const HomeScreen = () => {
   }, []);
 
   useEffect(() => {
+    // Public lanes load for everyone; recommendations require an authenticated
+    // user because the server derives them from that user's activity.
     dispatch(fetchTopTrending());
     dispatch(fetchMostRecentDrinks());
     if (loggedInUser?.user?._id) {
@@ -156,9 +230,11 @@ const HomeScreen = () => {
   }, [dispatch, loggedInUser?.user?._id, categoriesToShow]);
 
   useEffect(() => {
+    // Preserve a minimum skeleton duration to avoid a flash when cached
+    // homepage requests resolve immediately.
     const timer = setTimeout(() => {
       setShowContent(true);
-    }, 1500); // 1.5 seconds
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, []);
@@ -175,18 +251,26 @@ const HomeScreen = () => {
   return (
     <PublicLayout>
       <HelmetHeader
-        title="Tipsyverse | Discover Cocktails"
-        description="Find trending cocktail recipes, share your creations, and sip your way through inspiration."
-        keywords="cocktail recipes, trending drinks, mixology, tipsyverse"
+        title="Tipsyverse | Book Event Bartenders, Learn, and Discover Cocktails"
+        description="Book professional bartending services, take practical bartending courses, and discover cocktail inspiration with Tipsyverse."
+        keywords="event bartenders, bartender booking, bartending courses, cocktail recipes, tipsyverse"
       />
+      <Typography component="h1" className="visually-hidden">
+        Discover cocktails, bartending services, and courses with Tipsyverse
+      </Typography>
       {isLoading ? (
         <LoadingSkeleton />
       ) : (
         <>
           <Hero />
 
+
+
           {showBartenderCoursePromo && (
+            <>
+            <EventServicePromo />
             <BartenderCoursePromo onStart={handleStartBartenderCourse} />
+            </>
           )}
 
           <DrinkCarousel

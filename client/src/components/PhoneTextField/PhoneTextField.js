@@ -173,6 +173,9 @@ export default function PhoneTextField({
           forceDialCode
           disabled={disabled}
           inputProps={{
+            id: name,
+            name,
+            "aria-label": label,
             onFocus: () => setFocused(true),
             onBlur: () => setFocused(false),
             autoComplete: "tel",

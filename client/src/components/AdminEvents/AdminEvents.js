@@ -1,5 +1,11 @@
-// src/components/AdminEvents/AdminEvents.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Box,
   Tooltip,
@@ -13,11 +19,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  CircularProgress,
   Stack,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import moment from "moment";
-import * as XLSX from "xlsx";
 import { useDispatch, useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -26,7 +32,6 @@ import {
   selectAllEvents,
   selectEventsStatus,
 } from "../../features/events/eventSlice";
-import DetailedEventForm from "../DetailedEventForm/DetailedEventForm";
 import { CollapseAlert } from "../CollapseAlert/CollapseAlert";
 import EmptyOverlay from "../EmptyOverlay/EmptyOverlay";
 import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
@@ -34,8 +39,23 @@ import AdminSummaryCards from "../AdminSummaryCards/AdminSummaryCards";
 import DetailDrawerHeader from "../DetailDrawerHeader/DetailDrawerHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import api from "../../services/api";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
+import { formatEventTimestamp, getEventTimeZone } from "../../utils/timestamps";
+import {
+  getEventPaidTotal,
+  getEventPaymentTotal,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
 
-// Map common IANA zones to short US-style TZ abbreviations
+const DetailedEventForm = lazy(() =>
+  import("../DetailedEventForm/DetailedEventForm")
+);
+
+// This screen is an operations overview. Detailed editing stays delegated to
+// DetailedEventForm; summary policy and table/export projections live here.
+
+// Map common IANA zones to short US-style timezone abbreviations for exports.
+// Event timestamps remain ISO values; this helper changes display text only.
 const tzAbbr = (tz) => {
   const z = (tz || "").toLowerCase();
   if (
@@ -120,24 +140,17 @@ const formatLabel = (value) => {
 const statusIs = (event, statuses) =>
   statuses.includes(String(event?.status || "").toLowerCase());
 
+// Older event records use several payment field names. These accessors provide
+// one compatibility boundary for cards, filters, exports, and drawer summaries.
 const getPaymentTotal = (event) =>
-  Number(event?.payment?.total) ||
-  Number(event?.payment?.totalAfterDiscount) ||
-  Number(event?.payment?.totalAfterDiscounts) ||
-  Number(event?.pricing?.estimatedTotal) ||
-  0;
-const getPaidTotal = (event) =>
-  Number(event?.payment?.paidTotal) ||
-  Number(event?.recordedPaidTotal) ||
-  Number(event?.paidTotal) ||
-  0;
+  getEventPaymentTotal(event);
+const getPaidTotal = getEventPaidTotal;
 const getPaymentBalance = (event) =>
   Math.max(getPaymentTotal(event) - getPaidTotal(event), 0);
+const getPaymentCredit = (event) =>
+  Math.max(getPaidTotal(event) - getPaymentTotal(event), 0);
 const fmtMoney = (value) => `$${(Number(value) || 0).toFixed(2)}`;
-const getNeededBartenders = (event) =>
-  Number(event?.counts?.neededBartenders) ||
-  Number(event?.pricing?.bartendersRequested) ||
-  0;
+const getNeededBartenders = (event) => getRequiredBartenderCount(event);
 const getAssignedBartenders = (event) => Number(event?.counts?.assigned) || 0;
 const getPendingBartenders = (event) =>
   Math.max(0, getNeededBartenders(event) - getAssignedBartenders(event));
@@ -148,6 +161,8 @@ const isUnderstaffed = (event) =>
   getNeededBartenders(event) > 0 &&
   getAssignedBartenders(event) < getNeededBartenders(event);
 const STAT_FILTERS = {
+  // Each definition drives both a summary card and its corresponding table
+  // filter, which keeps displayed counts consistent with visible rows.
   all: {
     label: "All Events",
     description: "Every event",
@@ -155,13 +170,13 @@ const STAT_FILTERS = {
   },
   confirmation: {
     label: "Need Confirmation",
-    description: "Submitted or awaiting response",
+    description: "Submitted / awaiting response",
     matches: (event) =>
       statusIs(event, ["submitted", "pending", "awaiting_response"]),
   },
   assignment: {
     label: "Need Assignment",
-    description: "Ready or selecting bartenders",
+    description: "Ready / selecting bartenders",
     matches: (event) =>
       statusIs(event, ["ready_to_assign", "bidding", "selecting"]),
   },
@@ -189,22 +204,23 @@ const AdminEvents = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const is750OrLess = useMediaQuery("(max-width:750px)");
+  const is1000OrLess = useMediaQuery("(max-width:1000px)");
   const isTwoCardsOrLess = useMediaQuery(theme.breakpoints.down("md"));
   const isThreeCardsOrLess = useMediaQuery(theme.breakpoints.down("xl"));
 
-  // Redux state
   const all = useSelector(selectAllEvents);
   const status = useSelector(selectEventsStatus);
 
-  // UI state
-  const [selected, setSelected] = useState(null); // event object
+  const [selected, setSelected] = useState(null);
   const [alert, setAlert] = useState(null);
   const [activeStat, setActiveStat] = useState("all");
   const [invoiceEvent, setInvoiceEvent] = useState(null);
   const [sendingInvoice, setSendingInvoice] = useState(false);
   const [search, setSearch] = useState("");
 
-  // Normalize rows
+  // Selectors normally return an array, but normalizing here keeps the admin
+  // surface resilient while the initial request is unresolved.
   const eventsData = useMemo(() => (Array.isArray(all) ? all : []), [all]);
   const filteredEventsData = useMemo(() => {
     const stat = STAT_FILTERS[activeStat] || STAT_FILTERS.all;
@@ -240,7 +256,7 @@ const AdminEvents = () => {
   );
 
   const fetchAllData = useCallback(() => {
-    dispatch(fetchAllEvents({})); // you can pass filters/pagination here
+    dispatch(fetchAllEvents({}));
   }, [dispatch]);
 
   useEffect(() => {
@@ -248,9 +264,9 @@ const AdminEvents = () => {
   }, [fetchAllData]);
 
   const handleRefresh = () => {
-    setAlert({message: 'Refreshed successfully!', severity: 'success'});
+    setAlert({ message: "Refreshed successfully!", severity: "success" });
     fetchAllData();
-  }
+  };
 
   const handleView = async (row) => {
     if (!row?._id) return;
@@ -268,6 +284,8 @@ const AdminEvents = () => {
     setSendingInvoice(true);
     setAlert(null);
     try {
+      // The server renders and sends the authoritative invoice. The client
+      // intentionally sends no calculated totals.
       const res = await api.post(`/events/${invoiceEvent._id}/send-invoice`);
       setAlert({
         message: res?.data?.message || "Invoice sent successfully.",
@@ -295,6 +313,8 @@ const AdminEvents = () => {
   };
 
   useEffect(() => {
+    // Supporting eventId in the URL makes links from alerts and other admin
+    // modules open the same drawer without duplicating an event-detail route.
     const eventId = searchParams.get("eventId");
     if (!eventId || selected?._id === eventId) return;
     dispatch(fetchEventById(eventId))
@@ -308,7 +328,10 @@ const AdminEvents = () => {
       );
   }, [dispatch, searchParams, selected?._id]);
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
+    // Export the currently filtered view so the downloaded counts match what
+    // the administrator reviewed on screen.
     const worksheet = XLSX.utils.json_to_sheet(
       filteredEventsData.map((event) => ({
         "Event #": event.shortCode || "",
@@ -317,9 +340,11 @@ const AdminEvents = () => {
         City: event.location?.city || "",
         State: event.location?.state || "",
         Zipcode: event.location?.zipcode || "",
-        Start: event.startAt ? moment(event.startAt).format("YYYY-MM-DD HH:mm") : "",
-        End: event.endAt ? moment(event.endAt).format("YYYY-MM-DD HH:mm") : "",
-        Timezone: tzAbbr(event.timezone || ""),
+        "Start UTC": event.startAt ? new Date(event.startAt).toISOString() : "",
+        "End UTC": event.endAt ? new Date(event.endAt).toISOString() : "",
+        "Event Start": formatEventTimestamp(event, event.startAt),
+        "Event End": formatEventTimestamp(event, event.endAt),
+        Timezone: getEventTimeZone(event),
         Status: formatLabel(event.status),
         Needed: getNeededBartenders(event),
         Accepted: getAssignedBartenders(event),
@@ -347,7 +372,7 @@ const AdminEvents = () => {
       headerName: "Date Arrives",
       minWidth: 175,
       flex: 0.9,
-      // value used for sorting/filtering
+      // DataGrid sorts the underlying Date while rendering a friendly label.
       valueGetter: (_value, row) =>
         row?.startAt ? new Date(row.startAt) : null,
       sortComparator: (v1, v2) => {
@@ -355,7 +380,6 @@ const AdminEvents = () => {
         const t2 = v2 ? new Date(v2).getTime() : 0;
         return t1 - t2;
       },
-      // what we display
       renderCell: (params) => {
         const row = params.row;
         if (!row?.startAt) {
@@ -493,9 +517,14 @@ const AdminEvents = () => {
         />
       </Box>
 
-      {
-        alert && <CollapseAlert message={alert?.message} open={!!alert} severity={alert?.severity} onClose={() => setAlert(null)} />
-      }
+      {alert && (
+        <CollapseAlert
+          message={alert.message}
+          open
+          severity={alert.severity}
+          onClose={() => setAlert(null)}
+        />
+      )}
 
       <AdminSummaryCards
         cards={eventStats}
@@ -509,7 +538,6 @@ const AdminEvents = () => {
         searchPlaceholder="Search event code, contact, status, type, or location..."
       />
 
-      {/* Data Grid */}
       <Box sx={{ height: 520, width: "100%", minWidth: 0, overflowX: "auto" }}>
         <DataGrid
           rows={filteredEventsData}
@@ -522,8 +550,8 @@ const AdminEvents = () => {
             startAt: !isTwoCardsOrLess,
             type: !isThreeCardsOrLess,
             location: !isThreeCardsOrLess,
-            status: !isMobile,
-            staffing: !isTwoCardsOrLess,
+            status: !is750OrLess,
+            staffing: !is1000OrLess,
           }}
           disableSelectionOnClick
           slots={{
@@ -531,7 +559,7 @@ const AdminEvents = () => {
               <EmptyOverlay message="No events match this filter." />
             ),
           }}
-          // MUI v5 fallback (safe to keep)
+          // Retain the legacy prop until every deployment uses the slots API.
           components={{
             NoRowsOverlay: () => (
               <EmptyOverlay message="No events match this filter." />
@@ -549,7 +577,6 @@ const AdminEvents = () => {
         />
       </Box>
 
-      {/* Right Drawer with details */}
       <Drawer
         anchor="right"
         open={!!selected}
@@ -565,6 +592,8 @@ const AdminEvents = () => {
                   ? "This event needs staffing attention before it is fully covered."
                   : getPaymentBalance(selected) > 0
                     ? "This event has a customer balance due. Review payment readiness before final closeout."
+                    : getPaymentCredit(selected) > 0
+                      ? "This event is overpaid. The excess is tracked as a customer credit; a refund is optional, not required."
                     : "This event is staffed or on track. Review details before making changes."
               }
               statusChip={
@@ -593,6 +622,9 @@ const AdminEvents = () => {
                 },
                 { label: "Paid", value: fmtMoney(getPaidTotal(selected)) },
                 { label: "Balance", value: fmtMoney(getPaymentBalance(selected)) },
+                ...(getPaymentCredit(selected) > 0
+                  ? [{ label: "Credit", value: fmtMoney(getPaymentCredit(selected)) }]
+                  : []),
               ]}
               lastUpdated={
                 selected.updatedAt
@@ -602,21 +634,31 @@ const AdminEvents = () => {
               onClose={handleCloseDetails}
             />
             <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
-              <DetailedEventForm
-                event={selected}
-                readOnly={false} // keep editable for admins; you can gate by role later
-                onClose={handleCloseDetails}
-                onSaved={(updated) => {
-                  // Keep the drawer open and refresh the event in-place
-                  if (updated) {
-                    setSelected(updated);
-                  } else {
-                    setSelected(null);
-                  }
-                  // Also refresh the grid list if you want counts/statuses up to date
-                  fetchAllData();
-                }}
-              />
+              <Suspense
+                fallback={
+                  <Box
+                    sx={{ display: "grid", minHeight: 320, placeItems: "center" }}
+                  >
+                    <CircularProgress aria-label="Loading event form" />
+                  </Box>
+                }
+              >
+                <DetailedEventForm
+                  event={selected}
+                  readOnly={false}
+                  onClose={handleCloseDetails}
+                  onSaved={(updated) => {
+                    // Keep successful edits visible while synchronizing the
+                    // table cards and filters with the saved server state.
+                    if (updated) {
+                      setSelected(updated);
+                    } else {
+                      setSelected(null);
+                    }
+                    fetchAllData();
+                  }}
+                />
+              </Suspense>
             </Box>
           </Box>
         )}

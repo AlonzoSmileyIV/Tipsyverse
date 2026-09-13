@@ -113,8 +113,13 @@ ActivityLogSchema.index({ "context.tenantId": 1, createdAt: -1 });
 ActivityLogSchema.index({ "request.requestId": 1, createdAt: -1 }); // tracing
 ActivityLogSchema.index({ "target.model": 1, action: 1, createdAt: -1 }); // common filters
 
-// OPTIONAL: TTL retention (e.g., 365 days). Remove if you must keep forever.
-// ActivityLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 365 });
+const retentionDays = Number(process.env.ACTIVITY_LOG_RETENTION_DAYS || 365);
+if (Number.isFinite(retentionDays) && retentionDays > 0) {
+  ActivityLogSchema.index(
+    { createdAt: 1 },
+    { expireAfterSeconds: Math.round(retentionDays * 24 * 60 * 60) }
+  );
+}
 
 const ActivityLogModel = mongoose.model("ActivityLog", ActivityLogSchema);
 export default ActivityLogModel;

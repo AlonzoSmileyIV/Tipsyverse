@@ -1,33 +1,41 @@
-/* CONFIG - Stores configuration files and settings for the application.
-Contents:
--Database configuration (e.g., MongoDB connection setup).
--Environment variables (e.g., keys, tokens, or other sensitive data).
--Configuration for external services (e.g., email service, authentication).
-*/
 import mongoose from "mongoose";
-import { updateFieldsImmediately } from "../scripts/index.js";
 import { getCurrentMongoURI } from "../utils/libs/getMongoURI.js";
+import { logger } from "../utils/libs/logger.js";
 
 const VALID_ENVIRONMENTS = ["development", "staging", "production", "backup"];
 
 const connectDB = async (env) => {
   if (!VALID_ENVIRONMENTS.includes(env)) {
-    console.error(
-      `❌ ERROR: Invalid NODE_ENV "${env}". Expected one of: ${VALID_ENVIRONMENTS.join(", ")}`
-    );
+    logger.error("invalid_database_environment", {
+      environment: env,
+      validEnvironments: VALID_ENVIRONMENTS,
+    });
     process.exit(1); // Stop execution
   }
 
   try {
     await mongoose.connect(getCurrentMongoURI(env));
-    console.log(`✅ Connected to ${env} database...`);
-    // await addFieldsImmediately();
-    // await updateFieldsImmediately();
-    // await removeFieldsImmediately();
+    await Promise.all([
+      mongoose.connection.db
+        .collection("idempotency_responses")
+        .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      mongoose.connection.db
+        .collection("rate_limit_buckets")
+        .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      mongoose.connection.db
+        .collection("system_leases")
+        .createIndex({ expiresAt: 1 }),
+    ]);
+    logger.info("database_connected", { environment: env });
   } catch (error) {
-    console.error(`❌ MongoDB Connection Error: ${error.message}`);
+    logger.error("database_connection_failed", { error, environment: env });
     process.exit(1);
   }
+};
+
+connectDB.isReady = () => mongoose.connection.readyState === 1;
+connectDB.disconnect = async () => {
+  if (mongoose.connection.readyState !== 0) await mongoose.disconnect();
 };
 
 export default connectDB;

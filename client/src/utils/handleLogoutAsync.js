@@ -14,7 +14,6 @@ export const useLogout = () => {
             // tell the server to detach this socket from the current user room
 
        try {
-        socket.emit("unregister");
         socket.removeAllListeners(); // prevent ghost handlers
         socket.disconnect();         // close transport
       } catch {}

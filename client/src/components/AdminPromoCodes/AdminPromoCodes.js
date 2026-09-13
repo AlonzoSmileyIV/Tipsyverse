@@ -17,6 +17,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { Add, Delete, Edit, Refresh } from "@mui/icons-material";
 import { DataGrid } from "@mui/x-data-grid";
@@ -77,6 +78,11 @@ const canManagePromos = (user) => {
 };
 
 function AdminPromoCodes() {
+  const is600OrLess = useMediaQuery("(max-width:600px)");
+  const is800OrLess = useMediaQuery("(max-width:800px)");
+  const is1000OrLess = useMediaQuery("(max-width:1000px)");
+  const is1200OrLess = useMediaQuery("(max-width:1200px)");
+  const is1400OrLess = useMediaQuery("(max-width:1400px)");
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState(null);
@@ -198,7 +204,7 @@ function AdminPromoCodes() {
   };
 
   const columns = [
-    { field: "code", headerName: "Code", flex: 0.9 },
+    { field: "code", headerName: "Code", flex: 0.9, minWidth: 130 },
     {
       field: "discount",
       headerName: "Discount",
@@ -237,7 +243,7 @@ function AdminPromoCodes() {
       field: "actions",
       headerName: "Actions",
       sortable: false,
-      width: 160,
+      width: is600OrLess ? 140 : 160,
       renderCell: (params) => (
         <Stack direction="row" spacing={0.5}>
           <Tooltip title="Edit">
@@ -300,6 +306,13 @@ function AdminPromoCodes() {
           getRowId={(row) => row._id || row.id || row.code}
           loading={loading}
           disableRowSelectionOnClick
+          columnVisibilityModel={{
+            discount: !is800OrLess,
+            audience: !is1000OrLess,
+            startsAt: !is1200OrLess,
+            endsAt: !is1400OrLess,
+            active: !is600OrLess,
+          }}
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
           slots={{ noRowsOverlay: () => <EmptyOverlay message="No promo codes yet." /> }}

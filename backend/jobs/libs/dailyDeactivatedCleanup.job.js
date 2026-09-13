@@ -26,7 +26,7 @@ try {
 }
 
 const dailyDeactivatedCleanup = () => {
-  cron.schedule("0 0 * * *", async () => {
+  return cron.schedule("0 0 * * *", async () => {
     console.log(`📬 Daily deactivated clean up job triggered.`);
     await clearOldDeactivatedUsers();
   }, {timezone: 'UTC'});

@@ -174,7 +174,7 @@ async function sendClockOutReminders() {
 }
 
 const minuteEventClockInReminderJob = () => {
-  cron.schedule(
+  return cron.schedule(
     "* * * * *",
     async () => {
       try {

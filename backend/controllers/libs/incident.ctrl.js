@@ -5,7 +5,7 @@ import {
 } from "../../models/index.js";
 import { sendEmail } from "../../utils/index.js";
 
-const isEmployee = (user) => user?.role === "employee";
+const isEmployee = (user) => ["admin", "employee"].includes(user?.role);
 
 const escapeHtml = (value = "") =>
   String(value)

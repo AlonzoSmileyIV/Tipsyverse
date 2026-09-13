@@ -1,7 +1,15 @@
 import cron from "node-cron";
 import dotenv from "dotenv";
 import { cloudinary } from "../../utils/index.js";
-import { DrinkModel as Drink, UserModel as User } from "../../models/index.js";
+import {
+  CourseModel as Course,
+  DrinkModel as Drink,
+  EventModel as Event,
+  LiquorModel as Liquor,
+  MixerModel as Mixer,
+  SupportTicketModel as SupportTicket,
+  UserModel as User,
+} from "../../models/index.js";
 
 
 const env = (process.env.NODE_ENV || "development").toLowerCase();
@@ -13,6 +21,17 @@ const env = (process.env.NODE_ENV || "development").toLowerCase();
 const normalizePublicId = (id) =>
   id?.split("/").pop().replace(/\.(jpg|jpeg|png|webp|mp4|mov|webm)$/i, "") || "";
 
+const publicIdFromUrl = (url) => {
+  if (!url || !String(url).includes("/upload/")) return "";
+  const tail = String(url).split("/upload/")[1]?.replace(/^v\d+\//, "") || "";
+  return decodeURIComponent(tail).replace(/\.[^.]+$/, "");
+};
+
+const addPublicId = (set, value) => {
+  const normalized = normalizePublicId(value);
+  if (normalized) set.add(normalized);
+};
+
 /**
  * Main cleanup function: deletes unused Cloudinary images/videos.
  */
@@ -21,22 +40,49 @@ const clearUnusedCloudinaryAssets = async () => {
     console.log("🔁 Starting unused Cloudinary cleanup...");
 
     // 1. Collect all used public IDs from MongoDB
-    const [drinks, users] = await Promise.all([
+    const [drinks, users, liquors, mixers, courses, tickets, events] = await Promise.all([
       Drink.find({}, "photoPublicId videoPublicId").lean(),
       User.find({}, "profile.photoPublicId").lean(),
+      Liquor.find({}, "photoPublicId").lean(),
+      Mixer.find({}, "photoPublicId").lean(),
+      Course.find({}, "modules.sections.content.url modules.sections.content.publicId").lean(),
+      SupportTicket.find({}, "attachments.publicId messages.attachments.publicId").lean(),
+      Event.find({}, "payment.procurementReceiptProof").lean(),
     ]);
 
     const usedPublicIds = new Set();
 
     drinks.forEach((d) => {
-      if (d.photoPublicId) usedPublicIds.add(normalizePublicId(d.photoPublicId));
-      if (d.videoPublicId) usedPublicIds.add(normalizePublicId(d.videoPublicId));
+      addPublicId(usedPublicIds, d.photoPublicId);
+      addPublicId(usedPublicIds, d.videoPublicId);
     });
 
     users.forEach((u) => {
       const publicId = u?.profile?.photoPublicId;
-      if (publicId) usedPublicIds.add(normalizePublicId(publicId));
+      addPublicId(usedPublicIds, publicId);
     });
+    liquors.forEach((item) => addPublicId(usedPublicIds, item.photoPublicId));
+    mixers.forEach((item) => addPublicId(usedPublicIds, item.photoPublicId));
+    courses.forEach((course) =>
+      course.modules?.forEach((module) =>
+        module.sections?.forEach((section) => {
+          addPublicId(usedPublicIds, section.content?.publicId);
+          addPublicId(usedPublicIds, publicIdFromUrl(section.content?.url));
+        })
+      )
+    );
+    tickets.forEach((ticket) => {
+      ticket.attachments?.forEach((item) => addPublicId(usedPublicIds, item.publicId));
+      ticket.messages?.forEach((message) =>
+        message.attachments?.forEach((item) => addPublicId(usedPublicIds, item.publicId))
+      );
+    });
+    events.forEach((event) =>
+      addPublicId(
+        usedPublicIds,
+        publicIdFromUrl(event.payment?.procurementReceiptProof)
+      )
+    );
 
     // 2. Clean folders
 await cleanFolder(`${env}/images`, usedPublicIds, "image");
@@ -99,7 +145,7 @@ const cleanFolder = async (prefix, usedPublicIds, resourceType) => {
  * Schedules the cleanup of unused images and videos
  */
 const hourlyCloudinaryCleanupJob = () => {
-  cron.schedule("0 * * * *", async () => {
+  return cron.schedule("0 * * * *", async () => {
     console.log("🧹 Hourly Cloudinary cleanup job triggered.");
     await clearUnusedCloudinaryAssets();
   });

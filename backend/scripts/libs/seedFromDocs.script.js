@@ -2,9 +2,16 @@
 import "dotenv/config";
 import XLSX from "xlsx";
 import mongoose from "mongoose";
-import fs from 'fs';
+import fs from "node:fs";
+
+// The ESM build of SheetJS does not automatically load Node's filesystem
+// implementation. Register it so XLSX.readFile() can access local workbooks.
+XLSX.set_fs(fs);
 
 //NODE_ENV=development node scripts/libs/seedFromDocs.script.js
+//NODE_ENV=staging node scripts/libs/seedFromDocs.script.js
+// Production additionally requires CONFIRM_PRODUCTION_SEED=SEED_PRODUCTION
+// and CONFIRM_PRODUCTION_DATABASE to exactly match the URI database name.
 
 import {
   LiquorModel as Liquor,
@@ -15,6 +22,7 @@ import {
 } from "../../models/index.js";
 
 import { cloudinary } from "../../middleware/libs/cloudinary.middleware.js";
+import seedBiancaRequiredCourseProgress from "./seedQaBartenderProgress.js";
 
 import path from "path";
 import { fileURLToPath } from "url";
@@ -79,7 +87,10 @@ async function uploadLocalDrinkImageIfExists(name) {
     if (!fs.existsSync(imagePath)) continue;
 
     const result = await cloudinary.uploader.upload(imagePath, {
-      folder: "default/images",
+      folder:
+        String(process.env.NODE_ENV).toLowerCase() === "production"
+          ? "production/images"
+          : "default/images",
       public_id: slug,
       overwrite: true,
       resource_type: "image",
@@ -408,7 +419,7 @@ async function seedDrinks() {
 
 (async function seedData() {
   try {
-    const env = process.env.NODE_ENV || "development";
+    const env = String(process.env.NODE_ENV || "development").toLowerCase();
 
     const dbURIs = {
       development: process.env.MONGO_DEV_URI,
@@ -416,8 +427,8 @@ async function seedDrinks() {
       production: process.env.MONGO_PROD_URI,
     };
 
-    if (!["development", "staging"].includes(env)) {
-      console.error("❌ Refusing to seed. Only development/staging allowed.");
+    if (!["development", "staging", "production"].includes(env)) {
+      console.error("❌ Refusing to seed. Use development, staging, or production.");
       process.exit(1);
     }
 
@@ -426,6 +437,26 @@ async function seedDrinks() {
     if (!mongoUri) {
       console.error(`❌ Missing Mongo URI for ${env}`);
       process.exit(1);
+    }
+
+    if (env === "production") {
+      let databaseName = "";
+      try {
+        databaseName = new URL(mongoUri).pathname.replace(/^\//, "").split("?")[0];
+      } catch {
+        console.error("❌ MONGO_PROD_URI is not a valid MongoDB URI.");
+        process.exit(1);
+      }
+      if (
+        process.env.CONFIRM_PRODUCTION_SEED !== "SEED_PRODUCTION" ||
+        process.env.CONFIRM_PRODUCTION_DATABASE !== databaseName
+      ) {
+        console.error(
+          "❌ Production seeding requires CONFIRM_PRODUCTION_SEED=SEED_PRODUCTION " +
+            "and CONFIRM_PRODUCTION_DATABASE matching the production database name."
+        );
+        process.exit(1);
+      }
     }
 
     await mongoose.connect(mongoUri);
@@ -441,6 +472,7 @@ async function seedDrinks() {
     await seedDrinks();
     console.log("🔄 Seeding Tipsyverse Bartending Foundations course...");
     await seedCourses();
+    if (env !== "production") await seedBiancaRequiredCourseProgress();
 
     await mongoose.disconnect();
 

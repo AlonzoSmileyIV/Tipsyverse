@@ -60,7 +60,7 @@ const BookEventScreen = () => {
 
             <CardHeader
               title={
-                <Typography variant="h5" fontWeight={800}>
+                <Typography component="h1" variant="h5" fontWeight={800}>
                   Request received 🎉
                 </Typography>
               }

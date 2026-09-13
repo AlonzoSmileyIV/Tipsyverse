@@ -1,11 +1,5 @@
-/* 
-ROUTERS - Defines the application’s API endpoints and associates 
-each route with the relevant controller function.
-
-Contents:
--Route files for each feature or resource (e.g., userRoutes.js, recipeRoutes.js).
--Each route file maps HTTP methods (GET, POST, PUT, DELETE) to controller functions.
-*/
+// Router import barrel. Domain router modules define the HTTP contract and
+// middleware order; they should not contain business logic.
 import contactRouter from "./libs/contact.routers.js";
 import userRouter from "./libs/user.routers.js";
 import hierarchyRouter from "./libs/hierarchy.routers.js";
@@ -16,7 +10,6 @@ import liquorRouter from "./libs/liquor.routers.js";
 import mixerRouter from "./libs/mixer.routers.js";
 import glassRouter from './libs/glass.routers.js';
 
-//import uploadRouter from "./libs/upload.router.js";
 import drinkRouter from './libs/drinks.routers.js';
 import commentRouter from "./libs/comment.routers.js";
 import notificationRouter from "./libs/notification.routers.js";

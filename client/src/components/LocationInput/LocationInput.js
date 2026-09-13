@@ -454,7 +454,11 @@ export default function LocationStep({
           onChange={onAddressInput}
           onBlur={geocodeTypedOrAutofilledAddress}
           error={!!showError("address1")}
-          helperText={showError("address1") ? errors.address1 : "Use the address search to auto-fill"}
+          helperText={
+            showError("address1")
+              ? errors.address1
+              : "Search to auto-fill, or enter the address manually. Map coordinates are optional."
+          }
           inputProps={{ autoComplete: "street-address", id: "address-line-1" }}
         />
         {showPreds && predictions.length > 0 && (
@@ -547,7 +551,7 @@ export default function LocationStep({
           helperText={
             showError("city")
               ? errors.city
-              : "Use the address search to auto-fill"
+              : "Auto-filled when available; you can also enter it manually."
           }
         />
       )}

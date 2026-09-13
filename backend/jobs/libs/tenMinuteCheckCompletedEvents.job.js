@@ -72,7 +72,7 @@ const checkCompletedEvents = async () => {
 };
 
 const tenMinuteCheckCompletedEventsJob = () => {
-  cron.schedule("*/10 * * * *", async () => {
+  return cron.schedule("*/10 * * * *", async () => {
     console.log(`⏱️ 10 minute event complete check job triggered.`);
     await checkCompletedEvents();
   });

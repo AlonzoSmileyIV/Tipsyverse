@@ -29,6 +29,7 @@ const AdminManageReportedComments = ({ reviewOnly = false, search = "" }) => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const is900OrLess = useMediaQuery("(max-width:900px)");
   const isTablet = useMediaQuery(theme.breakpoints.down("md"));
   const loggedInUser = useSelector((state) => state.users.loggedInUser)?.user;
 
@@ -180,7 +181,7 @@ const AdminManageReportedComments = ({ reviewOnly = false, search = "" }) => {
     pageSizeOptions={[5, 10, 25]}
     columnVisibilityModel={{
       avatar: !isMobile,
-      content: !isMobile,
+      content: !is900OrLess,
       numberOfReports: !isTablet,
     }}
     disableRowSelectionOnClick

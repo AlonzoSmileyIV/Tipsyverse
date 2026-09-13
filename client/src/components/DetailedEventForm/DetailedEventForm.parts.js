@@ -5,8 +5,13 @@ import {
   Box,
   Button,
   Chip,
+  FormControl,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Stack,
+  TextField,
   Typography,
 } from "@mui/material";
 import moment from "moment";
@@ -176,10 +181,18 @@ export function PaymentStatusSummary({
   paymentChipColor,
   amountPaid,
   discountedTotal,
+  overpaymentCredit = 0,
   paymentsLoading,
   paymentRequest,
   paymentRequests = [],
   formatMoney,
+  creditRefundAmount = "",
+  creditRefundMethod = "",
+  creditRefundMax = 0,
+  creditRefundSaving = false,
+  onCreditRefundAmountChange,
+  onCreditRefundMethodChange,
+  onCreditRefund,
 }) {
   return (
     <>
@@ -196,6 +209,60 @@ export function PaymentStatusSummary({
           Paid {formatMoney(amountPaid)} / {formatMoney(discountedTotal)}
         </Typography>
       </Stack>
+
+      {overpaymentCredit > 0 && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <Stack spacing={1.5}>
+            <span>
+              Customer credit on this event: <strong>{formatMoney(overpaymentCredit)}</strong>.
+              Refunds cannot exceed the available customer credit.
+            </span>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "flex-start" }}>
+              <TextField
+                size="small"
+                type="number"
+                label="Refund amount"
+                value={creditRefundAmount}
+                onChange={(event) => onCreditRefundAmountChange?.(event.target.value)}
+                inputProps={{ min: 0.01, max: creditRefundMax, step: 0.01 }}
+                helperText={`Maximum ${formatMoney(creditRefundMax)}`}
+              />
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel id="credit-refund-method-label">Refund method</InputLabel>
+                <Select
+                  labelId="credit-refund-method-label"
+                  label="Refund method"
+                  value={creditRefundMethod}
+                  onChange={(event) => onCreditRefundMethodChange?.(event.target.value)}
+                >
+                  <MenuItem value="credit_card">Credit Card</MenuItem>
+                  <MenuItem value="cashapp">Cash App</MenuItem>
+                  <MenuItem value="venmo">Venmo</MenuItem>
+                  <MenuItem value="paypal">PayPal</MenuItem>
+                  <MenuItem value="zelle">Zelle</MenuItem>
+                  <MenuItem value="square">Square</MenuItem>
+                  <MenuItem value="cash">Cash</MenuItem>
+                  <MenuItem value="check">Check</MenuItem>
+                  <MenuItem value="other">Other</MenuItem>
+                </Select>
+              </FormControl>
+              <Button
+                variant="contained"
+                color="warning"
+                onClick={onCreditRefund}
+                disabled={
+                  creditRefundSaving ||
+                  !creditRefundMethod ||
+                  !(Number(creditRefundAmount) > 0) ||
+                  Number(creditRefundAmount) > creditRefundMax
+                }
+              >
+                {creditRefundSaving ? "Refunding..." : "Refund"}
+              </Button>
+            </Stack>
+          </Stack>
+        </Alert>
+      )}
 
       {paymentsLoading ? (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -234,6 +301,8 @@ export function RecordedPaymentsList({
       <Stack spacing={1}>
         {payments.map((payment) => {
           const status = String(payment.status || "recorded").toLowerCase();
+          const refundedAmount = Number(payment.refundedAmount) || 0;
+          const netAmount = Math.max(0, (Number(payment.amount) || 0) - refundedAmount);
           const isReversible = !["voided", "refunded"].includes(status);
           return (
             <Paper
@@ -249,11 +318,11 @@ export function RecordedPaymentsList({
                 <Box>
                   <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
                     <Typography variant="subtitle2">
-                      {formatMoney(payment.amount)}
+                      {formatMoney(netAmount)}
                     </Typography>
                     <Chip
                       size="small"
-                      label={status}
+                      label={refundedAmount > 0 && status === "recorded" ? "partially refunded" : status}
                       color={
                         status === "recorded"
                           ? "success"
@@ -267,6 +336,11 @@ export function RecordedPaymentsList({
                     {[payment.method, payment.reference].filter(Boolean).join(" • ") ||
                       "No reference"}
                   </Typography>
+                  {refundedAmount > 0 && (
+                    <Typography variant="caption" color="warning.main" display="block">
+                      {formatMoney(payment.amount)} received • {formatMoney(refundedAmount)} refunded
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.secondary" display="block">
                     {payment.receivedAt
                       ? formatDate(payment.receivedAt)

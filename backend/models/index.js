@@ -1,17 +1,9 @@
-/* 
-MODELS - Defines the data structure for the MongoDB collections using Mongoose schemas.
-
-Contents:
--Each model represents a database entity (e.g., User, Recipe, Post) with 
-a schema defining its fields, types, and validation.
-*/
+// Mongoose model import barrel. Schemas own persistence validation, indexes,
+// relationships, and safe query defaults; request behavior belongs elsewhere.
 
 import HierarchyModel from './libs/hierarchy.model.js';
 import DepartmentModel from "./libs/department.model.js";
 import PositionModel from './libs/position.model.js';
-
-//import GroupModel from './libs/group.model.js';
-//import PermissionModel from './libs/permission.model.js';
 
 import UserModel from './libs/user.model.js';
 
@@ -38,12 +30,13 @@ import SupportTicketModel from "./libs/supportticket.model.js";
 import AttendanceModel from "./libs/attendance.model.js";
 import RewardClaimModel from "./libs/rewardclaim.model.js";
 import CouponModel from "./libs/coupon.model.js";
+import AuthSessionModel from "./libs/authsession.model.js";
+import EmailOutboxModel from "./libs/emailoutbox.model.js";
 
 
 import {CourseModel} from './libs/course.model.js';
 import CourseProgressModel from './libs/courseprogress.model.js';
 
-//import NotesModel from './libs/note.model.js';
 import ActivityLogModel from './libs/activitylog.model.js';
 
 
@@ -77,6 +70,8 @@ export {
     AttendanceModel,
     RewardClaimModel,
     CouponModel,
+    AuthSessionModel,
+    EmailOutboxModel,
     
     NotificationModel,
     ActivityLogModel

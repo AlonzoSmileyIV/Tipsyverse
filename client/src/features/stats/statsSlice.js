@@ -2,7 +2,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import api from "../../services/api";
 
-// GET /api/stats/app  -> { totalDrinks, totalUsers, totalComments, totalShares }
+// GET /api/stats/app
 export const fetchAppStats = createAsyncThunk("stats/fetchApp", async () => {
   const res = await api.get("/stats");
   return res.data;
@@ -14,8 +14,10 @@ const statSlice = createSlice({
     appStats: {
       totalDrinks: 0,
       totalUsers: 0,
+      totalBartenders: 0,
       totalComments: 0,
       totalShares: 0,
+      totalEventsCompleted: 0,
     },
     status: "idle",
     error: null,
@@ -32,10 +34,19 @@ const statSlice = createSlice({
         const {
           totalDrinks = 0,
           totalUsers = 0,
+          totalBartenders = 0,
           totalComments = 0,
           totalShares = 0,
+          totalEventsCompleted = 0,
         } = action.payload || {};
-        state.appStats = { totalDrinks, totalUsers, totalComments, totalShares };
+        state.appStats = {
+          totalDrinks,
+          totalUsers,
+          totalBartenders,
+          totalComments,
+          totalShares,
+          totalEventsCompleted,
+        };
       })
       .addCase(fetchAppStats.rejected, (state, action) => {
         state.status = "failed";

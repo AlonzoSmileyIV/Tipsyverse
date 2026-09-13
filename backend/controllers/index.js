@@ -1,12 +1,6 @@
-/* 
-CONTROLLERS - 
-Contains functions that handle the logic for each endpoint in the app, 
-usually organized by feature or resource (e.g., users, posts, recipes).
-
-Contents:
--Each file typically contains CRUD functions (Create, Read, Update, Delete) 
-related to specific features (e.g., userController.js for user-related logic).
-*/
+// Controller import barrel. Request orchestration belongs in `libs`; reusable
+// domain policy and provider integrations should be extracted into focused
+// utility/service modules rather than added here.
 import hierarchyCtrl from "./libs/hierarchy.ctrl.js";
 import departmentCtrl from "./libs/department.ctrl.js";
 import positionCtrl from "./libs/position.ctrl.js";

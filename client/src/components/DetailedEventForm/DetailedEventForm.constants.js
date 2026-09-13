@@ -110,6 +110,7 @@ export const CANCEL_REASONS = [
   { value: "found_other_vendor", label: "Booked another vendor" },
   { value: "no_longer_needed", label: "Event postponed / no longer needed" },
   { value: "not_responding", label: "Client not responding" }, // ✅ you asked for this
+  { value: "nonpayment", label: "Unpaid balance / nonpayment" },
   { value: "other", label: "Other" },
 ];
 

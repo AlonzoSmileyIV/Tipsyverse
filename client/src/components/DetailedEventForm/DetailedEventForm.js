@@ -45,6 +45,7 @@ import {
   ArrowBackIos,
   ArrowForwardIos,
   Group,
+  History,
 } from "@mui/icons-material";
 import moment from "moment";
 import api from "../../services/api";
@@ -53,7 +54,21 @@ import { useDispatch, useSelector } from "react-redux";
 import { fetchBidsByEventId } from "../../features/bids/bidSlice";
 import { fetchEventById } from "../../features/events/eventSlice";
 import PhoneTextField from "../PhoneTextField/PhoneTextField";
+import DateTextField from "../DateTextField/DateTextField";
+import ActivityLogsTable from "../ActivityLogsTable/LazyActivityLogsTable";
 import { isHoliday as getHolidayInfo } from "../../utils/holiday";
+import getEventPaymentPolicyView, { formatPaymentDueDate } from "../../utils/eventPaymentPolicy";
+import {
+  getDatePartInTimeZone,
+  getEventTimeZone,
+  getTimePartInTimeZone,
+  zonedLocalDateTimeToIso,
+} from "../../utils/timestamps";
+import { COMMON_US_TIMEZONES } from "../../utils/timezones";
+import {
+  getRecommendedBartenderCount,
+  getRequiredBartenderCount,
+} from "../../utils/eventSummary";
 import { fetchAssignmentsByEventId } from "../../features/assignments/assignmentSlice";
 import { parseDateOnlyParts } from "../../utils/dateOnly";
 import {
@@ -61,6 +76,8 @@ import {
   parseTimeInput,
   timeValueToInput,
 } from "../../utils/timeInput";
+
+const MAX_IMAGE_SIZE_MB = 2;
 import {
   BAR_TYPES,
   CANCEL_REASONS,
@@ -153,6 +170,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const [contactDialog, setContactDialog] = useState(false);
   const [procurementGuideOpen, setProcurementGuideOpen] = useState(false);
   const [procurementGuideMode, setProcurementGuideMode] = useState("rule");
+  const [activityLogOpen, setActivityLogOpen] = useState(false);
 
   // Which tab is active: "assign" | "remove" | "replace"
   const [manageBartendersOpen, setManageBartendersOpen] = useState(false);
@@ -242,7 +260,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     startAt: event?.startAt || getNextWeekendWindow().start.toISOString(),
     endAt: event?.endAt || getNextWeekendWindow().end.toISOString(),
     timezone:
-      event?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+      getEventTimeZone(event),
     location: initialLocation,
     contact: {
       fullName: event?.contact?.fullName || "",
@@ -251,10 +269,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       preferred: event?.contact?.preferred || "call",
     },
     guestCount: event?.guestCount || "",
-    bartendersRequested:
-      event?.pricing?.bartendersRequested ||
-      event?.counts?.neededBartenders ||
-      1,
+    bartendersRequested: getRequiredBartenderCount(event, 1),
+    recommendedBartenders: getRecommendedBartenderCount(
+      event,
+      recommendBartenders(event?.guestCount) || 1
+    ),
+    staffingExceptionReason: event?.staffingException?.reason || "",
     barType: event?.options?.barType || "unknown",
     bartenderNotes: event?.bartenderNotes || "",
     additionalContacts: Array.isArray(event?.additionalContacts)
@@ -273,12 +293,32 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     private: !!event?.private,
   }));
   const [dateInputs, setDateInputs] = useState(() => ({
-    startAt: datePartsToInput(event?.startAt || getNextWeekendWindow().start),
-    endAt: datePartsToInput(event?.endAt || getNextWeekendWindow().end),
+    startAt: datePartsToInput(
+      getDatePartInTimeZone(
+        event?.startAt || getNextWeekendWindow().start,
+        getEventTimeZone(event)
+      )
+    ),
+    endAt: datePartsToInput(
+      getDatePartInTimeZone(
+        event?.endAt || getNextWeekendWindow().end,
+        getEventTimeZone(event)
+      )
+    ),
   }));
   const [timeInputs, setTimeInputs] = useState(() => ({
-    startAt: timeValueToInput(getLocalTimePart(event?.startAt || getNextWeekendWindow().start)),
-    endAt: timeValueToInput(getLocalTimePart(event?.endAt || getNextWeekendWindow().end)),
+    startAt: timeValueToInput(
+      getTimePartInTimeZone(
+        event?.startAt || getNextWeekendWindow().start,
+        getEventTimeZone(event)
+      )
+    ),
+    endAt: timeValueToInput(
+      getTimePartInTimeZone(
+        event?.endAt || getNextWeekendWindow().end,
+        getEventTimeZone(event)
+      )
+    ),
   }));
   const previousEventIdRef = useRef(event?._id);
 
@@ -358,14 +398,29 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const handleConfirmRemove = async () => {
     try {
       setRemoving(true);
-      //console.log('checkedAssignments: ', checkedAssignments);
-      const assignmentIds = checkedAssignments.map((a) => a._id);
-      //console.log("Removing assignments:", assignmentIds);
-      // Send to backend
-      await api.post(`/events/${event._id}/remove-bartenders`, {
-        bartenderIds: assignmentIds,
+      const bartenderIds = checkedAssignments
+        .map((assignment) =>
+          String(
+            assignment.bartenderUser?._id || assignment.bartenderUser || ""
+          )
+        )
+        .filter(Boolean);
+      if (bartenderIds.length !== checkedAssignments.length) {
+        throw new Error(
+          "One or more selected assignments are missing a bartender account. Refresh and try again."
+        );
+      }
+
+      const response = await api.post(`/events/${event._id}/remove-bartenders`, {
+        bartenderIds,
         reason: removeReason,
       });
+      const removedCount = Number(response.data?.data?.removedCount) || 0;
+      if (!removedCount) {
+        throw new Error(
+          response.data?.data?.message || "No active assignments were removed."
+        );
+      }
       // Close dialog
       setConfirmRemoveOpen(false);
 
@@ -382,7 +437,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       setConfirmRemoveOpen(false);
       setManageBartendersOpen(false);
       setAlertType("success");
-      setAlertMsg(`Successfully removed ${assignmentIds.length} bartender(s).`);
+      setAlertMsg(`Successfully removed ${removedCount} bartender(s).`);
       setAlertOpen(true);
     } catch (e) {
       setConfirmRemoveOpen(false);
@@ -396,26 +451,93 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   };
 
   // how many bartenders we are trying to assign
-  const maxBartendersNeeded = Math.max(
+  const totalBartendersNeeded = Math.max(
     1,
-    Number(form.bartendersRequested) || 1
+    Number(form.bartendersRequested) || getRequiredBartenderCount(event, 1)
+  );
+  const maxBartendersNeeded = Math.max(
+    0,
+    totalBartendersNeeded - allAssignments.length
   );
 
   // helper to normalize a bid id
   const getBidId = (bid) => String(bid._id || bid.id || "");
+
+  const assignedBartenderIds = useMemo(
+    () =>
+      new Set(
+        allAssignments
+          .map((assignment) =>
+            String(
+              assignment.bartenderUser?._id ||
+                assignment.bartenderUser ||
+                assignment.bartender?._id ||
+                assignment.bartender ||
+                ""
+            )
+          )
+          .filter(Boolean)
+      ),
+    [allAssignments]
+  );
+
+  const selectableBids = useMemo(
+    () =>
+      allBids.filter((bid) => {
+        const bartender =
+          bid.bartenderUser || bid.bartender || bid.user || bid.owner || {};
+        const bartenderId = String(
+          bartender?._id || bartender?.id || bartender || ""
+        );
+        return !bartenderId || !assignedBartenderIds.has(bartenderId);
+      }),
+    [allBids, assignedBartenderIds]
+  );
+
+  const compareBidPriority = (a, b) => {
+    // Hard availability is always the first gate. Interested bartenders with
+    // conflicts stay visible, but are grouped at the bottom.
+    if (!!a.conflictsSchedule !== !!b.conflictsSchedule)
+      return a.conflictsSchedule ? 1 : -1;
+    if ((Number(b.score) || 0) !== (Number(a.score) || 0))
+      return (Number(b.score) || 0) - (Number(a.score) || 0);
+
+    const profileA = a.bartenderUser?.bartenderProfile || {};
+    const profileB = b.bartenderUser?.bartenderProfile || {};
+    const ratingDelta =
+      (Number(profileB.reviewSummary?.avgRating) || 0) -
+      (Number(profileA.reviewSummary?.avgRating) || 0);
+    if (ratingDelta) return ratingDelta;
+
+    const experienceA = new Date(
+      profileA.dateBartendingStarted || a.bartenderUser?.createdAt || Date.now()
+    ).getTime();
+    const experienceB = new Date(
+      profileB.dateBartendingStarted || b.bartenderUser?.createdAt || Date.now()
+    ).getTime();
+    if (experienceA !== experienceB) return experienceA - experienceB;
+
+    const assignedDelta =
+      (Number(profileA.stats?.totalAssignedEvents) || 0) -
+      (Number(profileB.stats?.totalAssignedEvents) || 0);
+    if (assignedDelta) return assignedDelta;
+    return new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0);
+  };
 
   const not = (a, b) => a.filter((v) => !b.includes(v));
   const intersection = (a, b) => a.filter((v) => b.includes(v));
 
   const leftBids = useMemo(() => {
     const selectedSet = new Set(selectedBidIds);
-    return allBids.filter((b) => !selectedSet.has(getBidId(b)));
-  }, [allBids, selectedBidIds]);
+    return selectableBids
+      .filter((b) => !selectedSet.has(getBidId(b)))
+      .sort(compareBidPriority);
+  }, [selectableBids, selectedBidIds]);
 
   const rightBids = useMemo(() => {
     const selectedSet = new Set(selectedBidIds);
-    return allBids.filter((b) => selectedSet.has(getBidId(b)));
-  }, [allBids, selectedBidIds]);
+    return selectableBids.filter((b) => selectedSet.has(getBidId(b)));
+  }, [selectableBids, selectedBidIds]);
 
   const bidMatchesSearch = (bid, query) => {
     const q = String(query || "")
@@ -462,6 +584,8 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const rightChecked = intersection(checkedBidIds, rightIds);
 
   const handleToggleBid = (id) => () => {
+    const bid = selectableBids.find((item) => getBidId(item) === id);
+    if (bid?.conflictsSchedule && !selectedBidIds.includes(id)) return;
     setCheckedBidIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
@@ -564,7 +688,9 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       ? setSearchAvailable
       : setSearchChosen;
 
-    const idsInThisList = items.map((bid) => getBidId(bid));
+    const idsInThisList = items
+      .filter((bid) => !isAvailableSide || !bid.conflictsSchedule)
+      .map((bid) => getBidId(bid));
 
     const checkedInThisList = idsInThisList.filter((id) =>
       checkedBidIds.includes(id)
@@ -640,6 +766,8 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
             items.map((bid) => {
               const id = getBidId(bid);
               const isChecked = checkedBidIds.includes(id);
+              const hasConflict =
+                isAvailableSide && !!bid.conflictsSchedule;
 
               const bartender =
                 bid.bartenderUser ||
@@ -693,11 +821,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
                 <Box key={id} sx={{ mb: 1 }}>
                   <Paper
                     variant="outlined"
-                    onClick={() => handleToggleBid(id)()}
+                    onClick={() => !hasConflict && handleToggleBid(id)()}
                     sx={{
                       p: 1.25,
                       borderRadius: 1.5,
-                      cursor: "pointer",
+                      cursor: hasConflict ? "not-allowed" : "pointer",
+                      opacity: hasConflict ? 0.72 : 1,
                       borderColor: isChecked
                         ? "var(--primary-color)"
                         : "divider",
@@ -714,11 +843,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
                       <Checkbox
                         edge="start"
                         checked={isChecked}
+                        disabled={hasConflict}
                         tabIndex={-1}
                         disableRipple
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleToggleBid(id)();
+                          if (!hasConflict) handleToggleBid(id)();
                         }}
                         sx={{ mt: 0.5 }}
                       />
@@ -741,6 +871,20 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
                             display="block"
                           >
                             {email}
+                          </Typography>
+                        )}
+
+                        {hasConflict && (
+                          <Typography
+                            variant="caption"
+                            color="error"
+                            display="block"
+                            sx={{ mt: 0.5, fontWeight: 600 }}
+                          >
+                            Schedule conflict
+                            {bid.conflictEvents?.length
+                              ? `: ${bid.conflictEvents.join(", ")}`
+                              : " — unavailable for this event time"}
                           </Typography>
                         )}
 
@@ -901,7 +1045,13 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     if (!file || receiptUploading || !event?._id) return;
     if (!String(file.type || "").startsWith("image/")) {
       setAlertType("error");
-      setAlertMsg("Please upload a receipt image file.");
+      setAlertMsg("Choose a JPG, PNG, GIF, or WebP receipt image.");
+      setAlertOpen(true);
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+      setAlertType("error");
+      setAlertMsg(`The receipt image must be ${MAX_IMAGE_SIZE_MB} MB or smaller.`);
       setAlertOpen(true);
       return;
     }
@@ -995,21 +1145,28 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   useEffect(() => {
     const guests = Number(form.guestCount) || 0;
     const rec = recommendBartenders(guests);
-    if (!bartendersTouched)
-      setForm((f) => ({ ...f, bartendersRequested: rec || 1 }));
-  }, [form.guestCount, bartendersTouched]);
+    setForm((current) => ({
+      ...current,
+      recommendedBartenders: rec || 1,
+      ...(!bartendersTouched && !getRequiredBartenderCount(event)
+        ? { bartendersRequested: rec || 1 }
+        : {}),
+    }));
+  }, [
+    event?.counts?.neededBartenders,
+    event?.pricing?.bartendersRequested,
+    form.guestCount,
+    bartendersTouched,
+  ]);
 
   useEffect(() => {
     if (!manageBartendersOpen) return;
 
-    const preselectedIds = allBids
-      .filter((b) => String(b.status).toLowerCase() === "selected")
-      .map((b) => getBidId(b));
-
-    setSelectedBidIds(preselectedIds);
-    // optional: also clear checked state when opening
+    // Only newly chosen bartenders belong in this state. Previously selected
+    // bids may already be assignments and must not consume another open slot.
+    setSelectedBidIds([]);
     setCheckedBidIds([]);
-  }, [manageBartendersOpen, allBids]);
+  }, [manageBartendersOpen]);
 
   // derive auto rush (decimal + whole)
   const autoRush = useMemo(() => {
@@ -1115,10 +1272,19 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   // readable dollars for UI outside Step 3
   const computedTotal = fromCents(grandTotalC);
 
+  // Preserve any discount/override already embedded in the confirmed payment
+  // snapshot while previewing the price delta from unsaved form edits. This is
+  // the same rule used by the backend when the event is saved.
+  const savedComputedTotal =
+    Number(buildSnapshotFromEvent(event)?.totals?.totalC || 0) / 100;
+  const savedBilledTotal = Number(event?.payment?.total) || 0;
+  const billingAdjustment =
+    savedBilledTotal > 0 ? savedBilledTotal - savedComputedTotal : 0;
+
   // If override is enabled, the "discountedTotal" becomes the override
   const discountedTotal = overrideEnabled
     ? Number(overrideAmount) || 0
-    : computedTotal;
+    : Math.max(0, computedTotal + billingAdjustment);
 
   // deposit (reuses your timing rule), now based on possibly-overridden total
   const depositDue =
@@ -1140,11 +1306,19 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const [paymentActionType, setPaymentActionType] = useState("");
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [paymentActionReason, setPaymentActionReason] = useState("");
+  const [paymentActionAmount, setPaymentActionAmount] = useState("");
   const [paymentActionSaving, setPaymentActionSaving] = useState(false);
+  const [creditRefundAmount, setCreditRefundAmount] = useState("");
+  const [creditRefundMethod, setCreditRefundMethod] = useState("");
+  const [creditRefundSaving, setCreditRefundSaving] = useState(false);
+  const [arrangementNotes, setArrangementNotes] = useState(
+    event?.payment?.arrangementNotes || ""
+  );
+  const [policySaving, setPolicySaving] = useState(false);
   const [payments, setPayments] = useState(event?.payments || []);
   const [paymentForm, setPaymentForm] = useState({
     amount: "",
-    method: paymentProvider || "stripe",
+    method: paymentProvider || "paypal",
     reference: "",
     receivedAt: new Date().toISOString().slice(0, 10),
     notes: "",
@@ -1163,14 +1337,51 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     0;
 
   const recordedAmountPaid = activePayments.reduce(
-    (sum, p) => sum + (Number(p.amount) || 0),
+    (sum, p) =>
+      sum + Math.max(0, (Number(p.amount) || 0) - (Number(p.refundedAmount) || 0)),
     0
   );
   const amountPaid = activePayments.length
     ? recordedAmountPaid
     : eventSummaryPaidTotal;
 
-  const remainingBalance = Math.max(discountedTotal - amountPaid, 0);
+  const eventCanceled =
+    String(form.status || event?.status || "").toLowerCase() === "canceled";
+  const cancellationRetained = eventCanceled
+    ? Math.min(
+        amountPaid,
+        Math.max(0, Number(event?.cancellation?.retainedAmount) || 0)
+      )
+    : 0;
+  const remainingBalance = eventCanceled
+    ? 0
+    : Math.max(discountedTotal - amountPaid, 0);
+  const overpaymentCredit = eventCanceled
+    ? Math.max(amountPaid - cancellationRetained, 0)
+    : Math.max(amountPaid - discountedTotal, 0);
+  const creditRefundPayment = activePayments.find(
+    (payment) =>
+      !String(payment?._id || "").startsWith("summary-") &&
+      (Number(payment.amount) || 0) - (Number(payment.refundedAmount) || 0) > 0
+  );
+  const creditRefundMax = Math.min(
+    overpaymentCredit,
+    Math.max(
+      0,
+      (Number(creditRefundPayment?.amount) || 0) -
+        (Number(creditRefundPayment?.refundedAmount) || 0)
+    )
+  );
+  useEffect(() => {
+    setCreditRefundAmount((current) => {
+      const amount = Number(current);
+      return creditRefundMax > 0 && amount > 0 && amount <= creditRefundMax
+        ? current
+        : creditRefundMax > 0
+        ? creditRefundMax.toFixed(2)
+        : "";
+    });
+  }, [creditRefundMax]);
   const paymentAmountReceived = Number(paymentForm.amount) || 0;
   const collectPaymentAmountInvalid =
     paymentAmountReceived <= 0 || paymentAmountReceived > remainingBalance;
@@ -1178,16 +1389,47 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const paymentStatus =
     amountPaid <= 0
       ? "Pending"
+      : overpaymentCredit > 0
+      ? "Overpaid / Credit"
       : remainingBalance <= 0
       ? "Paid in Full"
       : "Partially Paid";
 
   const paymentChipColor =
-    paymentStatus === "Paid in Full"
+    paymentStatus === "Paid in Full" || paymentStatus === "Overpaid / Credit"
       ? "success"
       : paymentStatus === "Partially Paid"
       ? "warning"
       : "default";
+  const paymentPolicy = getEventPaymentPolicyView(
+    { ...event, startAt: form.startAt || event?.startAt },
+    { total: discountedTotal, paid: amountPaid }
+  );
+
+  const resolvePaymentPolicy = async (action) => {
+    setPolicySaving(true);
+    try {
+      const res = await api.post(`/events/${eventId}/payment-policy/resolve`, {
+        action,
+        notes: arrangementNotes,
+      });
+      const updatedEvent = res.data?.data;
+      if (updatedEvent) onSaved?.(updatedEvent);
+      setAlertSeverity("success");
+      setAlertMsg(
+        action === "approve_arrangement"
+          ? "Payment arrangement approved and documented."
+          : "Payment arrangement removed."
+      );
+      setAlertOpen(true);
+    } catch (error) {
+      setAlertSeverity("error");
+      setAlertMsg(error?.response?.data?.message || "Could not update the payment policy.");
+      setAlertOpen(true);
+    } finally {
+      setPolicySaving(false);
+    }
+  };
 
   const isCustomPayment = paymentType === "custom";
   const maxRequestAmount = remainingBalance;
@@ -1263,7 +1505,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
         if (collectableRequest) {
           setPaymentRequest(collectableRequest);
-          setPaymentProvider(collectableRequest.provider || "stripe");
+          setPaymentProvider(collectableRequest.provider || "paypal");
           setPaymentType(collectableRequest.paymentType || "deposit");
           if (collectableRequest.paymentType === "custom") {
             setCustomPaymentAmount(
@@ -1341,10 +1583,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     if (!parts) return;
 
     const datePart = datePartsToDatePart(parts);
-    const timePart = getLocalTimePart(form[field]) || (field === "startAt" ? "17:00" : "21:00");
-    const localValue = combineLocalDateTime(datePart, timePart);
-    if (!localValue) return;
-    setField(field, new Date(localValue).toISOString());
+    const timePart =
+      parseTimeInput(timeInputs[field]) ||
+      (field === "startAt" ? "17:00" : "21:00");
+    const isoValue = zonedLocalDateTimeToIso(datePart, timePart, form.timezone);
+    if (!isoValue) return;
+    setField(field, isoValue);
   };
 
   const updateEventTimePart = (field) => (e) => {
@@ -1352,10 +1596,11 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     setTimeInputs((current) => ({ ...current, [field]: displayValue }));
     const timePart = parseTimeInput(displayValue);
     if (!timePart) return;
-    const datePart = getLocalDatePart(form[field]);
-    const localValue = combineLocalDateTime(datePart, timePart);
-    if (!localValue) return;
-    setField(field, new Date(localValue).toISOString());
+    const dateParts = parseDateOnlyParts(dateInputs[field]);
+    const datePart = datePartsToDatePart(dateParts);
+    const isoValue = zonedLocalDateTimeToIso(datePart, timePart, form.timezone);
+    if (!isoValue) return;
+    setField(field, isoValue);
   };
 
   const normalizeEventTimePart = (field) => () => {
@@ -1374,16 +1619,17 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const applyRecommended = () => {
     const rec = recommendBartenders(form.guestCount);
     setBartendersTouched(false);
-    setField("bartendersRequested", rec || 1);
+    setForm((current) => ({
+      ...current,
+      bartendersRequested: rec || 1,
+      recommendedBartenders: rec || 1,
+      staffingExceptionReason: "",
+    }));
   };
 
   // Returns true if we have a usable location
   const hasLocation = useCallback((loc = {}) => {
     if (!loc || typeof loc !== "object") return false;
-    const lat = loc.latitude ?? loc.lat;
-    const lng = loc.longitude ?? loc.lng;
-    if (lat == null || lng == null) return false;
-
     if ((loc.formattedAddress && loc.formattedAddress.trim()) || loc.placeId) {
       return true;
     }
@@ -1446,6 +1692,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     if (!(Number(form.bartendersRequested) >= 1)) {
       questions.push("Set bartenders needed");
     }
+    if (
+      Number(form.bartendersRequested) < Number(form.recommendedBartenders) &&
+      !String(form.staffingExceptionReason || "").trim()
+    ) {
+      questions.push("Explain the approved staffing exception");
+    }
     if (!form.barType || form.barType === "unknown") {
       questions.push("Select type of bar");
     }
@@ -1476,6 +1728,8 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     form.allowTipJars,
     form.barType,
     form.bartendersRequested,
+    form.recommendedBartenders,
+    form.staffingExceptionReason,
     form.contact?.email,
     form.contact?.fullName,
     form.contact?.phone,
@@ -1919,7 +2173,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
               <p>
                 We accept several payment methods, including{" "}
                 <strong>
-                  PayPal, Venmo, Cash App, Stripe, Square, and Zelle
+                  PayPal, Venmo, Cash App, Square, and Zelle
                 </strong>
                 , depending on your preference.
               </p>
@@ -2079,10 +2333,19 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
         setupHours: Number(calcInput.setupHours) || 0, // hours
         breakdownHours: Number(calcInput.breakdownHours) || 0,
+        bartendersRequested: Number(form.bartendersRequested) || 1,
       },
       counts: {
         ...(event?.counts || {}),
+        recommendedBartenders:
+          Number(form.recommendedBartenders) ||
+          recommendBartenders(form.guestCount) ||
+          1,
+        approvedBartenders: Number(form.bartendersRequested) || 1,
         neededBartenders: Number(form.bartendersRequested) || 1,
+      },
+      staffingException: {
+        reason: String(form.staffingExceptionReason || "").trim(),
       },
       private: !!form.private,
       bartenderNotes: form.bartenderNotes,
@@ -2374,10 +2637,58 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     }
   };
 
+  const handleCreditRefund = async () => {
+    const amount = Number(creditRefundAmount);
+    if (
+      !creditRefundPayment?._id ||
+      !creditRefundMethod ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amount > creditRefundMax
+    ) {
+      return;
+    }
+
+    setCreditRefundSaving(true);
+    try {
+      const res = await api.patch(`/payments/${creditRefundPayment._id}/refund`, {
+        amount,
+        method: creditRefundMethod,
+        notes: `Customer credit refund via ${creditRefundMethod}.`,
+      });
+      const updatedPayment = res.data?.data;
+      setPayments((prev) =>
+        prev.map((payment) =>
+          payment._id === creditRefundPayment._id ? updatedPayment : payment
+        )
+      );
+      setCreditRefundAmount("");
+      setCreditRefundMethod("");
+      setAlertType("success");
+      setAlertMsg(`${fmtMoney(amount)} customer credit refunded successfully.`);
+      setAlertOpen(true);
+    } catch (err) {
+      setAlertType("error");
+      setAlertMsg(err?.response?.data?.message || "Failed to refund customer credit.");
+      setAlertOpen(true);
+    } finally {
+      setCreditRefundSaving(false);
+    }
+  };
+
   const openPaymentAction = (payment, actionType) => {
     setSelectedPayment(payment);
     setPaymentActionType(actionType);
     setPaymentActionReason("");
+    const refundable = Math.max(
+      0,
+      (Number(payment?.amount) || 0) - (Number(payment?.refundedAmount) || 0)
+    );
+    setPaymentActionAmount(
+      actionType === "refund"
+        ? String(Math.min(refundable, overpaymentCredit || refundable).toFixed(2))
+        : ""
+    );
     setPaymentActionOpen(true);
   };
 
@@ -2387,6 +2698,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     setSelectedPayment(null);
     setPaymentActionType("");
     setPaymentActionReason("");
+    setPaymentActionAmount("");
   };
 
   const handlePaymentAction = async () => {
@@ -2402,7 +2714,10 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       const payload =
         paymentActionType === "void"
           ? { voidReason: paymentActionReason }
-          : { notes: paymentActionReason };
+          : {
+              amount: Number(paymentActionAmount),
+              notes: paymentActionReason,
+            };
 
       const res = await api.patch(endpoint, payload);
       const updatedPayment = res.data?.data;
@@ -2446,6 +2761,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       setSelectedPayment(null);
       setPaymentActionType("");
       setPaymentActionReason("");
+      setPaymentActionAmount("");
     } catch (err) {
       setAlertType("error");
       setAlertMsg(
@@ -2596,6 +2912,8 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               </Typography>
               <Box
                 component="pre"
+                tabIndex={0}
+                aria-label="Event details preview"
                 sx={{ fontFamily: "monospace", whiteSpace: "pre-wrap", m: 0 }}
               >
                 Subject: {md.subject}
@@ -2629,6 +2947,8 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               </Typography>
               <Box
                 component="pre"
+                tabIndex={0}
+                aria-label="Event details preview"
                 sx={{ fontFamily: "monospace", whiteSpace: "pre-wrap", m: 0 }}
               >
                 {md.body}
@@ -2657,38 +2977,13 @@ We wanted to confirm the details you entered and ask a few quick questions so we
     );
   };
 
-  const Header = () => (
-    <Box sx={{ mb: 1 }}>
-      <IconButton sx={{ float: "right" }} onClick={onClose}>
-        <Close />
-      </IconButton>
-      <Typography variant="h5" fontWeight={800}>
-        {event.shortCode} Event {readOnly ? "Details" : "Workflow"}
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        {readOnly
-          ? "View core information about this event."
-          : "Confirm details, collect inputs, compute costs, and authorize deposit."}
-      </Typography>
-      <Divider sx={{ mt: 1.5, mb: 2 }} />
-      <Collapse in={alertOpen}>
-        <Alert
-          severity={alertType}
-          onClose={() => setAlertOpen(false)}
-          sx={{ mb: 2 }}
-        >
-          {alertMsg}
-        </Alert>
-      </Collapse>
-    </Box>
-  );
 
   if (readOnly) {
     const tz =
       form.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
     return (
       <Box>
-        <Header />
+
         <Grid container spacing={2}>
           <Grid item xs={12} md={6}>
             <Row label="Type" value={form.type} />
@@ -2765,7 +3060,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
 
   return (
     <Box>
-      <Header />
+
       <Stepper activeStep={active} alternativeLabel sx={{ mb: 3 }}>
         {steps.map((label, index) => {
           const unlocked = isStepUnlocked(index);
@@ -2798,8 +3093,16 @@ We wanted to confirm the details you entered and ask a few quick questions so we
 
       {saving && <LinearProgress sx={{ mb: 2 }} />}
 
-      <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-        <Tooltip title="Helpful script for this step" sx={{ mb: 2 }}>
+      <Box
+        sx={{
+          mb: 2,
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: 1,
+          "& .MuiButton-root": { width: "100%" },
+        }}
+      >
+        <Tooltip title="Helpful script for this step">
           <Button
             variant="outlined"
             startIcon={<InfoOutlined />}
@@ -2814,7 +3117,6 @@ We wanted to confirm the details you entered and ask a few quick questions so we
         </Tooltip>
         <Tooltip
           title="This will allow you to log your attempts of contacting."
-          sx={{ mb: 2 }}
         >
           <Button
             variant="outlined"
@@ -2850,14 +3152,37 @@ We wanted to confirm the details you entered and ask a few quick questions so we
             Manage Bartenders
           </Button>
         )}
-      </Stack>
+        <Button
+          variant="outlined"
+          onClick={() => setActivityLogOpen((open) => !open)}
+          startIcon={<History />}
+          sx={{
+            borderColor: "var(--primary-color)",
+            color: "var(--primary-color)",
+          }}
+        >
+          {activityLogOpen ? "Hide Activity Log" : "Show Activity Log"}
+        </Button>
+      </Box>
+
+      {activityLogOpen && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.5 }}>
+            Activity Log
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Review event edits, actors, timestamps, and field-level changes.
+          </Typography>
+          <ActivityLogsTable entityModel="Event" entityId={event?._id} />
+        </Paper>
+      )}
 
       {/* STEP 1: Confirm Information */}
       {active === 0 && (
         <Stack>
           <Stack spacing={2}>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Contact Info
+              Contact
             </Typography>
             <TextField
               label="Contact Name"
@@ -2892,8 +3217,9 @@ We wanted to confirm the details you entered and ask a few quick questions so we
             </TextField>
 
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Event Info
+              Info
             </Typography>
+
             <TextField
               label="Event Type"
               select
@@ -2907,15 +3233,24 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                 </MenuItem>
               ))}
             </TextField>
+             <TextField
+              label="Description"
+              fullWidth
+              multiline
+              minRows={2}
+              value={form.description}
+              onChange={(e) => setField("description", e.target.value)}
+            />
+
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Time
+            </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
+              <DateTextField
                 label="Arrival Date"
-                placeholder="MM/DD/YYYY"
                 fullWidth
                 value={dateInputs.startAt}
                 onChange={updateEventDateTextPart("startAt")}
-                InputLabelProps={{ shrink: true }}
-                inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 helperText="Use MM/DD/YYYY."
               />
               <TextField
@@ -2932,14 +3267,11 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               />
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
+              <DateTextField
                 label="Leaving Date"
-                placeholder="MM/DD/YYYY"
                 fullWidth
                 value={dateInputs.endAt}
                 onChange={updateEventDateTextPart("endAt")}
-                InputLabelProps={{ shrink: true }}
-                inputProps={{ inputMode: "numeric", maxLength: 10 }}
                 helperText="Use MM/DD/YYYY."
               />
               <TextField
@@ -2955,6 +3287,35 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                 helperText="Type a time such as 9:30 PM."
               />
             </Stack>
+            <TextField
+              label="Event Timezone"
+              select
+              fullWidth
+              value={form.timezone}
+              onChange={(e) => {
+                const zone = e.target.value;
+                setField("timezone", zone);
+                ["startAt", "endAt"].forEach((field) => {
+                  const parts = parseDateOnlyParts(dateInputs[field]);
+                  const datePart = datePartsToDatePart(parts);
+                  const timePart = parseTimeInput(timeInputs[field]);
+                  const isoValue = zonedLocalDateTimeToIso(datePart, timePart, zone);
+                  if (isoValue) setField(field, isoValue);
+                });
+              }}
+              helperText="All event times and deadlines use this venue timezone."
+            >
+              {!COMMON_US_TIMEZONES.some(([value]) => value === form.timezone) && (
+                <MenuItem value={form.timezone}>
+                  {form.timezone}
+                </MenuItem>
+              )}
+              {COMMON_US_TIMEZONES.map(([value, label]) => (
+                <MenuItem key={value} value={value}>
+                  {label} ({value})
+                </MenuItem>
+              ))}
+            </TextField>
 
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               Location
@@ -2963,15 +3324,6 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               value={form.location}
               onChange={handleLocationChange}
               restrictCountry="US"
-            />
-
-            <TextField
-              label="Description"
-              fullWidth
-              multiline
-              minRows={2}
-              value={form.description}
-              onChange={(e) => setField("description", e.target.value)}
             />
           </Stack>
         </Stack>
@@ -2995,13 +3347,13 @@ We wanted to confirm the details you entered and ask a few quick questions so we
             alignItems="center"
           >
             <TextField
-              label="Number of Bartenders"
+              label="Approved Number of Bartenders"
               type="number"
               value={form.bartendersRequested}
               onChange={(e) => onBartendersChange(e.target.value)}
-              helperText={`We recommend: ${
-                recommendBartenders(form.guestCount) || 1
-              }${bartendersTouched ? " (manual override)" : ""}`}
+              helperText={`Recommended for ${Number(form.guestCount) || 0} guests: ${
+                Number(form.recommendedBartenders) || 1
+              }${bartendersTouched ? " (approved override)" : ""}`}
             />
             {bartendersTouched && (
               <Button
@@ -3017,6 +3369,22 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               </Button>
             )}
           </Stack>
+
+          {Number(form.bartendersRequested) <
+            Number(form.recommendedBartenders) && (
+            <TextField
+              label="Staffing Exception Reason"
+              value={form.staffingExceptionReason}
+              onChange={(e) =>
+                setField("staffingExceptionReason", e.target.value)
+              }
+              multiline
+              minRows={2}
+              required
+              fullWidth
+              helperText="Document why fewer bartenders were approved. The hourly rate is unchanged; pricing uses the approved bartender count."
+            />
+          )}
 
           <TextField
             select
@@ -3277,8 +3645,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                                   : "Click or drag receipt photo here"}
                               </Typography>
                               <Typography variant="body2" color="text.secondary">
-                                Upload a photo receipt to Cloudinary and attach
-                                it to this event.
+                                JPG, PNG, GIF, or WebP · max {MAX_IMAGE_SIZE_MB} MB
                               </Typography>
                             </Box>
                           </Stack>
@@ -3983,11 +4350,84 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                 paymentChipColor={paymentChipColor}
                 amountPaid={amountPaid}
                 discountedTotal={discountedTotal}
+                overpaymentCredit={overpaymentCredit}
                 paymentsLoading={paymentsLoading}
                 paymentRequest={paymentRequest}
                 paymentRequests={paymentRequests}
                 formatMoney={fmtMoney}
+                creditRefundAmount={creditRefundAmount}
+                creditRefundMethod={creditRefundMethod}
+                creditRefundMax={creditRefundMax}
+                creditRefundSaving={creditRefundSaving}
+                onCreditRefundAmountChange={setCreditRefundAmount}
+                onCreditRefundMethodChange={setCreditRefundMethod}
+                onCreditRefund={handleCreditRefund}
               />
+
+              {paymentPolicy.dueAt && (
+                <Alert severity={paymentPolicy.severity} sx={{ mb: 2 }}>
+                  <strong>{paymentPolicy.label}.</strong> Balance due date:{" "}
+                  {formatPaymentDueDate(paymentPolicy.dueAt, getEventTimeZone(event))}.
+                  {event?.payment?.shortNoticeFullPayment
+                    ? " This was confirmed within seven days of the event, so full payment was due at confirmation."
+                    : ""}
+                  {paymentPolicy.status === "payment_hold" || paymentPolicy.status === "action_required"
+                    ? " Bartenders remain assigned while final instructions, optional purchases, and additional event changes are paused."
+                    : ""}
+                </Alert>
+              )}
+
+              {remainingBalance > 0 &&
+                ["due_now", "past_due", "payment_hold", "action_required", "arrangement"].includes(
+                  paymentPolicy.status
+                ) && (
+                  <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                    <Typography variant="subtitle2" fontWeight={700}>
+                      Payment arrangement
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                      Document an approved exception here. Otherwise, use Cancel Event and select
+                      “Unpaid balance / nonpayment” no later than 48 hours before the event.
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={2}
+                      label="Arrangement terms and payment deadline"
+                      value={arrangementNotes}
+                      onChange={(e) => setArrangementNotes(e.target.value)}
+                      sx={{ mb: 1.5 }}
+                    />
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                      {paymentPolicy.status !== "arrangement" ? (
+                        <Button
+                          variant="contained"
+                          disabled={policySaving || arrangementNotes.trim().length < 5}
+                          onClick={() => resolvePaymentPolicy("approve_arrangement")}
+                        >
+                          Approve Arrangement
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outlined"
+                          disabled={policySaving}
+                          onClick={() => resolvePaymentPolicy("remove_arrangement")}
+                        >
+                          Remove Arrangement
+                        </Button>
+                      )}
+                      <Button
+                        variant="outlined"
+                        onClick={() => {
+                          setCancelReason("nonpayment");
+                          setCancelDialogOpen(true);
+                        }}
+                      >
+                        Cancel for Nonpayment
+                      </Button>
+                    </Stack>
+                  </Paper>
+                )}
 
               <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
                 Send Invoice / Payment Request
@@ -4009,7 +4449,6 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                   <MenuItem value="paypal">PayPal</MenuItem>
                   <MenuItem value="venmo">Venmo</MenuItem>
                   <MenuItem value="cashapp">Cash App</MenuItem>
-                  <MenuItem value="stripe">Stripe</MenuItem>
                   <MenuItem value="square">Square</MenuItem>
                   <MenuItem value="zelle">Zelle</MenuItem>
                 </TextField>
@@ -4259,7 +4698,11 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                     label="Payment Status"
                     value={`${paymentStatus} • ${fmtMoney(
                       remainingBalance
-                    )} remaining`}
+                    )} remaining${
+                      overpaymentCredit > 0
+                        ? ` • ${fmtMoney(overpaymentCredit)} credit`
+                        : ""
+                    }`}
                   />
                 </Stack>
                 <Stack item xs={12}>
@@ -4402,7 +4845,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
           {bartenderTab === "assign" && (
             <Stack spacing={2}>
               <Alert severity="info">
-                Select exactly <strong>{maxBartendersNeeded}</strong> bartender
+                Select up to <strong>{maxBartendersNeeded}</strong> more bartender
                 {maxBartendersNeeded > 1 ? "s" : ""} for this event. You
                 currently have{" "}
                 <strong>
@@ -4411,14 +4854,14 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                 selected.
               </Alert>
 
-              {allBids.length === 0 && (
+              {selectableBids.length === 0 && (
                 <Alert severity="warning">
                   There are currently no bids with an{" "}
                   <strong>interested</strong> status for this event.
                 </Alert>
               )}
 
-              {!!allBids.length && (
+              {!!selectableBids.length && (
                 <Grid
                   container
                   spacing={2}
@@ -4756,7 +5199,10 @@ We wanted to confirm the details you entered and ask a few quick questions so we
           <Stack spacing={2}>
             <Alert severity="warning">
               This will mark the event as <strong>canceled</strong>. It will no
-              longer be moved to assignment or staffed.
+              longer be moved to assignment or staffed. Pending payment requests
+              will be canceled and the remaining balance will become $0.00. No
+              refund is issued automatically; recorded payments are placed in
+              staff refund review under the cancellation policy.
             </Alert>
 
             <TextField
@@ -5217,13 +5663,13 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                 setPaymentForm((p) => ({ ...p, method: e.target.value }))
               }
             >
-              <MenuItem value="stripe">Stripe</MenuItem>
               <MenuItem value="square">Square</MenuItem>
               <MenuItem value="paypal">PayPal</MenuItem>
               <MenuItem value="venmo">Venmo</MenuItem>
               <MenuItem value="cashapp">Cash App</MenuItem>
               <MenuItem value="zelle">Zelle</MenuItem>
               <MenuItem value="cash">Cash</MenuItem>
+              <MenuItem value="check">Check</MenuItem>
               <MenuItem value="other">Other</MenuItem>
             </TextField>
 
@@ -5520,6 +5966,22 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               via {selectedPayment?.method || "unknown method"}
             </Typography>
 
+            {paymentActionType === "refund" && (
+              <TextField
+                fullWidth
+                type="number"
+                label="Refund amount"
+                value={paymentActionAmount}
+                onChange={(e) => setPaymentActionAmount(e.target.value)}
+                inputProps={{ min: 0.01, step: 0.01 }}
+                helperText={
+                  overpaymentCredit > 0
+                    ? `${fmtMoney(overpaymentCredit)} customer credit is available to refund.`
+                    : "Enter the amount actually returned to the customer."
+                }
+              />
+            )}
+
             <TextField
               fullWidth
               multiline
@@ -5532,7 +5994,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               placeholder={
                 paymentActionType === "void"
                   ? "Example: Full payment was recorded by accident."
-                  : "Example: Client was refunded through Stripe."
+                  : "Example: Client was refunded through the original provider."
               }
             />
           </Stack>
@@ -5546,7 +6008,16 @@ We wanted to confirm the details you entered and ask a few quick questions so we
             variant="contained"
             color={paymentActionType === "void" ? "error" : "warning"}
             onClick={handlePaymentAction}
-            disabled={paymentActionSaving || !selectedPayment?._id}
+            disabled={
+              paymentActionSaving ||
+              !selectedPayment?._id ||
+              (paymentActionType === "refund" &&
+                (!Number.isFinite(Number(paymentActionAmount)) ||
+                  Number(paymentActionAmount) <= 0 ||
+                  Number(paymentActionAmount) >
+                    (Number(selectedPayment?.amount) || 0) -
+                      (Number(selectedPayment?.refundedAmount) || 0)))
+            }
           >
             {paymentActionSaving
               ? "Saving..."

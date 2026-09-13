@@ -49,7 +49,7 @@ const ForgotPasswordScreen = () => {
         keywords="Tipsyverse forgot password, password reset, account recovery"
         noindex
       />
-      <Typography variant="h5" fontWeight={600} gutterBottom>
+      <Typography component="h1" variant="h5" fontWeight={600} gutterBottom>
         Forgot Password
       </Typography>
 
@@ -83,7 +83,7 @@ const ForgotPasswordScreen = () => {
 
          <Typography sx={{ mt: 2 }}>
         Remember now?{' '}
-        <Link  to="/login" underline="hover">
+        <Link to="/login" underline="always">
           Login
         </Link>
       </Typography>

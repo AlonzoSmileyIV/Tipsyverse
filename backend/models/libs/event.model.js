@@ -74,7 +74,15 @@ const PaymentSnapshotSchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["none", "authorized", "captured", "released", "refunded"],
+      enum: [
+        "none",
+        "authorized",
+        "captured",
+        "partially_paid",
+        "paid_in_full",
+        "released",
+        "refunded",
+      ],
       default: "none",
       index: true,
     },
@@ -96,6 +104,9 @@ const PaymentSnapshotSchema = new mongoose.Schema(
     fees: { type: Number, min: 0, default: 0 },
     gratuity: { type: Number, min: 0, default: 0 },
     total: { type: Number, min: 0, default: 0 },
+    paidTotal: { type: Number, min: 0, default: 0 },
+    balance: { type: Number, min: 0, default: 0 },
+    overpayment: { type: Number, min: 0, default: 0 },
 
     depositPct: { type: Number, min: 0, max: 1, default: 0 },
     depositAmount: { type: Number, min: 0, default: 0 },
@@ -108,6 +119,39 @@ const PaymentSnapshotSchema = new mongoose.Schema(
     authorizedAt: { type: Date },
     capturedAt: { type: Date },
     refundedAt: { type: Date },
+    balanceDueAt: { type: Date, index: true },
+    policyScheduledAt: { type: Date, default: null },
+    policyStatus: {
+      type: String,
+      enum: [
+        "not_priced",
+        "current",
+        "due_soon",
+        "due_now",
+        "past_due",
+        "payment_hold",
+        "action_required",
+        "arrangement",
+        "paid",
+        "canceled",
+        "canceled_nonpayment",
+      ],
+      default: "not_priced",
+      index: true,
+    },
+    shortNoticeFullPayment: { type: Boolean, default: false },
+    firstReminderSentAt: { type: Date, default: null },
+    pastDueWarningSentAt: { type: Date, default: null },
+    holdNoticeSentAt: { type: Date, default: null },
+    actionRequiredNoticeSentAt: { type: Date, default: null },
+    arrangementApprovedAt: { type: Date, default: null },
+    arrangementApprovedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    arrangementNotes: { type: String, trim: true, default: null },
+    ledgerVersion: { type: Number, min: 0, default: 0 },
   },
   { _id: false }
 );
@@ -185,12 +229,13 @@ const EventSchema = new mongoose.Schema(
       country: { type: String, trim: true, default: "US" },
       formatted: { type: String, trim: true },
       placeId: { type: String, trim: true },
-      point: { type: GeoPointSchema, required: true },
+      point: { type: GeoPointSchema, default: undefined },
       timezone: { type: String, trim: true },
     },
 
     startAt: { type: Date, required: true, index: true },
     endAt: { type: Date, required: true },
+    timezone: { type: String, trim: true },
     completedAt: { type: Date, default: null },
     completionEmailSentAt: { type: Date, default: null },
 
@@ -238,8 +283,21 @@ const EventSchema = new mongoose.Schema(
       { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     ],
     counts: {
-      neededBartenders: { type: Number, min: 0, default: 0 }, // mirror of pricing.bartendersRequested
+      recommendedBartenders: { type: Number, min: 1, default: null },
+      approvedBartenders: { type: Number, min: 1, default: null },
+      neededBartenders: { type: Number, min: 0, default: 0 }, // legacy mirror of approvedBartenders
       assigned: { type: Number, min: 0, default: 0 },
+    },
+    staffingException: {
+      active: { type: Boolean, default: false },
+      reason: { type: String, trim: true, maxlength: 1000, default: "" },
+      approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      approvedAt: { type: Date, default: null },
+      customerAcknowledgedAt: { type: Date, default: null },
     },
 
     needs: { type: [NeedSchema], default: [] },
@@ -294,6 +352,24 @@ const EventSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    cancellation: {
+      policyVersion: { type: String, trim: true, default: null },
+      timingTier: {
+        type: String,
+        enum: ["unscheduled", "before_48_hours", "inside_48_hours", "event_started"],
+        default: null,
+      },
+      cancellationFee: { type: Number, min: 0, default: 0 },
+      retainedAmount: { type: Number, min: 0, default: 0 },
+      paidAtCancellation: { type: Number, min: 0, default: 0 },
+      refundEligibleAmount: { type: Number, min: 0, default: 0 },
+      refundReviewStatus: {
+        type: String,
+        enum: ["not_required", "pending", "resolved"],
+        default: "not_required",
+      },
+      automaticRefund: { type: Boolean, default: false },
+    },
 
     visibility: {
       onBiddingBoard: { type: Boolean, default: false },
@@ -335,10 +411,49 @@ const EventSchema = new mongoose.Schema(
     bartenderClockOut5mReminderSentAt: { type: Date, default: null, index: true },
 
   },
-  { timestamps: true }
+  { timestamps: true, optimisticConcurrency: true }
 );
 
 EventSchema.pre("validate", function (next) {
+  const zone =
+    this.timezone ||
+    this.location?.timezone ||
+    "America/Indiana/Indianapolis";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format(new Date());
+  } catch {
+    return next(new Error("timezone must be a valid IANA timezone"));
+  }
+  this.timezone = zone;
+  if (this.location) this.location.timezone = zone;
+  const legacyRequired = Math.max(
+    Number(this.counts?.neededBartenders) || 0,
+    Number(this.pricing?.bartendersRequested) || 0,
+    1
+  );
+  const approvedBartenders =
+    Number(this.counts?.approvedBartenders) > 0
+      ? Number(this.counts.approvedBartenders)
+      : legacyRequired;
+  const recommendedBartenders =
+    Number(this.counts?.recommendedBartenders) > 0
+      ? Number(this.counts.recommendedBartenders)
+      : approvedBartenders;
+  this.counts = this.counts || {};
+  this.pricing = this.pricing || {};
+  this.counts.recommendedBartenders = recommendedBartenders;
+  this.counts.approvedBartenders = approvedBartenders;
+  this.counts.neededBartenders = approvedBartenders;
+  this.pricing.bartendersRequested = approvedBartenders;
+  const hasStaffingException = approvedBartenders < recommendedBartenders;
+  if (hasStaffingException && !String(this.staffingException?.reason || "").trim()) {
+    return next(
+      new Error(
+        "staffingException.reason is required when approved staffing is below the recommendation"
+      )
+    );
+  }
+  if (this.staffingException) this.staffingException.active = hasStaffingException;
   if (this.startAt && this.endAt && this.endAt <= this.startAt) {
     return next(new Error("endAt must be after startAt"));
   }
@@ -352,7 +467,10 @@ EventSchema.virtual("durationHours").get(function () {
 
 EventSchema.virtual("openSpots").get(function () {
   const needed =
-    this.pricing?.bartendersRequested ?? this.counts?.neededBartenders ?? 0;
+    Number(this.counts?.approvedBartenders) ||
+    Number(this.counts?.neededBartenders) ||
+    Number(this.pricing?.bartendersRequested) ||
+    1;
   const assigned = this.counts?.assigned ?? 0;
   return Math.max(0, needed - assigned);
 });

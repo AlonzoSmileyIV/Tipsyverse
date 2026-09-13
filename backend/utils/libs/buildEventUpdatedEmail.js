@@ -1,5 +1,6 @@
 
 import { displayEventType } from "./displayLabel.js";
+import { formatDateTime } from "./dateTime.js";
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
@@ -23,8 +24,17 @@ const normalizeProcurementItems = (items) =>
 
 const paymentBalance = (evt, fallbackTotal) => {
   const payment = evt?.payment || {};
-  if (Number.isFinite(Number(payment.balance))) return Number(payment.balance);
-  if (Number.isFinite(Number(payment.total))) return Number(payment.total);
+  const billedTotal = Number(payment.total);
+
+  // Payment snapshots default to zero before an event is actually billed.
+  // That placeholder must not hide the event's computed pricing in update
+  // emails. Once a positive billed snapshot exists, its balance (including a
+  // legitimate paid-in-full zero) remains authoritative.
+  if (Number.isFinite(billedTotal) && billedTotal > 0) {
+    const balance = Number(payment.balance);
+    if (Number.isFinite(balance)) return balance;
+    return billedTotal;
+  }
   return Number(fallbackTotal) || 0;
 };
 
@@ -99,9 +109,11 @@ function buildEventUpdatedEmail({
       `
       : "";
 
-  const when = `${new Date(evt.startAt).toLocaleString()} → ${new Date(
-    evt.endAt
-  ).toLocaleString()}`;
+  const eventTimeZone =
+    evt.timezone || evt.location?.timezone || "America/Indiana/Indianapolis";
+  const when = `${formatDateTime(evt.startAt, {
+    timeZone: eventTimeZone,
+  })} → ${formatDateTime(evt.endAt, { timeZone: eventTimeZone })}`;
 
   const addr =
     evt.location?.formatted ||

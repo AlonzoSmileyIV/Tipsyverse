@@ -16,13 +16,12 @@ import {
   Button,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Visibility as VisibilityIcon,
+import { Refresh as RefreshIcon, Visibility as VisibilityIcon,
  
  } from "@mui/icons-material";
 
 /* ------------------------ Module-scope cache & dedupe ------------------------ */
 const ACTIVITY_CACHE = new Map();      // key -> { ts, data }
-const ACTIVITY_FETCHED = new Set();    // keys fetched this session
 const ACTIVITY_INFLIGHT = new Map();   // key -> AbortController
 const ACTIVITY_TTL = 60_000;           // 1 minute
 
@@ -113,6 +112,7 @@ const ActivityLogsTable = ({ entityModel = "User", entityId }) => {
   const [err, setErr] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const lastKeyRef = useRef("");
 
   const openDetails = useCallback((row) => {
@@ -144,9 +144,6 @@ const ActivityLogsTable = ({ entityModel = "User", entityId }) => {
       setLoading(false);
       return;
     }
-
-    // Already fetched this session? bail.
-    if (ACTIVITY_FETCHED.has(key)) return;
 
     // In-flight dedupe
     if (ACTIVITY_INFLIGHT.has(key)) return;
@@ -180,12 +177,11 @@ const ActivityLogsTable = ({ entityModel = "User", entityId }) => {
         if (!mounted) return;
         setRows(normalized);
         ACTIVITY_CACHE.set(key, { ts: Date.now(), data: normalized });
-        ACTIVITY_FETCHED.add(key);
       } catch (e) {
         if (e?.name !== "CanceledError") {
           const status = e?.response?.status;
           if (status === 403)
-            setErr("You don’t have permission to view activity logs for this user.");
+            setErr("You don’t have permission to view activity logs for this record.");
           else if (status === 401)
             setErr("Your session expired. Please sign in again.");
           else
@@ -205,6 +201,11 @@ const ActivityLogsTable = ({ entityModel = "User", entityId }) => {
         ACTIVITY_INFLIGHT.delete(key);
       }
     };
+  }, [entityId, entityModel, refreshNonce]);
+
+  const refreshLogs = useCallback(() => {
+    if (entityId) ACTIVITY_CACHE.delete(`${entityModel}:${entityId}`);
+    setRefreshNonce((value) => value + 1);
   }, [entityId, entityModel]);
 
   const columns = useMemo(
@@ -433,6 +434,17 @@ const ActivityLogsTable = ({ entityModel = "User", entityId }) => {
 
   return (
     <Box sx={{ mt: 3 }}>
+      <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<RefreshIcon />}
+          onClick={refreshLogs}
+          disabled={loading}
+        >
+          Refresh Activity Log
+        </Button>
+      </Stack>
       {err && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {err}

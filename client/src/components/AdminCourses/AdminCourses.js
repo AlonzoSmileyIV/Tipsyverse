@@ -17,7 +17,9 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import {
   Add,
   ArrowDownward,
@@ -48,6 +50,8 @@ const primaryContainedSx = {
 
 const AdminCourses = () => {
   const dispatch = useDispatch();
+  const is650OrLess = useMediaQuery("(max-width:650px)");
+  const is800OrLess = useMediaQuery("(max-width:800px)");
   const { allCourses, currentCourse, error } = useSelector((s) => s.courses);
 
   const [selectedCourseId, setSelectedCourseId] = useState("");
@@ -509,7 +513,12 @@ const AdminCourses = () => {
       align: "center",
       headerAlign: "center",
     },
-    { field: "title", headerName: "Module Title", flex: 1, minWidth: 220 },
+    {
+      field: "title",
+      headerName: "Module Title",
+      flex: 1,
+      minWidth: is650OrLess ? 160 : 220,
+    },
     {
       field: "sectionsCount",
       headerName: "Sections",
@@ -520,7 +529,7 @@ const AdminCourses = () => {
     {
       field: "actions",
       headerName: "Actions",
-      width: 150,
+      width: is650OrLess ? 130 : 150,
       sortable: false,
       filterable: false,
       renderCell: (params) => {
@@ -646,11 +655,7 @@ const AdminCourses = () => {
       <Collapse in={alertOpen || !!error}>
         <Box sx={{ mt: 2 }}>
           <Alert severity={alertSeverity} onClose={() => setAlertOpen(false)}>
-            <div
-              dangerouslySetInnerHTML={{
-                __html: alertMessage || error || "",
-              }}
-            />
+            <SafeHtml html={alertMessage || error || ""} />
           </Alert>
         </Box>
       </Collapse>
@@ -697,6 +702,10 @@ const AdminCourses = () => {
           autoHeight
           rows={rows}
           columns={columns}
+          columnVisibilityModel={{
+            order: !is800OrLess,
+            sectionsCount: !is650OrLess,
+          }}
           hideFooterSelectedRowCount
           disableRowSelectionOnClick
           slots={{

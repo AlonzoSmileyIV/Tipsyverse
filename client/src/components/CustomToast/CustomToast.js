@@ -1,14 +1,14 @@
 import { Avatar, AvatarGroup, Box, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { navigateOrReload } from "../../utils/navigateOrReload";
+import getNotificationPath from "../../utils/getNotificationPath";
 
-const CustomToast = ({ actors = [], message, slug, entity, comment }) => {
+const CustomToast = ({ actors = [], message, ...notification }) => {
     const navigate = useNavigate();
 
 const handleClick = () => {
-    const commentId = comment?.parentComment?._id || comment?._id;
-    const query = commentId ? `?commentId=${commentId}` : "";
-    navigateOrReload(navigate, `/${slug}/${entity?.slug}${query}`);
+    const path = getNotificationPath({ ...notification, message });
+    if (path) navigateOrReload(navigate, path);
   };
 
 

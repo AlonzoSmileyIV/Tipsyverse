@@ -5,26 +5,26 @@ import {
   Paper,
   Stack,
 } from '@mui/material';
-import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
-import LocalDrinkIcon from '@mui/icons-material/LocalDrink';
-import GroupsIcon from '@mui/icons-material/Groups';
+import EventAvailableOutlinedIcon from '@mui/icons-material/EventAvailableOutlined';
+import SchoolOutlinedIcon from '@mui/icons-material/SchoolOutlined';
+import LocalBarOutlinedIcon from '@mui/icons-material/LocalBarOutlined';
 
 
 const features = [
   {
-    icon: <EmojiEventsIcon fontSize="large" sx={{ color: 'var(--primary-color)' }} />,
-    title: 'Curated by Experts',
-    description: 'Recipes are handpicked and refined by bartenders and enthusiasts.',
+    icon: <EventAvailableOutlinedIcon fontSize="large" sx={{ color: 'var(--primary-color)' }} />,
+    title: 'Event Service Built Around You',
+    description: 'We plan staffing, timing, and bar service around your venue, guest count, and celebration.',
   },
   {
-    icon: <LocalDrinkIcon fontSize="large" sx={{ color: 'var(--primary-color)' }} />,
-    title: 'Community Recipes',
-    description: 'Anyone can share, like, and comment on drinks they love.',
+    icon: <SchoolOutlinedIcon fontSize="large" sx={{ color: 'var(--primary-color)' }} />,
+    title: 'Prepared, Responsible Bartenders',
+    description: 'Our learning and compliance workflows help bartenders arrive informed, qualified, and ready to serve responsibly.',
   },
   {
-    icon: <GroupsIcon fontSize="large" sx={{ color: 'var(--primary-color)' }} />,
-    title: 'Social Engagement',
-    description: 'Save and engage with cocktails in real-time with others.',
+    icon: <LocalBarOutlinedIcon fontSize="large" sx={{ color: 'var(--primary-color)' }} />,
+    title: 'Cocktail Knowledge Included',
+    description: 'Explore drink inspiration and use our cocktail knowledge to shape a bar experience your guests will remember.',
   }
 ];
 
@@ -35,10 +35,10 @@ const UniqueFeatures = () => {
     <Box sx={{ py: 10, px: 2, backgroundColor: '#fff' }}>
       <Box maxWidth="lg" mx="auto" textAlign="center">
         <Typography variant="h4" fontWeight="bold" gutterBottom>
-          What Makes Tipsyverse Different
+          Why Choose Tipsyverse?
         </Typography>
         <Typography variant="subtitle1" sx={{ mb: 6 }}>
-          We're more than just recipes — we bring the bar experience to your fingertips.
+          One place to book event bartending, develop service-ready talent, and discover drinks for every occasion.
         </Typography>
 
         <Box

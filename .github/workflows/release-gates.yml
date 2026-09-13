@@ -1,0 +1,117 @@
+name: Release gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend tests and production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test
+      - run: npm run build
+        env:
+          REACT_APP_BASE_URL: https://api.tipsyverse.com/api/v1
+          REACT_APP_SOCKET_URL: https://api.tipsyverse.com
+          REACT_APP_PUBLIC_SITE_URL: https://tipsyverse.com
+          REACT_APP_SHARE_BASE_URL: https://api.tipsyverse.com
+          REACT_APP_STRIPE_ENABLED: "false"
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e
+      - uses: treosh/lighthouse-ci-action@v12
+        with:
+          configPath: ./client/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: client/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  backend:
+    name: Backend tests and syntax validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Start MongoDB replica set
+        run: |
+          docker run --detach --name mongodb-integration --publish 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for attempt in {1..30}; do
+            if docker exec mongodb-integration mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' | grep -q 1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs mongodb-integration
+              exit 1
+            fi
+            sleep 2
+          done
+          docker exec mongodb-integration mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for attempt in {1..30}; do
+            if docker exec mongodb-integration mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs mongodb-integration
+              exit 1
+            fi
+            sleep 2
+          done
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test
+      - run: npm run test:integration
+        env:
+          TEST_MONGO_URI: mongodb://127.0.0.1:27017/tipsyverse_integration?replicaSet=rs0
+      - run: npm run check
+
+  backend-image:
+    name: Backend container build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: false
+          tags: tipsyverse-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

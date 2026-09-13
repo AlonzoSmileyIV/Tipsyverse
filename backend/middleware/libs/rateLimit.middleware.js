@@ -1,9 +1,9 @@
-const buckets = new Map();
+import crypto from "crypto";
+import mongoose from "mongoose";
 
 const getClientKey = (req) =>
   req.user?.id ||
   req.ip ||
-  req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
   "anonymous";
 
 export const createRateLimit = ({
@@ -12,24 +12,40 @@ export const createRateLimit = ({
   keyPrefix = "default",
   message = "Too many requests. Please try again shortly.",
 } = {}) => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const now = Date.now();
-    const key = `${keyPrefix}:${getClientKey(req)}`;
-    const bucket = buckets.get(key) || { resetAt: now + windowMs, count: 0 };
+    const resetAt = (Math.floor(now / windowMs) + 1) * windowMs;
+    const rawKey = `${keyPrefix}:${getClientKey(req)}:${resetAt}`;
+    const key = crypto.createHash("sha256").update(rawKey).digest("hex");
+    let count;
 
-    if (bucket.resetAt <= now) {
-      bucket.resetAt = now + windowMs;
-      bucket.count = 0;
+    try {
+      if (mongoose.connection.readyState !== 1) {
+        return next();
+      }
+      const bucket = await mongoose.connection.db
+        .collection("rate_limit_buckets")
+        .findOneAndUpdate(
+          { _id: key },
+          {
+            $inc: { count: 1 },
+            $setOnInsert: {
+              keyPrefix,
+              expiresAt: new Date(resetAt + windowMs),
+            },
+          },
+          { upsert: true, returnDocument: "after" }
+        );
+      count = bucket.count;
+    } catch (error) {
+      return next(error);
     }
 
-    bucket.count += 1;
-    buckets.set(key, bucket);
-
     res.setHeader("X-RateLimit-Limit", String(max));
-    res.setHeader("X-RateLimit-Remaining", String(Math.max(0, max - bucket.count)));
-    res.setHeader("X-RateLimit-Reset", String(Math.ceil(bucket.resetAt / 1000)));
+    res.setHeader("X-RateLimit-Remaining", String(Math.max(0, max - count)));
+    res.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
 
-    if (bucket.count > max) {
+    if (count > max) {
       return res.status(429).json({
         success: false,
         message,
@@ -39,10 +55,3 @@ export const createRateLimit = ({
     return next();
   };
 };
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of buckets.entries()) {
-    if (bucket.resetAt <= now) buckets.delete(key);
-  }
-}, 10 * 60 * 1000).unref?.();

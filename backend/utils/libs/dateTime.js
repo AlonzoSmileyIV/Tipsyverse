@@ -77,6 +77,25 @@ export const formatDateTime = (
   }).format(date);
 };
 
+export const formatDate = (
+  value,
+  {
+    locale = "en-US",
+    timeZone,
+    dateStyle = "medium",
+    fallback = "Not specified",
+  } = {}
+) => {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle,
+    ...(timeZone ? { timeZone } : {}),
+  }).format(date);
+};
+
 export const formatDateTimeWithZones = (
   value,
   { localTimeZone, globalTimeZone = "UTC", locale = "en-US" } = {}
@@ -92,4 +111,3 @@ export const formatDateTimeWithZones = (
         : `${local}${localTimeZone ? ` (${localTimeZone})` : ""} / ${global} (${globalTimeZone})`,
   };
 };
-

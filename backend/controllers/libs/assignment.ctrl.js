@@ -6,6 +6,7 @@ import {
 } from "../../models/index.js";
 import { isUrgentEvent, sendNotification } from "../../utils/index.js";
 import mongoose from "mongoose";
+import { getRequiredBartenderCount } from "../../utils/libs/eventSummary.js";
 
 const canViewEventAssignments = (event, user) => {
   if (["admin", "employee"].includes(user?.role)) return true;
@@ -313,8 +314,7 @@ const assignmentCtrl = {
       evt.counts = { ...(evt.counts || {}), assigned: assignedCount };
 
       // How many bartenders are needed?
-      const needed =
-        evt.pricing?.bartendersRequested ?? evt.counts?.neededBartenders ?? 0;
+      const needed = getRequiredBartenderCount(evt);
 
       const hasOpenSpots = needed > assignedCount;
 

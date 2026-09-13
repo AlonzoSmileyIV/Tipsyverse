@@ -2,7 +2,58 @@ import {
   BidModel as Bid,
   UserModel as User,
   EventModel as Event,
+  AssignmentModel as Assignment,
 } from "../../models/index.js";
+import { canToggleBidInterest, canUpdateBid } from "../../utils/libs/bidAccess.js";
+import { getPermitCompliance } from "../../utils/libs/bartenderCompliance.js";
+
+const windowsOverlap = (startA, endA, startB, endB) =>
+  new Date(startA) < new Date(endB) && new Date(endA) > new Date(startB);
+
+async function addScheduleConflicts(bids, eventId) {
+  const event = await Event.findById(eventId).select("startAt endAt").lean();
+  if (!event || !bids.length) return bids;
+
+  const bartenderIds = bids
+    .map((bid) => bid.bartenderUser?._id || bid.bartenderUser)
+    .filter(Boolean);
+  const assignments = await Assignment.find({
+    bartenderUser: { $in: bartenderIds },
+    event: { $ne: event._id },
+    status: "active",
+  })
+    .populate("event", "shortCode startAt endAt status")
+    .lean();
+  const conflictsByBartender = new Map();
+
+  assignments.forEach((assignment) => {
+    const assignedEvent = assignment.event;
+    if (
+      !assignedEvent ||
+      assignedEvent.status === "canceled" ||
+      !windowsOverlap(
+        event.startAt,
+        event.endAt,
+        assignedEvent.startAt,
+        assignedEvent.endAt
+      )
+    ) return;
+    const id = String(assignment.bartenderUser);
+    const conflicts = conflictsByBartender.get(id) || [];
+    conflicts.push(assignedEvent.shortCode || "another event");
+    conflictsByBartender.set(id, conflicts);
+  });
+
+  return bids.map((bid) => {
+    const id = String(bid.bartenderUser?._id || bid.bartenderUser);
+    const conflictEvents = conflictsByBartender.get(id) || [];
+    return {
+      ...bid,
+      conflictsSchedule: conflictEvents.length > 0,
+      conflictEvents,
+    };
+  });
+}
 
 /**
  * Helper: Haversine distance in km between two lat/lngs
@@ -167,6 +218,9 @@ const bidCtrl = {
    */
   toggleInterestBid: async (req, res) => {
     try {
+      if (req.user?.role !== "bartender") {
+        return res.status(403).json({ message: "Only bartenders can bid on events." });
+      }
       const bartenderUserId = req.user?.id;
       const { eventId } = req.body;
 
@@ -186,11 +240,26 @@ const bidCtrl = {
           .status(404)
           .json({ message: "Bartender or event not found." });
       }
+      if (!canToggleBidInterest({ user: req.user, event })) {
+        return res.status(409).json({
+          message: "This event is not currently accepting bartender interest.",
+        });
+      }
 
-      let bid = await Bid.findOne({
-        event: eventId,
-        bartenderUser: bartenderUserId,
-      });
+      const existingBid = await Bid.findOne({ event: eventId, bartenderUser: bartenderUserId });
+      const isTurningInterestOn = !existingBid || existingBid.status !== "interested";
+      if (isTurningInterestOn) {
+        const compliance = getPermitCompliance(bartender, event?.location?.state);
+        if (!compliance.eligible) {
+          return res.status(409).json({
+            message: "A current, verified permit matching the event state and confirmation of required server training are required before bidding.",
+            code: "STATE_PERMIT_COMPLIANCE_REQUIRED",
+            reasons: compliance.reasons,
+          });
+        }
+      }
+
+      let bid = existingBid;
 
       const now = new Date();
 
@@ -282,13 +351,16 @@ const bidCtrl = {
         .populate({
           path: "bartenderUser",
           select:
-            "fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible createdAt",
+            "fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible bartenderProfile.dateBartendingStarted createdAt",
         })
         .sort({ score: -1, submittedAt: 1 }) // primary sort in DB
         .lean();
 
       // Secondary fairness tiebreak in JS: less booked wins
-      const sorted = bids.sort((a, b) => {
+      const enriched = await addScheduleConflicts(bids, eventId);
+      const sorted = enriched.sort((a, b) => {
+        if (a.conflictsSchedule !== b.conflictsSchedule)
+          return a.conflictsSchedule ? 1 : -1;
         if (b.score !== a.score) return b.score - a.score;
 
         const aAssigned =
@@ -320,14 +392,17 @@ viewInterestedBidsByEventId: async (req, res) => {
     })
       .populate({
         path: "bartenderUser",
-        select:
-          "email fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible createdAt",
+          select:
+          "email fullName profile.photo bartenderProfile.stats.totalAssignedEvents bartenderProfile.reviewSummary.avgRating bartenderProfile.location bartenderProfile.eligible bartenderProfile.dateBartendingStarted createdAt",
       })
       .sort({ score: -1, submittedAt: 1 }) // primary sort in DB
       .lean();
 
     // Same fairness tiebreak in JS
-    const sorted = bids.sort((a, b) => {
+    const enriched = await addScheduleConflicts(bids, eventId);
+    const sorted = enriched.sort((a, b) => {
+      if (a.conflictsSchedule !== b.conflictsSchedule)
+        return a.conflictsSchedule ? 1 : -1;
       if (b.score !== a.score) return b.score - a.score;
 
       const aAssigned =
@@ -410,7 +485,7 @@ viewInterestedBidsByEventId: async (req, res) => {
       const { bidId } = req.params;
       const { status } = req.body;
 
-      const bid = await BidModel.findById(bidId).populate([
+      const bid = await Bid.findById(bidId).populate([
         { path: "bartenderUser" },
         { path: "event" },
       ]);
@@ -419,10 +494,20 @@ viewInterestedBidsByEventId: async (req, res) => {
         return res.status(404).json({ message: "Bid not found." });
       }
 
-      // Optional: security check – only the same bartender or an admin can update
-      // if (!req.user.isAdmin && String(req.user._id) !== String(bid.bartenderUser._id)) {
-      //   return res.status(403).json({ message: "Not authorized to update this bid." });
-      // }
+      const access = canUpdateBid({
+        user: req.user,
+        bartenderUserId: bid.bartenderUser?._id || bid.bartenderUser,
+        status,
+        event: bid.event,
+      });
+      if (!access.isStaff && !access.ownsBid) {
+        return res.status(403).json({ message: "Not authorized to update this bid." });
+      }
+      if (!access.allowedStatus) {
+        return res.status(400).json({ message: "Invalid bid status." });
+      }
+
+      const prevStatus = bid.status;
 
       if (status) {
         bid.status = status;

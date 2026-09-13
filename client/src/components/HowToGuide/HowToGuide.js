@@ -588,7 +588,7 @@ function HowToGuide({ audience = "customer" }) {
     <Box>
       <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
         <Box>
-          <Typography variant="h5" fontWeight={800}>
+          <Typography component="h1" variant="h5" fontWeight={800}>
             {guide.title}
           </Typography>
           <Typography variant="body2" color="text.secondary">{guide.subtitle}</Typography>
@@ -627,7 +627,11 @@ function HowToGuide({ audience = "customer" }) {
 
       <Stack spacing={1.5}>
         {filteredSections.map((item, index) => (
-          <Accordion key={item.title} defaultExpanded={index === 0}>
+          <Accordion
+            key={item.title}
+            defaultExpanded={index === 0}
+            slotProps={{ heading: { component: "h2" } }}
+          >
             <AccordionSummary expandIcon={<ExpandMore />}>
               <Stack
                 direction={{ xs: "column", sm: "row" }}

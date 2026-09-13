@@ -36,7 +36,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
-import * as XLSX from "xlsx";
+import SafeHtml from "../SafeHtml/SafeHtml";
 import { DataGrid } from "@mui/x-data-grid";
 
 import AdminEmployeeForm from "../AdminEmployeeForm/AdminEmployeeForm";
@@ -48,6 +48,7 @@ import { canEditUser, canSeeAddButton } from "../../accessControl/rbac";
 import AdminSectionHeader from "../AdminSectionHeader/AdminSectionHeader";
 import AdminTableControls from "../AdminTableControls/AdminTableControls";
 import { formatStatus } from "../../utils/formatStatus";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const primaryButtonSx = {
   color: "var(--primary-color)",
@@ -171,7 +172,8 @@ const AdminManageTeam = ({ hideHeader = false }) => {
   const dispatch = useDispatch();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.down("md"));
+  const is800OrLess = useMediaQuery("(max-width:800px)");
+  const isTablet = useMediaQuery("(max-width:1000px)");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [formMode, setFormMode] = useState("view"); // 'add', 'edit', 'view'
@@ -254,7 +256,8 @@ const AdminManageTeam = ({ hideHeader = false }) => {
     // }, 3000);
   };
 
-  const handleDownloadExcel = () => {
+  const handleDownloadExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     const data = filteredEmployeeData.map((emp) => ({
       Name: emp.fullName,
       Email: emp.email,
@@ -286,6 +289,21 @@ const AdminManageTeam = ({ hideHeader = false }) => {
     accept: {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [],
       "application/vnd.ms-excel": [],
+    },
+    maxSize: 5 * 1024 * 1024,
+    multiple: false,
+    onDropRejected: ([rejection]) => {
+      const tooLarge = rejection?.errors?.some(
+        ({ code }) => code === "file-too-large"
+      );
+      setAlertMessage(
+        tooLarge
+          ? "The Excel file must be 5 MB or smaller."
+          : "Choose an Excel spreadsheet (.xlsx or .xls)."
+      );
+      setAlertSeverity("error");
+      setAlertOpen(true);
+      setPendingFile(null);
     },
   });
 
@@ -519,7 +537,7 @@ const AdminManageTeam = ({ hideHeader = false }) => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       )} */}
@@ -546,7 +564,7 @@ const AdminManageTeam = ({ hideHeader = false }) => {
               wordBreak: "break-word",
             }}
           >
-            <div dangerouslySetInnerHTML={{ __html: alertMessage }} />
+            <SafeHtml html={alertMessage} />
           </Alert>
         </Box>
       </Collapse>
@@ -555,22 +573,29 @@ const AdminManageTeam = ({ hideHeader = false }) => {
       <Box
         {...getRootProps()}
         sx={{
-          border: "2px dashed #ccc",
-          padding: 3,
-          borderRadius: 2,
-          textAlign: "center",
+          border: "1px dashed",
+          borderColor: isDragActive ? "var(--primary-color)" : "divider",
+          padding: 2,
+          borderRadius: 1,
           cursor: "pointer",
-          backgroundColor: isDragActive ? "#f0f0f0" : "transparent",
+          backgroundColor: isDragActive
+            ? "rgba(139, 0, 38, 0.06)"
+            : "background.paper",
           mb: 2,
         }}
       >
         <input {...getInputProps()} />
-        <UploadFile fontSize="large" />
-        <Typography variant="body2">
-          {isDragActive
-            ? "Drop your Excel file here"
-            : `Drag 'n' drop Excel file here, or click to upload employees...`}
-        </Typography>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems="center" justifyContent="center" textAlign={{ xs: "center", sm: "left" }}>
+          <UploadFile sx={{ color: "var(--primary-color)" }} />
+          <Box>
+            <Typography variant="subtitle2" fontWeight={800}>
+              {isDragActive ? "Drop the Excel file" : "Upload employee Excel"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Drag and drop a spreadsheet here, or click to choose a file · max 5 MB.
+            </Typography>
+          </Box>
+        </Stack>
       </Box>
 
       {/* Progress & Stages */}
@@ -599,10 +624,10 @@ const AdminManageTeam = ({ hideHeader = false }) => {
           pageSize={5}
           rowsPerPageOptions={[5, 10, 25]}
           columnVisibilityModel={{
-            position: !isMobile,
+            position: !is800OrLess,
             dateStarted: !isTablet,
             reportTo: !isTablet,
-            status: !isMobile,
+            status: !is800OrLess,
           }}
           localeText={{ noRowsLabel: "Sorry, no team members yet." }}
           sx={{

@@ -7,6 +7,12 @@ const paymentDedupe = dedupeSuccessfulRequests({ ttlMs: 45 * 1000 });
 
 // CREATE
 paymentRouter.post("/", auth, paymentDedupe, paymentCtrl.createPayment);
+paymentRouter.post(
+  "/stripe/payment-intent",
+  auth,
+  paymentDedupe,
+  paymentCtrl.createStripePaymentIntent
+);
 
 // READ
 paymentRouter.get("/", auth, paymentCtrl.viewPayments);

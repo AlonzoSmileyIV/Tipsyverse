@@ -22,7 +22,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { navigateOrReload } from '../../utils/navigateOrReload';
 import resetPasswordImage from '../../assets/images/undraw_my-password_iyga.svg';
 
-const ResetPasswordScreen = () => {
+const ResetPasswordScreen = ({ activation = false }) => {
   const navigate = useNavigate();
   const { token } = useParams();
   const [form, setForm] = useState({ password: '', confirmPassword: '' });
@@ -89,10 +89,12 @@ const ResetPasswordScreen = () => {
   }
 
   try {
-    const res = await api.post(`/users/reset-password`, {
-      resetToken: token,
-      newPassword: form.password,
-    });
+    const res = await api.post(
+      activation ? "/users/activate-account" : "/users/reset-password",
+      activation
+        ? { activationToken: token, newPassword: form.password }
+        : { resetToken: token, newPassword: form.password }
+    );
 
     setMessage({ type: 'success', text: res.data.message || 'Password reset successful!' });
     setForm({ password: '', confirmPassword: '' });
@@ -105,7 +107,9 @@ const ResetPasswordScreen = () => {
   } catch (err) {
     setMessage({
       type: 'error',
-      text: err.response?.data?.message || 'Failed to reset password.',
+      text:
+        err.response?.data?.message ||
+        (activation ? "Failed to activate account." : "Failed to reset password."),
     });
     setLoading(false);
   }
@@ -123,21 +127,29 @@ const ResetPasswordScreen = () => {
 
   return (
     <AuthLayout 
-    message="Set a new password for your account."
+    message={
+      activation
+        ? "Create your password to activate your account."
+        : "Set a new password for your account."
+    }
     image={resetPasswordImage}
     circleMessage='Remember your password?'
     buttonLabel='Login'
     buttonLink='/login'
     >
             <HelmetHeader
-              title="Tipsyverse | Reset Password"
-              description="Set a new secure password for your Tipsyverse account."
+              title={`Tipsyverse | ${activation ? "Activate Account" : "Reset Password"}`}
+              description={
+                activation
+                  ? "Activate your Tipsyverse account by creating a secure password."
+                  : "Set a new secure password for your Tipsyverse account."
+              }
               keywords="Tipsyverse reset password, secure password reset, account recovery"
               noindex
             />
 
       <Typography variant="h5" fontWeight={600} gutterBottom>
-        Reset Password
+        {activation ? "Activate Account" : "Reset Password"}
       </Typography>
 
       {message && <Alert severity={message.type} sx={{ mb: 2 }}>{message.text}</Alert>}
@@ -195,7 +207,7 @@ const ResetPasswordScreen = () => {
         </List>
        
         <Button type="submit" fullWidth loading={loading} variant="contained" color="primary" sx={{ mt: 1, backgroundColor: 'var(--primary-color)' }}>
-          Reset Password
+          {activation ? "Activate Account" : "Reset Password"}
         </Button>
       </Box>
     </AuthLayout>

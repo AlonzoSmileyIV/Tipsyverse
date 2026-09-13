@@ -20,9 +20,9 @@ import {
   Dot,
 } from "recharts";
 import moment from "moment";
-import * as XLSX from "xlsx";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchAllDrinks } from "../../features/drinks/drinkSlice";
+import { loadSpreadsheet } from "../../utils/loadSpreadsheet";
 
 const mockCocktailsData = [
   {
@@ -121,7 +121,8 @@ const getAllCommentDates = (userComments = []) => {
 
 
 
-  const handleExportToExcel = () => {
+  const handleExportToExcel = async () => {
+    const XLSX = await loadSpreadsheet();
     const worksheet = XLSX.utils.json_to_sheet(chartData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Analytics");

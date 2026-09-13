@@ -15,26 +15,33 @@ export const normalizeLocation = (loc, prev = null) => {
     ...(loc || {}),
   };
 
-  // Derive lat/lng from new data OR fall back to existing point
-  const lat =
-    merged.latitude ??
-    merged.lat ??
-    merged.point?.coordinates?.[1] ??
-    null;
-  const lng =
-    merged.longitude ??
-    merged.lng ??
-    merged.point?.coordinates?.[0] ??
-    null;
+  const incoming = loc || {};
+  const hasCoordinateUpdate = ["latitude", "longitude", "lat", "lng", "point"].some(
+    (key) => Object.prototype.hasOwnProperty.call(incoming, key)
+  );
+  const lat = hasCoordinateUpdate
+    ? incoming.latitude ?? incoming.lat ?? incoming.point?.coordinates?.[1] ?? null
+    : merged.latitude ?? merged.lat ?? merged.point?.coordinates?.[1] ?? null;
+  const lng = hasCoordinateUpdate
+    ? incoming.longitude ?? incoming.lng ?? incoming.point?.coordinates?.[0] ?? null
+    : merged.longitude ?? merged.lng ?? merged.point?.coordinates?.[0] ?? null;
 
-  const hasCoords = lat != null && lng != null;
+  const hasCoords =
+    lat !== null &&
+    lat !== "" &&
+    lng !== null &&
+    lng !== "" &&
+    Number.isFinite(Number(lat)) &&
+    Number.isFinite(Number(lng));
 
   const point = hasCoords
     ? {
         type: "Point",
         coordinates: [Number(lng), Number(lat)], // [lng, lat] for GeoJSON
       }
-    : merged.point; // keep previous point if coords are missing
+    : hasCoordinateUpdate
+      ? undefined
+      : merged.point;
 
   return {
     address1: merged.address1,

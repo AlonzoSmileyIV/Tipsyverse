@@ -81,6 +81,7 @@ const ContactUsScreen = () => {
       />
       <Container maxWidth="sm" sx={{ py: 6 }}>
         <Typography
+          component="h1"
           variant="h3"
           gutterBottom
           textAlign="center"

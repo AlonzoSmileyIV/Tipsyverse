@@ -9,6 +9,7 @@ const CircularProgressRing = ({ value = 0 }) => {
   return (
     <Box position="relative" display="inline-flex">
       <CircularProgress
+        aria-hidden="true"
         variant="determinate"
         value={100}
         size={80}
@@ -20,6 +21,7 @@ const CircularProgressRing = ({ value = 0 }) => {
         }}
       />
       <CircularProgress
+        aria-label={`Completion: ${Math.round(v)}%`}
         variant="determinate"
         value={v}
         size={80}
