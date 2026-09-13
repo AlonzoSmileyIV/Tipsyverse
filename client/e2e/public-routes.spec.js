@@ -158,7 +158,12 @@ test("shows offline status without discarding the current page", async ({
   browserName,
 }) => {
   test.skip(browserName !== "chromium", "Offline emulation is Chromium-only.");
+  await page.addInitScript(() => {
+    localStorage.setItem("ageVerified", "true");
+    localStorage.setItem("hasSeenTutorial", "true");
+  });
   await page.goto("/privacy");
+  await expect(page.getByRole("heading", { name: /privacy/i })).toBeVisible();
   await context.setOffline(true);
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
   await expect(page.getByText(/you.re offline/i)).toBeVisible();

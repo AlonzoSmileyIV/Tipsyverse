@@ -115,6 +115,19 @@ test("customer settings and event routes remain usable", async ({ page }) => {
   }
 });
 
+test("mobile Settings tabs navigate to and render the selected section", async ({ page }) => {
+  await authenticate(page, users.customer);
+  await page.goto("/settings");
+
+  await page.getByRole("tab", { name: "Activity" }).click();
+  await expect(page).toHaveURL(/\/settings\/activity$/);
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Security" }).click();
+  await expect(page).toHaveURL(/\/settings\/security$/);
+  await expect(page.getByRole("heading", { name: /security/i })).toBeVisible();
+});
+
 test("an HttpOnly-cookie session restores without local storage", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("ageVerified", "true");

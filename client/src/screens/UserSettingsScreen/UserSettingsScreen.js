@@ -45,13 +45,6 @@ const UserSettingsScreen = () => {
   return 0;
 }, [location.pathname]);
   
-  const [tabIndex, setTabIndex] = useState(tabFromPath);
-
-    // Sync tab when URL changes
-    useEffect(() => {
-      setTabIndex(tabFromPath);
-    }, [tabFromPath]);
-  
   const [showContent, setShowContent] = useState(false);
   const loggedInUser = useSelector((s) => s.users.loggedInUser);
   const user = loggedInUser?.user;
@@ -76,11 +69,9 @@ const UserSettingsScreen = () => {
 
   const goToSettingsRoute = React.useCallback(
     (route) => {
-      const nextIndex = settingsTabs.findIndex((item) => item.route === route);
-      if (nextIndex >= 0) setTabIndex(nextIndex);
       navigate(route);
     },
-    [navigate, settingsTabs]
+    [navigate]
   );
 
   return (
@@ -102,10 +93,8 @@ const UserSettingsScreen = () => {
       "aria-label": "Settings sections",
     },
   } : undefined}
-  value={tabIndex}
-  onChange={(_, v) => {
-    goToSettingsRoute(settingsTabs[v].route);
-  }}
+  value={settingsTabs[tabFromPath].route}
+  onChange={(_, route) => goToSettingsRoute(route)}
   sx={{
     borderRight: isMobile ? 0 : 1,
     borderBottom: isMobile ? 1 : 0,
@@ -139,26 +128,26 @@ const UserSettingsScreen = () => {
   }}
 >
   {settingsTabs.map((item) => (
-    <React.Fragment key={item.label}>
-      <Tab
-        icon={item.icon}
-        iconPosition="start"
-        label={item.label}
-        aria-label={item.label}
-      />
-    </React.Fragment>
+    <Tab
+      key={item.route}
+      value={item.route}
+      icon={item.icon}
+      iconPosition="start"
+      label={item.label}
+      aria-label={item.label}
+    />
   ))}
 </Tabs>
 
           <Box sx={{ flexGrow: 1, minWidth: 0, width: "100%", p: { xs: 1, md: 3 } }}>
-            <TabPanel value={tabIndex} index={0}><ProfileForm user={user} /></TabPanel>
-            <TabPanel value={tabIndex} index={1}><PreferencesForm user={user} /></TabPanel>
-            <TabPanel value={tabIndex} index={2}><ActivityForm user={user} /></TabPanel>
+            <TabPanel value={tabFromPath} index={0}><ProfileForm user={user} /></TabPanel>
+            <TabPanel value={tabFromPath} index={1}><PreferencesForm user={user} /></TabPanel>
+            <TabPanel value={tabFromPath} index={2}><ActivityForm user={user} /></TabPanel>
             {/* <TabPanel value={tabIndex} index={3}><PaymentMethodsTab user={user} /></TabPanel> */}
-            <TabPanel value={tabIndex} index={3}><SecurityForm user={user} /></TabPanel>
-            <TabPanel value={tabIndex} index={4}><HowToGuide audience="customer" /></TabPanel>
-            <TabPanel value={tabIndex} index={5}><SupportTicketsForm /></TabPanel>
-            <TabPanel value={tabIndex} index={6}><SettingAccountForm user={user} onNavigateToSettings={goToSettingsRoute} /></TabPanel>
+            <TabPanel value={tabFromPath} index={3}><SecurityForm user={user} /></TabPanel>
+            <TabPanel value={tabFromPath} index={4}><HowToGuide audience="customer" /></TabPanel>
+            <TabPanel value={tabFromPath} index={5}><SupportTicketsForm /></TabPanel>
+            <TabPanel value={tabFromPath} index={6}><SettingAccountForm user={user} onNavigateToSettings={goToSettingsRoute} /></TabPanel>
           </Box>
         </Box>
       )}
