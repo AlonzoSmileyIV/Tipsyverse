@@ -22,6 +22,8 @@ import {
 // Run:
 // NODE_ENV=development node scripts/libs/seedInitialData.script.js
 // NODE_ENV=staging node scripts/libs/seedInitialData.script.js
+// Production additionally requires CONFIRM_PRODUCTION_SEED=SEED_PRODUCTION
+// and CONFIRM_PRODUCTION_DATABASE to exactly match the URI database name.
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -715,7 +717,10 @@ async function uploadSeedUserImageIfExists(fileName, publicId) {
   }
 
   const result = await cloudinary.uploader.upload(imagePath, {
-    folder: "default/users",
+    folder:
+      String(process.env.NODE_ENV).toLowerCase() === "production"
+        ? "production/users"
+        : "default/users",
     public_id: publicId,
     overwrite: true,
     resource_type: "image",
@@ -1021,6 +1026,7 @@ function createBartenderProfile(seed, existingProfile = null) {
 }
 
 async function ensureSeedComplianceDocument(user, seed) {
+  if (String(process.env.NODE_ENV).toLowerCase() === "production") return;
   const license = user.bartenderProfile?.licenses?.find((item) => item.state === "IN");
   if (!license || license.serverTraining?.proofDocument?.fileId) return;
   const verificationDocument = createSeedVerificationPdf(
@@ -1141,7 +1147,7 @@ async function seedUsersIntoDatabase(positionMap, usersToSeed) {
 
       bartenderProfile: shouldCreateBartenderProfile
         ? createBartenderProfile(seed, existing?.bartenderProfile)
-        : null,
+        : existing?.bartenderProfile || null,
     };
 
     if (existing) {
@@ -1258,10 +1264,7 @@ async function seedData() {
     "backup",
   ];
 
-  const allowedSeedEnvironments = [
-    "development",
-    "staging",
-  ];
+  const allowedSeedEnvironments = ["development", "staging", "production"];
 
   const dbURIs = {
     development: process.env.MONGO_DEV_URI,
@@ -1295,7 +1298,27 @@ async function seedData() {
     process.exit(1);
   }
 
-  if (!process.env.QA_SEED_PASSWORD) {
+  if (env === "production") {
+    let databaseName = "";
+    try {
+      databaseName = new URL(mongoUri).pathname.replace(/^\//, "").split("?")[0];
+    } catch {
+      console.error("❌ MONGO_PROD_URI is not a valid MongoDB URI.");
+      process.exit(1);
+    }
+    if (
+      process.env.CONFIRM_PRODUCTION_SEED !== "SEED_PRODUCTION" ||
+      process.env.CONFIRM_PRODUCTION_DATABASE !== databaseName
+    ) {
+      console.error(
+        "❌ Production seeding requires CONFIRM_PRODUCTION_SEED=SEED_PRODUCTION " +
+          "and CONFIRM_PRODUCTION_DATABASE matching the production database name."
+      );
+      process.exit(1);
+    }
+  }
+
+  if (env !== "production" && !process.env.QA_SEED_PASSWORD) {
     console.error(
       "❌ Missing QA_SEED_PASSWORD required for the seeded QA accounts."
     );
@@ -1319,7 +1342,7 @@ async function seedData() {
     const includeQaAccounts = ["development", "staging"].includes(env);
     const usersToSeed = includeQaAccounts
       ? [...seedUsers, ...qaSeedUsers]
-      : seedUsers;
+      : seedUsers.map((seed) => ({ ...seed, hasBartenderProfile: false }));
 
     await seedUsersIntoDatabase(positionMap, usersToSeed);
     if (includeQaAccounts) {

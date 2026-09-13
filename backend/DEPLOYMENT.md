@@ -89,6 +89,24 @@ REACT_APP_STRIPE_ENABLED=false
 These values belong in the hosting provider's environment configuration. Do
 not upload or commit local `.env` files.
 
+## Initial production seed
+
+The initial seed is idempotent and creates or updates reference organization
+data plus the two configured owner accounts. It never creates QA accounts or QA
+compliance documents in production. It intentionally requires two explicit
+confirmations:
+
+```sh
+NODE_ENV=production \
+CONFIRM_PRODUCTION_SEED=SEED_PRODUCTION \
+CONFIRM_PRODUCTION_DATABASE=<exact-database-name> \
+node scripts/libs/seedInitialData.script.js
+```
+
+Set `ADMIN_SEED_EMAIL=admin@tipsyverse.com` for the dedicated admin account and
+`ADMIN2_SEED_EMAIL=alonzo.smiley@tipsyverse.com` for the Owner-level employee.
+Passwords must come from the deployment platform's encrypted environment.
+
 ## Deployment sequence
 
 1. CI passes for the exact commit SHA.
