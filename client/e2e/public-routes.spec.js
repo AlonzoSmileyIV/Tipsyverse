@@ -86,6 +86,25 @@ test("tutorial does not interrupt a direct booking visit", async ({ page }) => {
   ).toBeHidden();
 });
 
+test("drink filters collapse on a mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.setItem("ageVerified", "true");
+    localStorage.setItem("hasSeenTutorial", "true");
+  });
+  await page.goto("/drinks");
+
+  const toggle = page.getByRole("button", { name: /show filters/i });
+  await expect(toggle).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/showing .* result/i)).toBeVisible();
+  await expect(page.getByLabel("Search by Name")).toBeHidden();
+
+  await toggle.click();
+  await expect(page.getByLabel("Search by Name")).toBeVisible();
+  await page.getByRole("button", { name: /view .* results?/i }).click();
+  await expect(page.getByLabel("Search by Name")).toBeHidden();
+});
+
 test("age verification persists after a full page reload", async ({ page }) => {
   await page.goto("/");
   const dialog = page.getByRole("dialog", { name: /welcome to tipsyverse/i });
