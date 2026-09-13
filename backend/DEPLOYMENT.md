@@ -107,6 +107,19 @@ Set `ADMIN_SEED_EMAIL=admin@tipsyverse.com` for the dedicated admin account and
 `ADMIN2_SEED_EMAIL=alonzo.smiley@tipsyverse.com` for the Owner-level employee.
 Passwords must come from the deployment platform's encrypted environment.
 
+Seed the production drink catalog, images, ingredient references, glassware,
+and course content with the same confirmations:
+
+```sh
+NODE_ENV=production \
+CONFIRM_PRODUCTION_SEED=SEED_PRODUCTION \
+CONFIRM_PRODUCTION_DATABASE=<exact-database-name> \
+node scripts/libs/seedFromDocs.script.js
+```
+
+Production drink images are uploaded under `production/images`. The production
+path does not create or update QA bartender course progress.
+
 ## Deployment sequence
 
 1. CI passes for the exact commit SHA.
