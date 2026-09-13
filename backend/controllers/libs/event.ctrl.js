@@ -43,9 +43,14 @@ import {
   STAFF_CANCELLATION_REASONS,
   deriveCancellationPolicy,
 } from "../../utils/libs/cancellationPolicy.js";
+import {
+  adminEventUrl,
+  customerEventUrl,
+  publicAppUrl,
+} from "../../utils/libs/publicAppUrl.js";
 
 const escapeRegex = (s = "") => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const appUrl = () => process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || "http://localhost:3000";
+const appUrl = () => publicAppUrl();
 const eventTimezone = (evt = {}) =>
   evt.timezone ||
   evt.location?.timezone ||
@@ -66,7 +71,13 @@ const formatEventDateTime = (value, evt = {}) => {
     timeZone: eventTimezone(evt),
   }).format(date) + ` (${eventTimezone(evt)})`;
 };
-const adminEventUrl = (eventId) => `${appUrl()}/admin?eventId=${eventId}`;
+const normalizeEventType = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return normalized === "private" ? "private_dinner" : normalized;
+};
 const hasUsablePhone = (value) => String(value || "").replace(/\D/g, "").length >= 10;
 const requiredText = (value) => String(value || "").trim();
 const recommendBartendersForGuests = (guestCount) => {
@@ -155,7 +166,7 @@ function safeText(v, fallback = "—") {
 }
 
 function eventLink(evt, path = "details") {
-  return `${appUrl().replace(/\/$/, "")}/my-events/${evt._id}/${path}`;
+  return customerEventUrl(evt._id, path);
 }
 
 function bartenderScheduleLink() {
@@ -926,7 +937,7 @@ const eventCtrl = {
 
       const doc = await Event.create({
         organizer: req.user?.id ?? undefined, // may be anonymous if you allow
-        type,
+        type: normalizeEventType(type),
         description,
         additionalInstructions,
         guestCount: normalizedGuestCount,
@@ -984,7 +995,7 @@ const eventCtrl = {
         }, // approved staffing starts at the recommendation; staff can document an exception
       });
       const eventDetailsUrl = eventLink(doc, "details");
-      const eventTypeLabel = formatEventType(type);
+      const eventTypeLabel = formatEventType(doc.type);
 
       // 🔥 Send confirmation email
       await sendEmail({
@@ -2635,7 +2646,7 @@ const eventCtrl = {
         }
 
         // default shallow set
-        patch[key] = body[key];
+        patch[key] = key === "type" ? normalizeEventType(body[key]) : body[key];
       }
 
       if (staffingInputsChanged) {

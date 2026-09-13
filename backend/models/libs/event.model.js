@@ -1,6 +1,14 @@
 // models/eventRequest.model.js
 import mongoose from "mongoose";
 
+const normalizeEventType = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return normalized === "private" ? "private_dinner" : normalized;
+};
+
 /* =====================[ ADDED: tiny counter model + helper ]===================== */
 const CounterSchema = new mongoose.Schema(
   { _id: { type: String, required: true }, seq: { type: Number, default: 0 } },
@@ -201,12 +209,14 @@ const EventSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      set: normalizeEventType,
       enum: [
         "wedding",
         "birthday",
         "corporate",
         "formal",
         "holiday",
+        "private_dinner",
         "fundraiser",
         "other",
       ],

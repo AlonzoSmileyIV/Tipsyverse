@@ -17,6 +17,20 @@ const appTheme = createTheme({
     fontFamily: "'Poppins', sans-serif",
   },
   components: {
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          maxWidth: "100vw",
+          boxSizing: "border-box",
+          overflowX: "auto",
+          "& > *, & form, & .MuiBox-root, & .MuiStack-root, & .MuiGrid-root": {
+            minWidth: 0,
+            maxWidth: "100%",
+            boxSizing: "border-box",
+          },
+        },
+      },
+    },
     MuiTab: {
       styleOverrides: {
         root: {

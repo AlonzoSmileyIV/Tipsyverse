@@ -28,6 +28,7 @@ import {
   LocalBarOutlined,
   FavoriteBorderOutlined,
   CalendarMonthOutlined,
+  EventAvailableOutlined,
 } from "@mui/icons-material";
 import { useDispatch, useSelector } from "react-redux";
 import { Link, useLocation } from "react-router-dom";
@@ -78,6 +79,8 @@ const Header = () => {
       ? "home"
       : pathname.startsWith("/drinks")
       ? "drinks"
+      : pathname === "/book"
+      ? "book"
       : pathname.startsWith("/settings/activity")
       ? "activity"
       : pathname.startsWith("/bartend") && showBartendLink
@@ -273,6 +276,16 @@ const Header = () => {
                 sx={{ textTransform: "none", minHeight: 48 }}
               />
 
+              <Tab
+                value="book"
+                icon={<EventAvailableOutlined fontSize="small" />}
+                iconPosition="start"
+                label="Book Event"
+                component={Link}
+                to="/book"
+                sx={{ textTransform: "none", minHeight: 48 }}
+              />
+
               {user && (
                 <Tab
                   value="activity"
@@ -366,6 +379,17 @@ const Header = () => {
               >
                 <LocalBarOutlined sx={{ mr: 1 }} fontSize="small" />
                 Drinks
+              </MenuItem>
+
+              <MenuItem
+                component={Link}
+                to="/book"
+                onClick={handleMenuClose}
+                selected={pathname === "/book"}
+                sx={{ fontWeight: pathname === "/book" ? 600 : 400 }}
+              >
+                <EventAvailableOutlined sx={{ mr: 1 }} fontSize="small" />
+                Book Event
               </MenuItem>
 
               {user && (

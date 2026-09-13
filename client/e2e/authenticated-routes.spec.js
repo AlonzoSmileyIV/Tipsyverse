@@ -115,6 +115,27 @@ test("customer settings and event routes remain usable", async ({ page }) => {
   }
 });
 
+test("an HttpOnly-cookie session restores without local storage", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("ageVerified", "true");
+    localStorage.setItem("hasSeenTutorial-qa-customer", "true");
+  });
+  await page.route("**/api/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^.*\/api\/v1/, "");
+    if (path === "/users/refresh-token") {
+      return json(route, { accessToken: "cookie-restored-token", sessionStartedAt });
+    }
+    if (path === "/users/me") return json(route, users.customer);
+    return json(route, []);
+  });
+
+  await page.goto("/learn");
+  await expect(page.getByText(/Hi, QA/i)).toBeVisible({ timeout: 10_000 });
+  await expect.poll(() =>
+    page.evaluate(() => JSON.parse(localStorage.getItem("loggedInUser") || "null")?.user?._id)
+  ).toBe("qa-customer");
+});
+
 test("bartender portal remains usable", async ({ page }) => {
   await authenticate(page, users.bartender);
   await expectUsableRoute(page, "/bartend");

@@ -42,7 +42,7 @@ const EVENT_TYPES = [
   { label: "Corporate / Professional", value: "corporate" },
   { label: "Formal", value: "formal" },
   { label: "Holiday Party", value: "holiday" },
-  { label: "Private Dinner", value: "private" },
+  { label: "Private Dinner", value: "private_dinner" },
   { label: "Fundraiser", value: "fundraiser" },
   { label: "Other", value: "other" },
 ];

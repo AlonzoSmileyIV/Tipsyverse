@@ -17,6 +17,7 @@ import {
   syncAccessToken,
 } from "./features/users/userSlice";
 import { restoreAuthentication } from "./services/api";
+import ScrollToTop from "./app/ScrollToTop";
 
 function AuthenticationLoadingScreen() {
   return (
@@ -47,7 +48,7 @@ function ReadyAppContent() {
 
   return (
     <AvailabilityGate>
-      <RouteErrorBoundary resetKey={location.key}>
+      <RouteErrorBoundary resetKey={location.pathname}>
         <AppOverlays
           session={session}
           user={user}
@@ -82,33 +83,33 @@ function ReadyAppContent() {
 
 function AppContent() {
   const dispatch = useDispatch();
-  const hasPersistedSession = useSelector(
+  const hadPersistedSession = useSelector(
     (state) => Boolean(state.users.loggedInUser)
   );
-  const [authenticationReady, setAuthenticationReady] = useState(
-    !hasPersistedSession
-  );
+  const [authenticationReady, setAuthenticationReady] = useState(false);
   const authenticationBootstrap = useRef(null);
 
   useEffect(() => {
     let active = true;
 
     const bootstrapAuthentication = async () => {
-      if (!hasPersistedSession) {
-        if (active) setAuthenticationReady(true);
-        return;
-      }
-
       if (!authenticationBootstrap.current) {
         authenticationBootstrap.current = (async () => {
           try {
             const accessToken = await restoreAuthentication();
             if (accessToken) {
-              dispatch(syncAccessToken({ accessToken }));
               await dispatch(fetchMe()).unwrap();
+              dispatch(syncAccessToken({ accessToken }));
             }
           } catch (error) {
             if ([401, 403].includes(error.response?.status)) {
+              if (hadPersistedSession) {
+                localStorage.setItem(
+                  "authLogoutMessage",
+                  error.response?.data?.message ||
+                    "Your session expired. Please sign in again."
+                );
+              }
               dispatch(logoutUser());
             }
           }
@@ -128,7 +129,7 @@ function AppContent() {
     return () => {
       active = false;
     };
-  }, [dispatch, hasPersistedSession]);
+  }, [dispatch, hadPersistedSession]);
 
   if (!authenticationReady) return <AuthenticationLoadingScreen />;
 
@@ -138,6 +139,7 @@ function AppContent() {
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AppContent />
     </BrowserRouter>
   );

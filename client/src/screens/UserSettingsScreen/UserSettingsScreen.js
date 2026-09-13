@@ -1,6 +1,6 @@
 // screens/UserSettings/UserSettingsScreen.jsx
 import React, { useEffect, useState } from "react";
-import { Box, Tabs, Tab, Tooltip, useMediaQuery } from "@mui/material";
+import { Box, Tabs, Tab, useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import {
   PersonOutline,
@@ -24,7 +24,8 @@ import HelmetHeader from "../../components/HelmetHeader/Helmet";
 import { useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const TabPanel = ({ children, value, index }) => (value === index ? <Box p={2}>{children}</Box> : null);
+const TabPanel = ({ children, value, index }) =>
+  value === index ? <Box sx={{ p: { xs: 0, md: 2 }, minWidth: 0 }}>{children}</Box> : null;
 
 const UserSettingsScreen = () => {
     const location = useLocation();
@@ -87,26 +88,39 @@ const UserSettingsScreen = () => {
       {isLoading ? (
         <LoadingSkeleton />
       ) : (
-        <Box sx={{ display: "flex", minHeight: "100vh", p: 3 }}>
+        <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, minHeight: "100vh", width: "100%", minWidth: 0, p: { xs: 1.5, sm: 2, md: 3 } }}>
           <HelmetHeader title="Tipsyverse | Profile Settings" description="" />
           <Tabs
-  orientation="vertical"
+  orientation={isMobile ? "horizontal" : "vertical"}
+  variant={isMobile ? "scrollable" : "standard"}
+  scrollButtons={isMobile ? "auto" : false}
+  allowScrollButtonsMobile
+  slotProps={isMobile ? {
+    scroller: {
+      tabIndex: 0,
+      role: "region",
+      "aria-label": "Settings sections",
+    },
+  } : undefined}
   value={tabIndex}
   onChange={(_, v) => {
     goToSettingsRoute(settingsTabs[v].route);
   }}
   sx={{
-    borderRight: 1,
+    borderRight: isMobile ? 0 : 1,
+    borderBottom: isMobile ? 1 : 0,
     borderColor: "divider",
-    minWidth: isMobile ? 72 : 180,
-    width: isMobile ? 72 : 180,
+    minWidth: 0,
+    width: isMobile ? "100%" : 180,
+    maxWidth: "100%",
     flexShrink: 0,
 
     "& .MuiTab-root": {
-      justifyContent: isMobile ? "center" : "flex-start",
+      justifyContent: "flex-start",
       alignItems: "center",
       minHeight: 56,
-      px: isMobile ? 1 : 2,
+      px: 2,
+      minWidth: isMobile ? "auto" : 180,
       textTransform: "none",
       color: "text.secondary",
     },
@@ -114,7 +128,8 @@ const UserSettingsScreen = () => {
     "& .Mui-selected": {
       color: "var(--primary-color) !important",
       fontWeight: 700,
-      borderRight: "3px solid var(--primary-color)",
+      borderRight: isMobile ? 0 : "3px solid var(--primary-color)",
+      borderBottom: isMobile ? "3px solid var(--primary-color)" : 0,
       backgroundColor: "rgba(128, 0, 32, 0.06)",
     },
 
@@ -124,23 +139,18 @@ const UserSettingsScreen = () => {
   }}
 >
   {settingsTabs.map((item) => (
-    <Tooltip
-      key={item.label}
-      title={isMobile ? item.label : ""}
-      placement="right"
-      arrow
-    >
+    <React.Fragment key={item.label}>
       <Tab
         icon={item.icon}
-        iconPosition={isMobile ? "top" : "start"}
-        label={isMobile ? "" : item.label}
+        iconPosition="start"
+        label={item.label}
         aria-label={item.label}
       />
-    </Tooltip>
+    </React.Fragment>
   ))}
 </Tabs>
 
-          <Box sx={{ flexGrow: 1, p: 3 }}>
+          <Box sx={{ flexGrow: 1, minWidth: 0, width: "100%", p: { xs: 1, md: 3 } }}>
             <TabPanel value={tabIndex} index={0}><ProfileForm user={user} /></TabPanel>
             <TabPanel value={tabIndex} index={1}><PreferencesForm user={user} /></TabPanel>
             <TabPanel value={tabIndex} index={2}><ActivityForm user={user} /></TabPanel>

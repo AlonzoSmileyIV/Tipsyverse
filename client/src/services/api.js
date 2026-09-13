@@ -94,10 +94,15 @@ export const restoreAuthentication = () => {
   if (getAccessToken()) {
     return Promise.resolve(getAccessToken());
   }
-  if (!readPersistedSession()) {
-    return Promise.resolve(null);
-  }
-  return refreshAccessToken();
+  const hadPersistedSession = Boolean(readPersistedSession());
+  return refreshAccessToken().catch((error) => {
+    const status = error.response?.status;
+    const code = error.response?.data?.code;
+    if (!hadPersistedSession && status === 401 && code === "REFRESH_TOKEN_MISSING") {
+      return null;
+    }
+    throw error;
+  });
 };
 
 const forceLogoutToLogin = (message) => {

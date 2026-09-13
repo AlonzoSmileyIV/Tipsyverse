@@ -86,6 +86,36 @@ test("tutorial does not interrupt a direct booking visit", async ({ page }) => {
   ).toBeHidden();
 });
 
+test("guest navigation and homepage prioritize event booking", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("ageVerified", "true");
+    localStorage.setItem("hasSeenTutorial", "true");
+  });
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: /professional bar experience/i })).toBeVisible({ timeout: 10_000 });
+  const bookingLink = page.getByRole("link", { name: /start your event request/i });
+  await expect(bookingLink).toBeVisible();
+
+  const mobileMenu = page.getByRole("button", { name: /open navigation menu/i });
+  if (await mobileMenu.isVisible()) await mobileMenu.click();
+  await expect(page.getByText("Book Event", { exact: true }).first()).toBeVisible();
+});
+
+test("Private Dinner uses the supported booking value", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("ageVerified", "true");
+    localStorage.setItem("hasSeenTutorial", "true");
+  });
+  await page.goto("/book");
+
+  const eventType = page.getByRole("combobox", { name: /event type/i });
+  await eventType.click();
+  await page.getByRole("option", { name: "Private Dinner" }).click();
+  await expect(eventType).toContainText("Private Dinner");
+  await expect(eventType.locator("xpath=..").locator("input")).toHaveValue("private_dinner");
+});
+
 test("drink filters collapse on a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {

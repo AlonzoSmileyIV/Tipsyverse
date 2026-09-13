@@ -55,11 +55,11 @@ Populate every value from `.env.example` in the deployment platform's encrypted
 secret store. Production additionally requires:
 
 - `NODE_ENV=production`
-- `FRONTEND_URL=https://tipsyverse.com`
-- `PUBLIC_APP_URL=https://tipsyverse.com`
-- `ADMIN_PORTAL_URL=https://tipsyverse.com`
+- `FRONTEND_URL=https://www.tipsyverse.com`
+- `PUBLIC_APP_URL=https://www.tipsyverse.com`
+- `ADMIN_PORTAL_URL=https://www.tipsyverse.com`
 - `PUBLIC_SHARE_URL=https://api.tipsyverse.com`
-- `CORS_ORIGINS=https://tipsyverse.com,https://www.tipsyverse.com`
+- `CORS_ORIGINS=https://www.tipsyverse.com,https://tipsyverse.com`
 - the production MongoDB URI in `MONGO_PROD_URI`
 - distinct access and refresh secrets of at least 32 characters
 - verified Resend credentials for `Tipsyverse <hello@tipsyverse.com>` and
@@ -81,7 +81,7 @@ For the frontend deployment, configure:
 ```text
 REACT_APP_BASE_URL=https://api.tipsyverse.com/api/v1
 REACT_APP_SOCKET_URL=https://api.tipsyverse.com
-REACT_APP_PUBLIC_SITE_URL=https://tipsyverse.com
+REACT_APP_PUBLIC_SITE_URL=https://www.tipsyverse.com
 REACT_APP_SHARE_BASE_URL=https://api.tipsyverse.com
 REACT_APP_STRIPE_ENABLED=false
 ```

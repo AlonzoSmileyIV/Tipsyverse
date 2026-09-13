@@ -74,6 +74,10 @@ const assignmentCtrl = {
             contact: organizerContact,
           },
         };
+      }).sort((a, b) => {
+        const aStart = new Date(a.event?.startAt || 0).getTime();
+        const bStart = new Date(b.event?.startAt || 0).getTime();
+        return aStart - bStart;
       });
 
       return res.json({

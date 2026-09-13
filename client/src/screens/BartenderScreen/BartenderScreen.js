@@ -79,6 +79,7 @@ import { fetchAvailableEvents } from "../../features/events/eventSlice";
 import { updateBartenderLiveLocation } from "../../utils/updateLiveLocation";
 import { CollapseAlert } from "../../components/CollapseAlert/CollapseAlert";
 import HowToGuide from "../../components/HowToGuide/HowToGuide";
+import { assignmentScheduleBucket } from "../../utils/assignmentSchedule";
 import PhoneTextField from "../../components/PhoneTextField/PhoneTextField";
 import LocationInput from "../../components/LocationInput/LocationInput";
 import {
@@ -2303,23 +2304,15 @@ function ScheduleTab({ myAssignments = [] }) {
 
   const filterByStatus = useCallback(
     (assignment) => {
-      const now = new Date();
-      const status = assignment.status || "active";
-      const evt = assignment.event || {};
-      const startAt = evt.startAt ? new Date(evt.startAt) : null;
-      const endAt = evt.endAt ? new Date(evt.endAt) : startAt;
-
-      const isRemoved = status === "removed";
-      const isUpcoming = endAt && endAt >= now;
-      const isPast = endAt && endAt < now;
+      const bucket = assignmentScheduleBucket(assignment);
 
       switch (statusFilter) {
         case "removed":
-          return isRemoved;
+          return bucket === "removed";
         case "upcoming":
-          return !isRemoved && isUpcoming;
+          return bucket === "upcoming";
         case "past":
-          return !isRemoved && isPast;
+          return bucket === "past";
         case "all":
         default:
           return true;
