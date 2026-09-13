@@ -17,7 +17,11 @@ import {
   Autocomplete,
   Pagination,
   Stack,
+  Collapse,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
+import { ExpandLess, ExpandMore, FilterList } from "@mui/icons-material";
 import { useDispatch, useSelector } from "react-redux";
 
 import AuthLayout from "../../components/PublicLayout/PublicLayout";
@@ -153,6 +157,8 @@ const useTodayKey = () => {
 };
 
 const DrinksScreen = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const dispatch = useDispatch();
   const { loggedInUser } = useSelector((state) => state.users);
   const allergies = useMemo(
@@ -186,6 +192,7 @@ const DrinksScreen = () => {
   const [selectedTags, setSelectedTags] = useState([]);
   const [filteredDrinks, setFilteredDrinks] = useState([]);
   const [showContent, setShowContent] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     dispatch(fetchAllDrinks());
@@ -402,6 +409,17 @@ const DrinksScreen = () => {
     );
   }, [themeOptions, selectedCategories, selectedTags]);
 
+  const activeFilterCount =
+    (search.trim() ? 1 : 0) +
+    selectedColors.length +
+    selectedLiquors.length +
+    selectedMixers.length +
+    selectedTastes.length +
+    selectedGlasses.length +
+    selectedCategories.length +
+    selectedTags.length +
+    (isAlcoholFree ? 1 : 0);
+
   // Autocomplete MultiSelect for Liquors & Mixers
   const renderAutocomplete = (label, options, value, setValue) => (
     <Autocomplete
@@ -454,14 +472,11 @@ const DrinksScreen = () => {
         description="Find trending cocktail recipes, share your creations, and sip your way through inspiration."
         keywords="cocktail recipes, trending drinks, mixology, tipsyverse, find cocktail recipes, recipe drinks"
       />
-      <Typography component="h1" className="visually-hidden">
-        Explore Drinks
-      </Typography>
       {isLoading ? (
         <LoadingSkeleton />
       ) : (
         <Box sx={{ px: { xs: 2, md: 6 }, py: 4 }}>
-          <Typography component="h2" variant="h4" gutterBottom>
+          <Typography component="h1" variant="h4" gutterBottom>
             Explore Drinks
           </Typography>
 
@@ -479,7 +494,34 @@ const DrinksScreen = () => {
               borderColor: "divider",
             }}
           >
-            <Grid container spacing={2} alignItems="center" sx={{ mb: 4 }}>
+            {isMobile && (
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<FilterList />}
+                endIcon={mobileFiltersOpen ? <ExpandLess /> : <ExpandMore />}
+                onClick={() => setMobileFiltersOpen((open) => !open)}
+                aria-expanded={mobileFiltersOpen}
+                aria-controls="drink-filter-panel"
+                sx={{ justifyContent: "space-between" }}
+              >
+                {mobileFiltersOpen ? "Hide filters" : "Show filters"}
+                {activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}
+              </Button>
+            )}
+
+            <Collapse
+              in={!isMobile || mobileFiltersOpen}
+              timeout="auto"
+              unmountOnExit={isMobile}
+            >
+            <Grid
+              id="drink-filter-panel"
+              container
+              spacing={2}
+              alignItems="center"
+              sx={{ mt: isMobile ? 0 : undefined, mb: isMobile ? 1 : 4 }}
+            >
               <Grid item xs={12} sm={6} md={3}>
                 <TextField
                   label="Search by Name"
@@ -611,7 +653,21 @@ const DrinksScreen = () => {
                   </Button>
                 </Grid>
               )}
+
+              {isMobile && (
+                <Grid item xs={12}>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    onClick={() => setMobileFiltersOpen(false)}
+                  >
+                    View {filteredDrinks.length} result
+                    {filteredDrinks.length === 1 ? "" : "s"}
+                  </Button>
+                </Grid>
+              )}
             </Grid>
+            </Collapse>
           </Box>
 
           {/* Results header with count + range (nice UX touch) */}
