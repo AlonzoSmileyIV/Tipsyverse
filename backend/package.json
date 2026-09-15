@@ -26,6 +26,7 @@
   "type": "module",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1132.0",
     "@sentry/node": "^10.68.0",
     "axios": "^1.18.1",
     "bcrypt": "^6.0.0",
