@@ -12,6 +12,7 @@
     "check": "find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check",
     "wipe:collections": "NODE_ENV=development node scripts/libs/wipeAllCollections.script.js",
     "seed": "NODE_ENV=development node scripts/libs/seedInitialData.script.js",
+    "seed:production": "NODE_ENV=production node scripts/libs/seedInitialData.script.js",
     "seed:staging-admin": "NODE_ENV=staging node scripts/libs/seedStagingAdmin.script.js",
     "db:backup": "node scripts/libs/backupDatabase.script.js",
     "db:backup:verify": "node scripts/libs/verifyBackup.script.js",
