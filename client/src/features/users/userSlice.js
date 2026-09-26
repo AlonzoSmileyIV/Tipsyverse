@@ -43,7 +43,7 @@ export const fetchMe = createAsyncThunk(
   "users/fetchMe",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.get("/users/me");
+      const res = await api.get("/users/me", { timeout: 8000 });
       return res.data;
     } catch (err) {
       return rejectWithValue(
