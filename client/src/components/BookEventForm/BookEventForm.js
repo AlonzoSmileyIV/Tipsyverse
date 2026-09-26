@@ -677,6 +677,9 @@ export default function BookEventForm({
       )
         e.zipcode = `Invalid ${postalLabelFor(form.country)} format.`;
       if (!form.country) e.country = "Country is required.";
+      if (form.country !== "US" || form.state?.trim().toUpperCase() !== "IN") {
+        e.state = "Tipsyverse currently accepts event requests throughout Indiana only.";
+      }
     }
     if (step === 2) {
       if (!form.startAt) e.startAt = "Start is required.";
@@ -1012,6 +1015,7 @@ export default function BookEventForm({
               touched={touched}
               setTouched={setTouched}
               restrictCountry={restrictCountry}
+              serviceArea="indiana"
             />
           )}
 

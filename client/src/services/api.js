@@ -48,6 +48,8 @@ const persistRefreshedAccessToken = (accessToken, sessionStartedAt) => {
 // would make the second request look like token reuse and revoke the session.
 let refreshRequestPromise = null;
 const MAX_ROTATION_RETRIES = 3;
+// Bound authentication bootstrap requests so a stalled API cannot hold the loading screen forever.
+const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000;
 
 const wait = (milliseconds) =>
   new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -57,7 +59,7 @@ const requestRefreshedAccessToken = async (attempt = 0) => {
     return await axios.post(
       `${process.env.REACT_APP_BASE_URL}/users/refresh-token`,
       {},
-      { withCredentials: true, __isRefreshCall: true }
+      { withCredentials: true, __isRefreshCall: true, timeout: AUTH_BOOTSTRAP_TIMEOUT_MS }
     );
   } catch (error) {
     const isRotationOverlap =

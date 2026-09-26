@@ -75,6 +75,8 @@ const seedUsers = [
     fullName: process.env.ADMIN2_SEED_FULL_NAME,
     password: process.env.ADMIN2_SEED_PASSWORD,
 
+    // Keep Alonzo fully bartender-ready in every environment, including production.
+    hasBartenderProfile: true,
     positionName: "Owner",
 
     birthday: "1998-01-01",
@@ -1342,7 +1344,12 @@ async function seedData() {
     const includeQaAccounts = ["development", "staging"].includes(env);
     const usersToSeed = includeQaAccounts
       ? [...seedUsers, ...qaSeedUsers]
-      : seedUsers.map((seed) => ({ ...seed, hasBartenderProfile: false }));
+      : seedUsers.map((seed) => ({
+          ...seed,
+          // Production normally skips seeded bartender profiles, but explicit
+          // opt-ins (Alonzo) must retain their complete bartender setup.
+          hasBartenderProfile: seed.hasBartenderProfile ?? false,
+        }));
 
     await seedUsersIntoDatabase(positionMap, usersToSeed);
     if (includeQaAccounts) {
