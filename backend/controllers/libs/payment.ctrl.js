@@ -83,6 +83,22 @@ const populatePayment = (query) =>
     .populate("editedBy", "fullName email role");
 
 const paymentCtrl = {
+  createTipsyversePlusPortal: async (req, res) => {
+    try {
+      const stripe = stripeClient();
+      if (!stripe) return res.status(503).json({ message: "Tipsyverse+ billing is unavailable." });
+      const user = await User.findById(req.user.id).select("+subscription.providerCustomerId").lean();
+      const customer = user?.subscription?.providerCustomerId;
+      if (!customer) return res.status(404).json({ message: "No Tipsyverse+ billing account found." });
+      const frontend = process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL;
+      const session = await stripe.billingPortal.sessions.create({ customer, return_url: `${frontend}/subscription` });
+      return res.json({ url: session.url });
+    } catch (error) {
+      console.error("Tipsyverse+ portal creation failed:", error);
+      return res.status(502).json({ message: "Unable to open subscription management." });
+    }
+  },
+
   createTipsyversePlusCheckout: async (req, res) => {
     try {
       const stripe = stripeClient();
