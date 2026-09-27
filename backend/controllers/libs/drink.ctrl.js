@@ -23,6 +23,13 @@ import {
 
 import XLSX from "xlsx";
 import mongoose from "mongoose";
+import { serializeDrinkForViewer, serializeDrinksForViewer } from "../../utils/libs/drinkAccess.js";
+
+async function resolveDrinkViewer(req) {
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) return null;
+  return User.findById(userId).select("role subscription").lean();
+}
 
 const escapeHtml = (value = "") =>
   String(value)
@@ -1189,7 +1196,8 @@ const drinkCtrl = {
           .status(404)
           .json({ success: false, message: "Drinks not found." });
       }
-      return res.status(200).json({ success: true, data: drinks });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinksForViewer(drinks, viewer) });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }
@@ -1232,7 +1240,8 @@ const drinkCtrl = {
           .status(404)
           .json({ success: false, message: "Drink not found." });
       }
-      return res.status(200).json({ success: true, data: drink });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinkForViewer(drink, viewer) });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }
@@ -1252,7 +1261,8 @@ const drinkCtrl = {
           .status(404)
           .json({ success: false, message: "Drink not found." });
       }
-      return res.status(200).json({ success: true, data: drink });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinkForViewer(drink, viewer) });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }
@@ -1460,7 +1470,8 @@ const drinkCtrl = {
         },
       ]);
 
-      res.status(200).json({ success: true, data: trendingDrinks });
+      const viewer = await resolveDrinkViewer(req);
+      res.status(200).json({ success: true, data: serializeDrinksForViewer(trendingDrinks, viewer) });
     } catch (error) {
       console.error("🔥 Trending drinks error:", error);
       res
@@ -1825,7 +1836,7 @@ const drinkCtrl = {
 
       return res.status(200).json({
         success: true,
-        data: recent,
+        data: serializeDrinksForViewer(recent, await resolveDrinkViewer(req)),
       });
     } catch (err) {
       console.error("mostRecentDrinks failed:", err);
@@ -1852,7 +1863,8 @@ const drinkCtrl = {
         .limit(Number(limit))
         .lean();
 
-      return res.status(200).json({ success: true, data: drinks });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinksForViewer(drinks, viewer) });
     } catch (e) {
       return res
         .status(500)
