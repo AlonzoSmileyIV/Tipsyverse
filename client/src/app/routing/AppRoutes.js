@@ -65,6 +65,9 @@ const FAQScreen = route("faq", () => import("../../screens/FAQScreen/FAQScreen")
 const PaymentRequestScreen = route("payment-request", () =>
   import("../../screens/PaymentRequestScreen/PaymentRequestScreen")
 );
+const SubscriptionScreen = route("subscription", () =>
+  import("../../screens/SubscriptionScreen/SubscriptionScreen")
+);
 
 // Route modules remain lazy to keep public pages from downloading the large
 // authenticated/admin feature bundles.
@@ -131,6 +134,7 @@ export default function AppRoutes({ loggedInUser, user }) {
         <Route path="/terms-conditions" element={<TermsConditionsScreen />} />
         <Route path="/contact" element={<ContactUsScreen />} />
         <Route path="/faq" element={<FAQScreen />} />
+        <Route path="/subscription" element={<SubscriptionScreen />} />
         <Route path="/login" element={<LoginScreen />} />
         <Route path="/register" element={<RegistrationScreen />} />
         <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
