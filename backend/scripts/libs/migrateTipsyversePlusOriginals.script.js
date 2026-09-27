@@ -1,6 +1,7 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import { DrinkModel as Drink } from "../../models/index.js";
+import { getCurrentMongoURI } from "../../utils/libs/getMongoURI.js";
 
 const DEFAULT_PUBLIC_ORIGINALS = ["berry-after-dark", "kims-kiss", "smokey-mountains"];
 
@@ -9,10 +10,8 @@ const publicOriginals = (process.env.PUBLIC_ORIGINAL_SLUGS || DEFAULT_PUBLIC_ORI
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
 
-const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
-if (!uri) throw new Error("MONGODB_URI (or MONGO_URI) is required.");
-
-await mongoose.connect(uri);
+const environment = process.env.NODE_ENV || "development";
+await mongoose.connect(getCurrentMongoURI(environment));
 try {
   const originals = { categories: "Tipsyverse Originals" };
   const premiumResult = await Drink.updateMany(originals, { $set: { accessLevel: "subscriber" } });
