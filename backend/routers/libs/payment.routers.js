@@ -6,6 +6,7 @@ const paymentRouter = Router();
 const paymentDedupe = dedupeSuccessfulRequests({ ttlMs: 45 * 1000 });
 
 // CREATE
+paymentRouter.post("/stripe/tipsyverse-plus-checkout", auth, paymentDedupe, paymentCtrl.createTipsyversePlusCheckout);
 paymentRouter.post("/", auth, paymentDedupe, paymentCtrl.createPayment);
 paymentRouter.post(
   "/stripe/payment-intent",
