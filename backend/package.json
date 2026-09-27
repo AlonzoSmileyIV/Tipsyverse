@@ -20,7 +20,8 @@
     "verify:staging": "NODE_ENV=staging node scripts/libs/stagingVerify.script.js",
     "migrate:compliance": "node scripts/libs/migrateBartenderCompliance.script.js",
     "migrate:event-timezones": "node scripts/libs/migrateEventTimezones.script.js",
-    "migrate:payment-requests": "node scripts/libs/migratePaymentRequestConsistency.script.js"
+    "migrate:payment-requests": "node scripts/libs/migratePaymentRequestConsistency.script.js",
+    "migrate:tipsyverse-plus": "node scripts/libs/migrateTipsyversePlusOriginals.script.js"
   },
   "author": "",
   "type": "module",
