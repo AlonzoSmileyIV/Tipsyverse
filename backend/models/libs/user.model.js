@@ -386,6 +386,19 @@ const userSchema = new mongoose.Schema(
     },
     createdDrinks: [{ type: mongoose.Schema.Types.ObjectId, ref: "Drink" }],
 
+    subscription: {
+      plan: { type: String, enum: ["tipsyverse_plus"], default: "tipsyverse_plus" },
+      status: {
+        type: String,
+        enum: ["inactive", "active", "canceled", "past_due"],
+        default: "inactive",
+      },
+      startedAt: { type: Date, default: null },
+      currentPeriodEndsAt: { type: Date, default: null },
+      providerCustomerId: { type: String, default: "", select: false },
+      providerSubscriptionId: { type: String, default: "", select: false },
+    },
+
     // OPTIONAL: keep previous usernames for audit/feature needs
     usernameHistory: { type: [String], default: [] },
 
