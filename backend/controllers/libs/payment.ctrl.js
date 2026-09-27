@@ -2,6 +2,7 @@ import {
   EventModel as Event,
   PaymentModel as Payment,
   PaymentRequestModel as PaymentRequest,
+  UserModel as User,
 } from "../../models/index.js";
 import { actorFromReq, shallowDiff } from "../../utils/index.js";
 import Stripe from "stripe";
@@ -26,6 +27,32 @@ const stripeClient = () => {
 };
 
 const isStaff = (user) => ["admin", "employee"].includes(user?.role);
+
+const subscriptionStatus = (stripeStatus) => {
+  if (["active", "trialing"].includes(stripeStatus)) return "active";
+  if (["past_due", "unpaid", "incomplete"].includes(stripeStatus)) return "past_due";
+  if (["canceled", "incomplete_expired"].includes(stripeStatus)) return "canceled";
+  return "inactive";
+};
+
+const syncTipsyversePlusSubscription = async (subscription) => {
+  const userId = subscription?.metadata?.userId;
+  if (!userId) return;
+  await User.findByIdAndUpdate(userId, {
+    $set: {
+      "subscription.plan": "tipsyverse_plus",
+      "subscription.status": subscriptionStatus(subscription.status),
+      "subscription.startedAt": subscription.start_date
+        ? new Date(subscription.start_date * 1000)
+        : new Date(),
+      "subscription.currentPeriodEndsAt": subscription.current_period_end
+        ? new Date(subscription.current_period_end * 1000)
+        : null,
+      "subscription.providerCustomerId": String(subscription.customer || ""),
+      "subscription.providerSubscriptionId": String(subscription.id || ""),
+    },
+  });
+};
 
 const canViewEvent = async (user, eventId) => {
   if (isStaff(user)) return true;
@@ -56,6 +83,39 @@ const populatePayment = (query) =>
     .populate("editedBy", "fullName email role");
 
 const paymentCtrl = {
+  createTipsyversePlusCheckout: async (req, res) => {
+    try {
+      const stripe = stripeClient();
+      if (!stripe || !process.env.STRIPE_TIPSYVERSE_PLUS_PRICE_ID) {
+        return res.status(503).json({ message: "Tipsyverse+ checkout is unavailable." });
+      }
+      const user = await User.findById(req.user.id).select("email subscription").lean();
+      if (!user) return res.status(404).json({ message: "User not found." });
+      if (user.subscription?.status === "active") {
+        return res.status(409).json({ message: "Tipsyverse+ is already active." });
+      }
+
+      const frontend = process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL;
+      if (!frontend) return res.status(503).json({ message: "Frontend URL is not configured." });
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer_email: user.email,
+        line_items: [{ price: process.env.STRIPE_TIPSYVERSE_PLUS_PRICE_ID, quantity: 1 }],
+        success_url: `${frontend}/subscription?checkout=success`,
+        cancel_url: `${frontend}/subscription?checkout=canceled`,
+        metadata: { userId: String(req.user.id), product: "tipsyverse_plus" },
+        subscription_data: {
+          metadata: { userId: String(req.user.id), product: "tipsyverse_plus" },
+        },
+      });
+      return res.json({ url: session.url });
+    } catch (error) {
+      console.error("Tipsyverse+ checkout creation failed:", error);
+      return res.status(502).json({ message: "Unable to start Tipsyverse+ checkout." });
+    }
+  },
+
   createStripePaymentIntent: async (req, res) => {
     try {
       const stripe = stripeClient();
@@ -162,6 +222,18 @@ const paymentCtrl = {
           );
           await syncEventPaymentPolicy(paymentRequest.event);
         }
+      }
+
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+        if (session.mode === "subscription" && session.subscription) {
+          const subscription = await stripe.subscriptions.retrieve(session.subscription);
+          await syncTipsyversePlusSubscription(subscription);
+        }
+      }
+
+      if (["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
+        await syncTipsyversePlusSubscription(event.data.object);
       }
 
       if (event.type === "charge.refunded") {
