@@ -1019,6 +1019,7 @@ const drinkCtrl = {
         tools,
         garnishes,
         isAlcoholic,
+        accessLevel = "public",
         ingredients,
         instructions,
         datePublishStarts,
@@ -1126,6 +1127,7 @@ const drinkCtrl = {
         tools: normalizeStringArray(tools),
         garnishes: normalizeStringArray(garnishes),
         isAlcoholic,
+        accessLevel,
         ingredients: cleanIngredients,
         instructions,
         dates: {
@@ -1271,7 +1273,7 @@ const drinkCtrl = {
     try {
       const { slug } = req.params;
       const drink = await Drink.findOne({ slug })
-        .select("name slug description photo")
+        .select("name slug description photo accessLevel")
         .lean();
 
       const appBase =
@@ -1289,10 +1291,11 @@ const drinkCtrl = {
       }
 
       const title = `${drink.name} | Tipsyverse`;
-      const description = "Enjoy this drink!";
+      const isLockedPreview = drink.accessLevel === "subscriber";
+      const description = isLockedPreview ? "Exclusive Tipsyverse+ Original recipe." : "Enjoy this drink!";
       const image = cloudinaryPreviewUrl(
         absoluteUrl(
-          drink.photo ||
+          (!isLockedPreview && drink.photo) ||
             "https://res.cloudinary.com/dtbgyeyjq/image/upload/c_fill,w_1200,h_630,g_auto,f_jpg,q_auto/v1747893721/default/images/drink.png",
           shareBase
         )
