@@ -22,6 +22,19 @@ export default function SubscriptionScreen() {
     if (checkout === "success" && loggedInUser) dispatch(fetchMe());
   }, [checkout, dispatch, loggedInUser]);
 
+  const openBilling = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await api.post("/payments/stripe/tipsyverse-plus-portal");
+      if (!response.data?.url) throw new Error("Billing portal URL missing.");
+      window.location.assign(response.data.url);
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not open subscription management.");
+      setLoading(false);
+    }
+  };
+
   const subscribe = async () => {
     if (!loggedInUser) {
       navigate("/login?redirect=%2Fsubscription");
@@ -54,8 +67,8 @@ export default function SubscriptionScreen() {
             {checkout === "success" && <Alert severity="success" sx={{ width: "100%" }}>Payment received. Your access will appear as soon as Stripe confirms the subscription.</Alert>}
             {checkout === "canceled" && <Alert severity="info" sx={{ width: "100%" }}>Checkout was canceled. You were not subscribed.</Alert>}
             {error && <Alert severity="error" sx={{ width: "100%" }}>{error}</Alert>}
-            <Button variant="contained" size="large" fullWidth disabled={loading || active} onClick={subscribe} sx={{ bgcolor: "var(--primary-color)" }}>
-              {loading ? <CircularProgress size={24} color="inherit" /> : active ? "Tipsyverse+ Active" : "Subscribe for $5/month"}
+            <Button variant="contained" size="large" fullWidth disabled={loading} onClick={active ? openBilling : subscribe} sx={{ bgcolor: "var(--primary-color)" }}>
+              {loading ? <CircularProgress size={24} color="inherit" /> : active ? "Manage Tipsyverse+" : "Subscribe for $5/month"}
             </Button>
             <Typography variant="caption" color="text.secondary">Cancel anytime through subscription management.</Typography>
           </Stack>
