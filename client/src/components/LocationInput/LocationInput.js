@@ -32,6 +32,7 @@ export function useGooglePlaces(apiKey) {
           throw new Error("google.maps.importLibrary is unavailable");
         }
         await window.google.maps.importLibrary("places");
+        window.clearTimeout(timeout);
         if (!cancelled) setState({ ready: true, error: "" });
       } catch (error) {
         console.error("Google Places library failed to load:", error);
@@ -58,7 +59,7 @@ export function useGooglePlaces(apiKey) {
       script.async = true;
       script.defer = true;
       script.src =
-        `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=places&callback=${callbackName}`;
+        `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=places&loading=async&callback=${callbackName}`;
       script.onerror = () => {
         console.error("Google Maps JavaScript API script failed to load.");
         if (!cancelled) {
