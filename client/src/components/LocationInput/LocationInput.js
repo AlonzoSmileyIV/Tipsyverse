@@ -4,52 +4,81 @@ import { MenuItem, Paper, Popper, Stack, TextField } from "@mui/material";
 /* ---------- Shared helpers (copy from your file or import from a utils module) ---------- */
 
 export function useGooglePlaces(apiKey) {
-  const [ready, setReady] = useState(false);
+  const [state, setState] = useState(() => ({
+    ready: false,
+    error: apiKey ? "" : "Google Maps API key is missing from this production build.",
+  }));
 
   useEffect(() => {
-    if (!apiKey) return;
-    let cancelled = false;
+    if (!apiKey) {
+      setState({ ready: false, error: "Google Maps API key is missing from this production build." });
+      return;
+    }
 
-    const markReady = async () => {
+    let cancelled = false;
+    const callbackName = "__tipsyverseGoogleMapsReady";
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) {
+        setState({
+          ready: false,
+          error: "Google Maps did not finish loading. Check the browser console for an API key, billing, or API restriction error.",
+        });
+      }
+    }, 10000);
+
+    const finish = async () => {
       try {
-        if (!window.google?.maps?.importLibrary) return;
+        if (!window.google?.maps?.importLibrary) {
+          throw new Error("google.maps.importLibrary is unavailable");
+        }
         await window.google.maps.importLibrary("places");
-        if (!cancelled) setReady(true);
+        if (!cancelled) setState({ ready: true, error: "" });
       } catch (error) {
         console.error("Google Places library failed to load:", error);
+        if (!cancelled) {
+          setState({
+            ready: false,
+            error: "Google Places could not load. Check the browser console for the Google API error.",
+          });
+        }
       }
     };
 
     if (window.google?.maps?.importLibrary) {
-      markReady();
-      return () => {
-        cancelled = true;
-      };
-    }
+      finish();
+    } else {
+      window[callbackName] = finish;
+      const oldScript =
+        document.getElementById("google-maps-script") ||
+        document.getElementById("google-places-script");
+      oldScript?.remove();
 
-    const id = "google-maps-script";
-    let script = document.getElementById(id);
-    const onload = () => markReady();
-    const onerror = () => console.error("Google Maps script failed to load.");
-
-    if (!script) {
-      script = document.createElement("script");
-      script.id = id;
+      const script = document.createElement("script");
+      script.id = "google-maps-script";
       script.async = true;
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
+      script.defer = true;
+      script.src =
+        `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=places&callback=${callbackName}`;
+      script.onerror = () => {
+        console.error("Google Maps JavaScript API script failed to load.");
+        if (!cancelled) {
+          setState({
+            ready: false,
+            error: "Google Maps JavaScript could not load. Check API restrictions, billing, and the browser console.",
+          });
+        }
+      };
       document.head.appendChild(script);
     }
-    script.addEventListener("load", onload, { once: true });
-    script.addEventListener("error", onerror, { once: true });
 
     return () => {
       cancelled = true;
-      script?.removeEventListener("load", onload);
-      script?.removeEventListener("error", onerror);
+      window.clearTimeout(timeout);
+      if (window[callbackName]) delete window[callbackName];
     };
   }, [apiKey]);
 
-  return ready;
+  return state;
 }
 
 export function parsePlace(place) {
@@ -239,7 +268,7 @@ export default function LocationStep({
   touched,
   setTouched,
 }) {
-  const placesReady = useGooglePlaces(googlePlacesApiKey);
+  const { ready: placesReady, error: placesLoadError } = useGooglePlaces(googlePlacesApiKey);
 
   useEffect(() => {
     if (!googlePlacesApiKey) {
@@ -511,9 +540,17 @@ export default function LocationStep({
           Search Event Address
         </div>
         <div ref={googleAutocompleteHostRef} style={{ width: "100%" }} />
-        {!placesReady && (
+        {!placesReady && !placesLoadError && (
           <div style={{ fontSize: 12, marginTop: 6 }}>
             Loading Google address search…
+          </div>
+        )}
+        {placesLoadError && (
+          <div
+            role="alert"
+            style={{ fontSize: 12, marginTop: 6, color: "#b00020", fontWeight: 600 }}
+          >
+            {placesLoadError}
           </div>
         )}
       </div>
