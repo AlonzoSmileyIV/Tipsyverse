@@ -373,6 +373,7 @@ export default function BookEventForm({
   onCancel,
   initialData,
   restrictCountry = "US",
+  googlePlacesApiKey = "",
 }) {
   // stable, primitive-only selector so identity doesn't flip each render
   const logged = useSelector(
@@ -1012,6 +1013,7 @@ export default function BookEventForm({
               touched={touched}
               setTouched={setTouched}
               restrictCountry={restrictCountry}
+              googlePlacesApiKey={googlePlacesApiKey}
             />
           )}
 
