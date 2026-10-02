@@ -1,39 +1,54 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MenuItem, Stack, TextField } from "@mui/material";
+import { MenuItem, Paper, Popper, Stack, TextField } from "@mui/material";
 
 /* ---------- Shared helpers (copy from your file or import from a utils module) ---------- */
 
 export function useGooglePlaces(apiKey) {
-  const [ready, setReady] = useState(() => !!window.google?.maps?.places);
+  const [ready, setReady] = useState(false);
+
   useEffect(() => {
-    if (ready || !apiKey) return;
-    const id = "google-places-script";
-    const existing = document.getElementById(id);
+    if (!apiKey) return;
+    let cancelled = false;
 
-    const onload = () => setReady(!!window.google?.maps?.places);
-    const onerror = () => console.error("Google Maps script failed to load.");
+    const markReady = async () => {
+      try {
+        if (!window.google?.maps?.importLibrary) return;
+        await window.google.maps.importLibrary("places");
+        if (!cancelled) setReady(true);
+      } catch (error) {
+        console.error("Google Places library failed to load:", error);
+      }
+    };
 
-    if (existing) {
-      existing.addEventListener("load", onload, { once: true });
-      existing.addEventListener("error", onerror, { once: true });
+    if (window.google?.maps?.importLibrary) {
+      markReady();
       return () => {
-        existing.removeEventListener("load", onload);
-        existing.removeEventListener("error", onerror);
+        cancelled = true;
       };
     }
 
-    const s = document.createElement("script");
-    s.id = id;
-    s.async = true;
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-    s.addEventListener("load", onload, { once: true });
-    s.addEventListener("error", onerror, { once: true });
-    document.body.appendChild(s);
+    const id = "google-maps-script";
+    let script = document.getElementById(id);
+    const onload = () => markReady();
+    const onerror = () => console.error("Google Maps script failed to load.");
+
+    if (!script) {
+      script = document.createElement("script");
+      script.id = id;
+      script.async = true;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
+      document.head.appendChild(script);
+    }
+    script.addEventListener("load", onload, { once: true });
+    script.addEventListener("error", onerror, { once: true });
+
     return () => {
-      s.removeEventListener("load", onload);
-      s.removeEventListener("error", onerror);
+      cancelled = true;
+      script?.removeEventListener("load", onload);
+      script?.removeEventListener("error", onerror);
     };
-  }, [apiKey, ready]);
+  }, [apiKey]);
+
   return ready;
 }
 
@@ -226,6 +241,12 @@ export default function LocationStep({
 }) {
   const placesReady = useGooglePlaces(googlePlacesApiKey);
 
+  useEffect(() => {
+    if (!googlePlacesApiKey) {
+      console.error("REACT_APP_GOOGLE_MAPS_API_KEY is missing from this build.");
+    }
+  }, [googlePlacesApiKey]);
+
   // local ui state
   const [cityOptions, setCityOptions] = useState([]);
   const [countyOptions, setCountyOptions] = useState([]);
@@ -236,6 +257,7 @@ export default function LocationStep({
   // Google refs
   const autocompleteSessionTokenRef = useRef(null);
   const address1Ref = useRef(null);
+  const addressAnchorRef = useRef(null);
   const placesLibraryRef = useRef(null);
   const geocoderRef = useRef(null);
 
@@ -419,7 +441,7 @@ export default function LocationStep({
 
   return (
     <Stack spacing={2}>
-      <div style={{ position: "relative" }}>
+      <div ref={addressAnchorRef} style={{ position: "relative" }}>
         <TextField
           fullWidth
           label="Address Line 1"
@@ -436,33 +458,38 @@ export default function LocationStep({
           }
           inputProps={{ autoComplete: "off", id: "address-line-1", name: "event-location-search" }}
         />
-        {showPreds && predictions.length > 0 && (
-          <div
-            style={{
-              position: "absolute",
-              top: "100%",
-              left: 0,
-              right: 0,
-              background: "#fff",
-              border: "1px solid rgba(0,0,0,0.12)",
-              boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
-              borderRadius: 8,
-              zIndex: 9999,
-              marginTop: 4,
+        <Popper
+          open={showPreds && predictions.length > 0}
+          anchorEl={addressAnchorRef.current}
+          placement="bottom-start"
+          style={{ zIndex: 1600, width: addressAnchorRef.current?.offsetWidth || undefined }}
+        >
+          <Paper
+            elevation={6}
+            sx={{
+              mt: 0.5,
+              maxHeight: 320,
+              overflowY: "auto",
+              borderRadius: 2,
             }}
           >
             {predictions.map((p) => (
               <div
                 key={p.placeId || p.text?.text || p.text?.toString()}
                 onMouseDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.stopPropagation()}
                 onClick={() => pickPrediction(p)}
-                style={{ padding: "10px 12px", cursor: "pointer" }}
+                style={{
+                  padding: "12px 14px",
+                  cursor: "pointer",
+                  borderBottom: "1px solid rgba(0,0,0,0.08)",
+                }}
               >
                 {p.text?.text || p.text?.toString() || ""}
               </div>
             ))}
-          </div>
-        )}
+          </Paper>
+        </Popper>
       </div>
 
       <TextField
