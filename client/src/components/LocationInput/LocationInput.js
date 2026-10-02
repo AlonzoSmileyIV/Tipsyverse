@@ -219,7 +219,7 @@ export default function LocationStep({
   errors = {},
   googlePlacesApiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "",
   restrictCountry = "US",
-  serviceArea = "indy", // "indy" | "indiana" | "midwest" | "us"
+  serviceArea = "indiana", // "indy" | "indiana" | "midwest" | "us"
   touched,
   setTouched,
 }) {
@@ -265,7 +265,7 @@ export default function LocationStep({
       pacRef.current = null;
     }
 
-    const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indy;
+    const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
     const country =
       restrictCountry || value.country || area.countries?.[0] || "US";
 
@@ -338,11 +338,13 @@ export default function LocationStep({
     //     types: ["address"],
     //     // componentRestrictions: { country: restrictCountry || value.country || "us" },
     //   },
-    const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indy;
+    const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
     const req = {
       input: v,
       types: ["address"],
-      // componentRestrictions: { country: restrictCountry || value.country || "US" },
+      componentRestrictions: {
+        country: String(restrictCountry || value.country || area.countries?.[0] || "US").toLowerCase(),
+      },
     };
     if (area.center && area.radius) {
       req.location = area.center;
