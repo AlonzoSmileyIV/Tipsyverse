@@ -233,89 +233,33 @@ export default function LocationStep({
 
   // Google refs
   const address1Ref = useRef(null);
-  const pacRef = useRef(null);
   const svcRef = useRef(null); // AutocompleteService
   const placesSvcRef = useRef(null); // PlacesService
   const placesElRef = useRef(null);
   const geocoderRef = useRef(null);
 
-  // Attach PAC and fallback services
+  // Initialize the Google services used by our controlled autocomplete UI.
+  // Do not attach Google's legacy Autocomplete widget to the input: doing so
+  // creates a second prediction UI on top of the MUI field.
   useEffect(() => {
     if (!placesReady) return;
 
     const g = window.google;
-    if (g?.maps?.places) {
-      if (g.maps.places.AutocompleteService) {
-        svcRef.current ||= new g.maps.places.AutocompleteService();
-      }
-      if (g.maps.places.PlacesService) {
-        const el =
-          placesElRef.current ||
-          (placesElRef.current = document.createElement("div"));
-        placesSvcRef.current ||= new g.maps.places.PlacesService(el);
-      }
-      if (g.maps.Geocoder) {
-        geocoderRef.current ||= new g.maps.Geocoder();
-      }
+    if (!g?.maps?.places) return;
+
+    if (g.maps.places.AutocompleteService) {
+      svcRef.current ||= new g.maps.places.AutocompleteService();
     }
-
-    // disconnect previous PAC
-    if (pacRef.current) {
-      g.maps.event.clearInstanceListeners(pacRef.current);
-      pacRef.current = null;
+    if (g.maps.places.PlacesService) {
+      const el =
+        placesElRef.current ||
+        (placesElRef.current = document.createElement("div"));
+      placesSvcRef.current ||= new g.maps.places.PlacesService(el);
     }
-
-    const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
-    const country =
-      restrictCountry || value.country || area.countries?.[0] || "US";
-
-    const opts = {
-      fields: [
-        "address_components",
-        "formatted_address",
-        "geometry",
-        "place_id",
-      ],
-      types: ["address"],
-      componentRestrictions: { country },
-    };
-
-    // For Indy-only: bias + strict bounds
-    if (area.center && area.radius && g?.maps?.Circle) {
-      const circle = new g.maps.Circle({
-        center: area.center,
-        radius: area.radius,
-      });
-      opts.bounds = circle.getBounds();
-      opts.strictBounds = true;
+    if (g.maps.Geocoder) {
+      geocoderRef.current ||= new g.maps.Geocoder();
     }
-
-    if (address1Ref.current && g?.maps?.places?.Autocomplete) {
-      pacRef.current = new g.maps.places.Autocomplete(
-        address1Ref.current,
-        opts
-      );
-      pacRef.current.addListener("place_changed", () => {
-        const place = pacRef.current.getPlace();
-        if (!place?.address_components) return;
-        const parsed = parsePlace(place);
-        setCityOptions(parsed.city ? [parsed.city] : []);
-        setCountyOptions(parsed.county ? [parsed.county] : []);
-        onChange({
-          ...parsed,
-          address1: parsed.address1 || value.address1,
-        });
-        setShowPreds(false);
-        setPredictions([]);
-      });
-    }
-
-    return () => {
-      if (pacRef.current && g?.maps?.event?.clearInstanceListeners) {
-        g.maps.event.clearInstanceListeners(pacRef.current);
-      }
-    };
-  }, [placesReady, restrictCountry, serviceArea]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [placesReady]);
 
   // Fallback: fetch predictions while typing
   const onAddressInput = (e) => {
