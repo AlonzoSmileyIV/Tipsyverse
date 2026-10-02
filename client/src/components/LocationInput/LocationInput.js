@@ -25,7 +25,7 @@ export function useGooglePlaces(apiKey) {
     const s = document.createElement("script");
     s.id = id;
     s.async = true;
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
     s.addEventListener("load", onload, { once: true });
     s.addEventListener("error", onerror, { once: true });
     document.body.appendChild(s);
@@ -233,6 +233,7 @@ export default function LocationStep({
   const [addressLookupError, setAddressLookupError] = useState("");
 
   // Google refs
+  const autocompleteSessionTokenRef = useRef(null);
   const address1Ref = useRef(null);
   const svcRef = useRef(null); // AutocompleteService
   const placesSvcRef = useRef(null); // PlacesService
@@ -250,6 +251,9 @@ export default function LocationStep({
 
     if (g.maps.places.AutocompleteService) {
       svcRef.current ||= new g.maps.places.AutocompleteService();
+      if (g.maps.places.AutocompleteSessionToken) {
+        autocompleteSessionTokenRef.current ||= new g.maps.places.AutocompleteSessionToken();
+      }
     }
     if (g.maps.places.PlacesService) {
       const el =
@@ -285,11 +289,12 @@ export default function LocationStep({
     //   },
     const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
     const req = {
-      input: v,
+      input: v.trim(),
       types: ["address"],
       componentRestrictions: {
         country: String(restrictCountry || value.country || area.countries?.[0] || "US").toLowerCase(),
       },
+      sessionToken: autocompleteSessionTokenRef.current || undefined,
     };
     if (area.center && area.radius) {
       req.location = area.center;
@@ -297,12 +302,16 @@ export default function LocationStep({
     }
 
     svcRef.current.getPlacePredictions(req, (preds, status) => {
-      if (status === "OK" && preds?.length) {
+      const okStatus = window.google?.maps?.places?.PlacesServiceStatus?.OK || "OK";
+      if (status === okStatus && preds?.length) {
         setPredictions(preds);
         setShowPreds(true);
       } else {
         setPredictions([]);
         setShowPreds(false);
+        if (status && status !== "ZERO_RESULTS") {
+          console.warn("Google Places autocomplete failed:", status);
+        }
       }
     });
   };
@@ -359,6 +368,7 @@ export default function LocationStep({
   // Fallback: pick a prediction and fetch full details
   const pickPrediction = (p) => {
     setShowPreds(false);
+    setPredictions([]);
     if (!placesSvcRef.current) return;
     placesSvcRef.current.getDetails(
       {
@@ -376,6 +386,10 @@ export default function LocationStep({
         setCityOptions(parsed.city ? [parsed.city] : []);
         setCountyOptions(parsed.county ? [parsed.county] : []);
         onChange({ ...parsed, address1: parsed.address1 || value.address1 });
+        const g = window.google;
+        if (g?.maps?.places?.AutocompleteSessionToken) {
+          autocompleteSessionTokenRef.current = new g.maps.places.AutocompleteSessionToken();
+        }
       }
     );
   };
