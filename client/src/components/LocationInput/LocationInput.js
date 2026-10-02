@@ -258,8 +258,67 @@ export default function LocationStep({
   const autocompleteSessionTokenRef = useRef(null);
   const address1Ref = useRef(null);
   const addressAnchorRef = useRef(null);
+  const googleAutocompleteHostRef = useRef(null);
   const placesLibraryRef = useRef(null);
   const geocoderRef = useRef(null);
+
+  // Use Google's current autocomplete widget for the visible address search UI.
+  useEffect(() => {
+    if (!placesReady || !googleAutocompleteHostRef.current) return;
+    let autocomplete;
+    let handleSelect;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { PlaceAutocompleteElement } = await window.google.maps.importLibrary("places");
+        if (cancelled || !googleAutocompleteHostRef.current) return;
+
+        autocomplete = new PlaceAutocompleteElement();
+        autocomplete.placeholder = "Start typing an event address";
+        autocomplete.includedRegionCodes = [
+          String(restrictCountry || value.country || "US").toLowerCase(),
+        ];
+        autocomplete.style.width = "100%";
+
+        handleSelect = async ({ placePrediction }) => {
+          try {
+            const place = placePrediction.toPlace();
+            await place.fetchFields({
+              fields: ["addressComponents", "formattedAddress", "location"],
+            });
+            const parsed = parsePlace(place);
+            const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
+            if (area.states?.length && parsed.state && !area.states.includes(parsed.state)) {
+              setAddressLookupError("Tipsyverse currently accepts event locations in Indiana.");
+              return;
+            }
+            setCityOptions(parsed.city ? [parsed.city] : []);
+            setCountyOptions(parsed.county ? [parsed.county] : []);
+            onChange({ ...parsed, address1: parsed.address1 || place.formattedAddress || "" });
+            setAddressLookupError("");
+          } catch (error) {
+            console.error("Google Place selection failed:", error);
+            setAddressLookupError("We couldn't load that address. Please try again or enter it manually.");
+          }
+        };
+
+        autocomplete.addEventListener("gmp-select", handleSelect);
+        googleAutocompleteHostRef.current.replaceChildren(autocomplete);
+      } catch (error) {
+        console.error("Google PlaceAutocompleteElement failed to initialize:", error);
+        setAddressLookupError("Google address search is unavailable. You can enter the address manually.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (autocomplete && handleSelect) {
+        autocomplete.removeEventListener("gmp-select", handleSelect);
+      }
+      googleAutocompleteHostRef.current?.replaceChildren();
+    };
+  }, [placesReady, restrictCountry, value.country, serviceArea, onChange]);
 
   // Load the current Places library used by the Autocomplete Data API.
   useEffect(() => {
@@ -441,10 +500,28 @@ export default function LocationStep({
 
   return (
     <Stack spacing={2}>
+      <div>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            marginBottom: 6,
+          }}
+        >
+          Search Event Address
+        </div>
+        <div ref={googleAutocompleteHostRef} style={{ width: "100%" }} />
+        {!placesReady && (
+          <div style={{ fontSize: 12, marginTop: 6 }}>
+            Loading Google address search…
+          </div>
+        )}
+      </div>
+
       <div ref={addressAnchorRef} style={{ position: "relative" }}>
         <TextField
           fullWidth
-          label="Address Line 1"
+          label="Address Line 1 (manual fallback)"
           inputRef={address1Ref}
           value={value.address1 ?? value.formattedAddress ?? ""}
           onChange={onAddressInput}
