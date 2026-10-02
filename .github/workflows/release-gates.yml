@@ -92,8 +92,8 @@ jobs:
             sleep 2
           done
       - run: npm ci
-      - name: Apply production dependency security fixes
-        run: npm audit fix --omit=dev
+      - name: Apply dependency security fixes
+        run: npm audit fix
       - run: npm audit --omit=dev --audit-level=high
       - run: npm test
       - run: npm run test:integration
