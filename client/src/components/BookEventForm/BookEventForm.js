@@ -620,30 +620,6 @@ export default function BookEventForm({
   };
   const nowMinLocal = toLocalInput(new Date());
 
-  // one-time default for start/end
-  useEffect(() => {
-    const { start, end } = getNextWeekendWindow();
-    const defaultStartAt = toLocalInput(start);
-    const defaultEndAt = toLocalInput(end);
-
-    setForm((f) => {
-      if (f.startAt) return f;
-      return {
-        ...f,
-        startAt: defaultStartAt,
-        endAt: f.endAt || defaultEndAt,
-      };
-    });
-    setDateInputs((current) => ({
-      startAt: current.startAt || datePartsToInput(start),
-      endAt: current.endAt || datePartsToInput(end),
-    }));
-    setTimeInputs((current) => ({
-      startAt:
-        current.startAt || timeValueToInput(getTimePart(defaultStartAt)),
-      endAt: current.endAt || timeValueToInput(getTimePart(defaultEndAt)),
-    }));
-  }, []);
 
   const errors = useMemo(() => {
     const e = {};
@@ -680,18 +656,24 @@ export default function BookEventForm({
       if (!form.country) e.country = "Country is required.";
     }
     if (step === 2) {
-      if (!form.startAt) e.startAt = "Start is required.";
-      if (!form.endAt) e.endAt = "End is required.";
-      if (!parseDateOnlyParts(dateInputs.startAt)) e.startAt = "Enter arrival date as MM/DD/YYYY.";
-      if (!parseDateOnlyParts(dateInputs.endAt)) e.endAt = "Enter leaving date as MM/DD/YYYY.";
-      if (!parseTimeInput(timeInputs.startAt)) e.startAt = "Enter arrival time, such as 5:30 PM.";
-      if (!parseTimeInput(timeInputs.endAt)) e.endAt = "Enter leaving time, such as 9:30 PM.";
-      if (
-        form.startAt &&
-        form.endAt &&
-        new Date(form.endAt) <= new Date(form.startAt)
-      )
-        e.endAt = "End must be after start.";
+      const startDate = parseDateOnlyParts(dateInputs.startAt);
+      const endDate = parseDateOnlyParts(dateInputs.endAt);
+      const startTime = parseTimeInput(timeInputs.startAt);
+      const endTime = parseTimeInput(timeInputs.endAt);
+
+      if (!startDate) e.startAt = "Arrival date is required. Use MM/DD/YYYY.";
+      else if (!startTime) e.startAt = "Arrival time is required, such as 5:30 PM.";
+
+      if (!endDate) e.endAt = "Leave date is required. Use MM/DD/YYYY.";
+      else if (!endTime) e.endAt = "Leave time is required, such as 9:30 PM.";
+
+      if (startDate && startTime && endDate && endTime) {
+        const startValue = combineDateTime(datePartsToDatePart(startDate), startTime);
+        const endValue = combineDateTime(datePartsToDatePart(endDate), endTime);
+        if (new Date(endValue) <= new Date(startValue)) {
+          e.endAt = "Leave date and time must be after arrival date and time.";
+        }
+      }
     }
     if (step === 3) {
       if (!form.acceptedTerms) e.acceptedTerms = "You must agree before submitting.";
@@ -708,7 +690,7 @@ export default function BookEventForm({
 
     if (!hasErrors) {
       // The formatted date/time controls are the source of truth on this step.
-      // Commit even untouched default times before rendering the review.
+      // Commit the four required customer-entered timing values before review.
       if (step === 2) {
         const startDate = parseDateOnlyParts(dateInputs.startAt);
         const endDate = parseDateOnlyParts(dateInputs.endAt);
@@ -741,85 +723,53 @@ export default function BookEventForm({
       return n;
     });
   };
-  const updateDateTimePart = (field, part) => (e) => {
-    const value = e.target.value;
-    setForm((f) => {
-      const current = f[field] || nowMinLocal;
-      const date = part === "date" ? value : getDatePart(current);
-      const time = part === "time" ? value : getTimePart(current);
-      const nextValue = combineDateTime(date, time);
-      const next = { ...f, [field]: nextValue };
-
-      if (
-        field === "startAt" &&
-        (!f.endAt || new Date(f.endAt) <= new Date(nextValue))
-      ) {
-        next.endAt = plusHoursLocal(nextValue, 4);
-        setTimeInputs((currentInputs) => ({
-          ...currentInputs,
-          endAt: timeValueToInput(getTimePart(next.endAt)),
-        }));
-      }
-
-      return next;
-    });
-  };
   const updateDateTextPart = (field) => (e) => {
     const value = formatDateInput(e.target.value);
     setDateInputs((current) => ({ ...current, [field]: value }));
-    const parts = parseDateOnlyParts(value);
-    if (!parts) return;
 
-    setForm((f) => {
-      const current = f[field] || nowMinLocal;
-      const date = datePartsToDatePart(parts);
-      const time = getTimePart(current) || (field === "startAt" ? "17:00" : "21:00");
-      const nextValue = combineDateTime(date, time);
-      const next = { ...f, [field]: nextValue };
-
-      if (
-        field === "startAt" &&
-        (!f.endAt || new Date(f.endAt) <= new Date(nextValue))
-      ) {
-        const endValue = combineDateTime(date, "21:00");
-        next.endAt = endValue;
-        setDateInputs((currentInputs) => ({ ...currentInputs, endAt: value }));
-      }
-
-      return next;
-    });
+    const dateParts = parseDateOnlyParts(value);
+    const time = parseTimeInput(timeInputs[field]);
+    setForm((current) => ({
+      ...current,
+      [field]:
+        dateParts && time
+          ? combineDateTime(datePartsToDatePart(dateParts), time)
+          : "",
+    }));
   };
+
   const normalizeTimePart = (field) => () => {
     const parsed = parseTimeInput(timeInputs[field]);
     if (!parsed) return;
-    setForm((f) => {
-      const current = f[field] || nowMinLocal;
-      const snappedTime = snapTimeToInterval(parsed);
-      const nextValue = combineDateTime(getDatePart(current), snappedTime);
-      const next = { ...f, [field]: nextValue };
 
-      if (
-        field === "startAt" &&
-        (!f.endAt || new Date(f.endAt) <= new Date(nextValue))
-      ) {
-        next.endAt = plusHoursLocal(nextValue, 4);
-      }
-
-      return next;
-    });
     const snappedTime = snapTimeToInterval(parsed);
     setTimeInputs((current) => ({
       ...current,
       [field]: timeValueToInput(snappedTime),
+    }));
+
+    const dateParts = parseDateOnlyParts(dateInputs[field]);
+    setForm((current) => ({
+      ...current,
+      [field]: dateParts
+        ? combineDateTime(datePartsToDatePart(dateParts), snappedTime)
+        : "",
     }));
   };
 
   const updateTimeTextPart = (field) => (e) => {
     const displayValue = formatTimeInput(e.target.value);
     setTimeInputs((current) => ({ ...current, [field]: displayValue }));
+
     const parsed = parseTimeInput(displayValue);
-    if (!parsed) return;
-    updateDateTimePart(field, "time")({ target: { value: parsed } });
+    const dateParts = parseDateOnlyParts(dateInputs[field]);
+    setForm((current) => ({
+      ...current,
+      [field]:
+        parsed && dateParts
+          ? combineDateTime(datePartsToDatePart(dateParts), parsed)
+          : "",
+    }));
   };
 
   const handleSubmit = async () => {
