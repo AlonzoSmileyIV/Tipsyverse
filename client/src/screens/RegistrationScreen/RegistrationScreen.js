@@ -143,7 +143,7 @@ const RegistrationScreen = () => {
       email: form.email,
       username: form.username.trim(), // ✅ required now
       password: form.password,
-      birthday: form.dob,
+      birthday: dobToIso(form.dob),
       role: "regular",
     };
 
