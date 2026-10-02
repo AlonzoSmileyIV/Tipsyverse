@@ -38,11 +38,11 @@ export function useGooglePlaces(apiKey) {
 }
 
 export function parsePlace(place) {
-  const comps = place.address_components || [];
+  const comps = place.addressComponents || place.address_components || [];
   const get = (t, short = false) =>
-    comps.find((c) => c.types.includes(t))?.[
-      short ? "short_name" : "long_name"
-    ] || "";
+    comps.find((c) => c.types.includes(t))?.[short ? "shortText" : "longText"] ||
+    comps.find((c) => c.types.includes(t))?.[short ? "short_name" : "long_name"] ||
+    "";
 
   const streetNumber = get("street_number");
   const route = get("route");
@@ -56,12 +56,13 @@ export function parsePlace(place) {
   const address1 = [streetNumber, route].filter(Boolean).join(" ");
   const address2 = subpremise || "";
 
-  const lat = place.geometry?.location?.lat?.();
-  const lng = place.geometry?.location?.lng?.();
+  const location = place.location || place.geometry?.location;
+  const lat = typeof location?.lat === "function" ? location.lat() : location?.lat;
+  const lng = typeof location?.lng === "function" ? location.lng() : location?.lng;
 
   return {
-    placeId: place.place_id || "",
-    formattedAddress: place.formatted_address || "",
+    placeId: place.id || place.place_id || "",
+    formattedAddress: place.formattedAddress || place.formatted_address || "",
     address1,
     address2,
     city: locality || "",
@@ -235,39 +236,34 @@ export default function LocationStep({
   // Google refs
   const autocompleteSessionTokenRef = useRef(null);
   const address1Ref = useRef(null);
-  const svcRef = useRef(null); // AutocompleteService
-  const placesSvcRef = useRef(null); // PlacesService
-  const placesElRef = useRef(null);
+  const placesLibraryRef = useRef(null);
   const geocoderRef = useRef(null);
 
-  // Initialize the Google services used by our controlled autocomplete UI.
-  // Do not attach Google's legacy Autocomplete widget to the input: doing so
-  // creates a second prediction UI on top of the MUI field.
+  // Load the current Places library used by the Autocomplete Data API.
   useEffect(() => {
     if (!placesReady) return;
+    let cancelled = false;
 
-    const g = window.google;
-    if (!g?.maps?.places) return;
-
-    if (g.maps.places.AutocompleteService) {
-      svcRef.current ||= new g.maps.places.AutocompleteService();
-      if (g.maps.places.AutocompleteSessionToken) {
-        autocompleteSessionTokenRef.current ||= new g.maps.places.AutocompleteSessionToken();
+    (async () => {
+      try {
+        const places = await window.google.maps.importLibrary("places");
+        if (cancelled) return;
+        placesLibraryRef.current = places;
+        autocompleteSessionTokenRef.current ||= new places.AutocompleteSessionToken();
+        geocoderRef.current ||= new window.google.maps.Geocoder();
+      } catch (error) {
+        console.error("Google Places library failed to initialize:", error);
+        setAddressLookupError("Address suggestions are temporarily unavailable. You can enter the address manually.");
       }
-    }
-    if (g.maps.places.PlacesService) {
-      const el =
-        placesElRef.current ||
-        (placesElRef.current = document.createElement("div"));
-      placesSvcRef.current ||= new g.maps.places.PlacesService(el);
-    }
-    if (g.maps.Geocoder) {
-      geocoderRef.current ||= new g.maps.Geocoder();
-    }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [placesReady]);
 
-  // Fallback: fetch predictions while typing
-  const onAddressInput = (e) => {
+  // Fetch live predictions with Google's current Autocomplete Data API.
+  const onAddressInput = async (e) => {
     const v = e.target.value;
     onChange({
       address1: v,
@@ -276,44 +272,40 @@ export default function LocationStep({
       placeId: "",
       formattedAddress: "",
     });
-    if (!svcRef.current || !v) {
+    setAddressLookupError("");
+
+    const places = placesLibraryRef.current;
+    if (!places?.AutocompleteSuggestion || !v.trim()) {
       setPredictions([]);
       setShowPreds(false);
       return;
     }
-    // svcRef.current.getPlacePredictions(
-    //   {
-    //     input: v,
-    //     types: ["address"],
-    //     // componentRestrictions: { country: restrictCountry || value.country || "us" },
-    //   },
-    const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
-    const req = {
-      input: v.trim(),
-      types: ["address"],
-      componentRestrictions: {
-        country: String(restrictCountry || value.country || area.countries?.[0] || "US").toLowerCase(),
-      },
-      sessionToken: autocompleteSessionTokenRef.current || undefined,
-    };
-    if (area.center && area.radius) {
-      req.location = area.center;
-      req.radius = area.radius;
-    }
 
-    svcRef.current.getPlacePredictions(req, (preds, status) => {
-      const okStatus = window.google?.maps?.places?.PlacesServiceStatus?.OK || "OK";
-      if (status === okStatus && preds?.length) {
-        setPredictions(preds);
-        setShowPreds(true);
-      } else {
-        setPredictions([]);
-        setShowPreds(false);
-        if (status && status !== "ZERO_RESULTS") {
-          console.warn("Google Places autocomplete failed:", status);
-        }
-      }
-    });
+    try {
+      autocompleteSessionTokenRef.current ||= new places.AutocompleteSessionToken();
+      const country = String(
+        restrictCountry || value.country || SERVICE_AREAS[serviceArea]?.countries?.[0] || "US"
+      ).toLowerCase();
+
+      const { suggestions } =
+        await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: v.trim(),
+          includedRegionCodes: [country],
+          region: country,
+          sessionToken: autocompleteSessionTokenRef.current,
+        });
+
+      const placePredictions = (suggestions || [])
+        .map((suggestion) => suggestion.placePrediction)
+        .filter(Boolean);
+
+      setPredictions(placePredictions);
+      setShowPreds(placePredictions.length > 0);
+    } catch (error) {
+      console.error("Google Places autocomplete failed:", error);
+      setPredictions([]);
+      setShowPreds(false);
+    }
   };
 
   const geocodeTypedOrAutofilledAddress = () => {
@@ -365,33 +357,37 @@ export default function LocationStep({
     });
   };
 
-  // Fallback: pick a prediction and fetch full details
-  const pickPrediction = (p) => {
+  // Fetch the selected prediction with the current Place API.
+  const pickPrediction = async (prediction) => {
     setShowPreds(false);
     setPredictions([]);
-    if (!placesSvcRef.current) return;
-    placesSvcRef.current.getDetails(
-      {
-        placeId: p.place_id,
-        fields: [
-          "address_components",
-          "formatted_address",
-          "geometry",
-          "place_id",
-        ],
-      },
-      (place, status) => {
-        if (status !== "OK" || !place) return;
-        const parsed = parsePlace(place);
-        setCityOptions(parsed.city ? [parsed.city] : []);
-        setCountyOptions(parsed.county ? [parsed.county] : []);
-        onChange({ ...parsed, address1: parsed.address1 || value.address1 });
-        const g = window.google;
-        if (g?.maps?.places?.AutocompleteSessionToken) {
-          autocompleteSessionTokenRef.current = new g.maps.places.AutocompleteSessionToken();
-        }
+
+    try {
+      const place = prediction.toPlace();
+      await place.fetchFields({
+        fields: ["addressComponents", "formattedAddress", "location"],
+      });
+
+      const parsed = parsePlace(place);
+      const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
+      if (area.states?.length && parsed.state && !area.states.includes(parsed.state)) {
+        setAddressLookupError("Tipsyverse currently accepts event locations in Indiana.");
+        return;
       }
-    );
+
+      setCityOptions(parsed.city ? [parsed.city] : []);
+      setCountyOptions(parsed.county ? [parsed.county] : []);
+      onChange({ ...parsed, address1: parsed.address1 || value.address1 });
+      setAddressLookupError("");
+
+      const places = placesLibraryRef.current;
+      if (places?.AutocompleteSessionToken) {
+        autocompleteSessionTokenRef.current = new places.AutocompleteSessionToken();
+      }
+    } catch (error) {
+      console.error("Google Place details failed:", error);
+      setAddressLookupError("We couldn't load that address. Please try another suggestion or enter it manually.");
+    }
   };
 
   const handleCountryChange = (e) => {
@@ -438,7 +434,7 @@ export default function LocationStep({
               : addressLookupError ||
                 "Search to auto-fill, or enter the address manually. Map coordinates are optional."
           }
-          inputProps={{ autoComplete: "street-address", id: "address-line-1" }}
+          inputProps={{ autoComplete: "off", id: "address-line-1", name: "event-location-search" }}
         />
         {showPreds && predictions.length > 0 && (
           <div
@@ -457,12 +453,12 @@ export default function LocationStep({
           >
             {predictions.map((p) => (
               <div
-                key={p.place_id}
+                key={p.placeId || p.text?.text || p.text?.toString()}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pickPrediction(p)}
                 style={{ padding: "10px 12px", cursor: "pointer" }}
               >
-                {p.description}
+                {p.text?.text || p.text?.toString() || ""}
               </div>
             ))}
           </div>
