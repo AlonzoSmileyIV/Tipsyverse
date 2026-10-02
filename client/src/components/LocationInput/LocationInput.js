@@ -230,6 +230,7 @@ export default function LocationStep({
   const [countyOptions, setCountyOptions] = useState([]);
   const [predictions, setPredictions] = useState([]);
   const [showPreds, setShowPreds] = useState(false);
+  const [addressLookupError, setAddressLookupError] = useState("");
 
   // Google refs
   const address1Ref = useRef(null);
@@ -310,6 +311,7 @@ export default function LocationStep({
     setTouched?.((current) => ({ ...current, address1: true }));
     const typedAddress = String(address1Ref.current?.value || value.address1 || "").trim();
     if (!typedAddress || !geocoderRef.current) return;
+    setAddressLookupError("");
     if (
       Number.isFinite(value.latitude) &&
       Number.isFinite(value.longitude) &&
@@ -328,13 +330,29 @@ export default function LocationStep({
       .filter(Boolean)
       .join(", ");
 
-    geocoderRef.current.geocode({ address }, (results, status) => {
+    geocoderRef.current.geocode(
+      {
+        address,
+        componentRestrictions: {
+          country: String(restrictCountry || value.country || "US").toUpperCase(),
+        },
+      },
+      (results, status) => {
       const place = results?.[0];
-      if (status !== "OK" || !place) return;
+      if (status !== "OK" || !place) {
+        setAddressLookupError("We couldn't find that address. Choose a suggestion or enter City, State, and ZIP manually.");
+        return;
+      }
       const parsed = parsePlace(place);
+      const area = SERVICE_AREAS[serviceArea] || SERVICE_AREAS.indiana;
+      if (area.states?.length && parsed.state && !area.states.includes(parsed.state)) {
+        setAddressLookupError("Tipsyverse currently accepts event locations in Indiana.");
+        return;
+      }
       setCityOptions(parsed.city ? [parsed.city] : []);
       setCountyOptions(parsed.county ? [parsed.county] : []);
       onChange({ ...parsed, address1: parsed.address1 || typedAddress });
+      setAddressLookupError("");
     });
   };
 
@@ -399,11 +417,12 @@ export default function LocationStep({
           value={value.address1 ?? value.formattedAddress ?? ""}
           onChange={onAddressInput}
           onBlur={geocodeTypedOrAutofilledAddress}
-          error={!!showError("address1")}
+          error={!!showError("address1") || !!addressLookupError}
           helperText={
             showError("address1")
               ? errors.address1
-              : "Search to auto-fill, or enter the address manually. Map coordinates are optional."
+              : addressLookupError ||
+                "Search to auto-fill, or enter the address manually. Map coordinates are optional."
           }
           inputProps={{ autoComplete: "street-address", id: "address-line-1" }}
         />
