@@ -11,6 +11,7 @@ import {
 
 import { useNavigate } from "react-router-dom";
 import { navigateOrReload } from "../../utils/navigateOrReload";
+import LockRoundedIcon from "@mui/icons-material/LockRounded";
 
 
 const DrinkCard = ({ drink, rank, userAllergies = [] }) => {
@@ -119,20 +120,42 @@ const DrinkCard = ({ drink, rank, userAllergies = [] }) => {
           {rank}
         </Box>
       )}
-      <CardMedia
-        component="img"
-        image={
-          drink.photo ||
-          "https://res.cloudinary.com/dtbgyeyjq/image/upload/v1747893721/default/drink.png"
-        }
-        alt={drink.name}
-        sx={{
-          height: 160, // ✅ fixed media height
-          objectFit: "cover",
-          borderTopLeftRadius: 16,
-          borderTopRightRadius: 16,
-        }}
-      />
+      {drink.isLocked ? (
+        <Box
+          sx={{
+            height: 160,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 1,
+            bgcolor: "grey.900",
+            color: "common.white",
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+          }}
+        >
+          <LockRoundedIcon sx={{ fontSize: 52 }} />
+          <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: 1.2 }}>
+            TIPSYVERSE+ ORIGINAL
+          </Typography>
+        </Box>
+      ) : (
+        <CardMedia
+          component="img"
+          image={
+            drink.photo ||
+            "https://res.cloudinary.com/dtbgyeyjq/image/upload/v1747893721/default/drink.png"
+          }
+          alt={drink.name}
+          sx={{
+            height: 160,
+            objectFit: "cover",
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+          }}
+        />
+      )}
       <CardContent
         sx={{
           flex: 1, // take remaining space
@@ -167,7 +190,7 @@ const DrinkCard = ({ drink, rank, userAllergies = [] }) => {
           fullWidth
          
        >
-          View Drink
+          {drink.isLocked ? "Unlock Recipe" : "View Drink"}
        </Button>
        
       </CardContent>

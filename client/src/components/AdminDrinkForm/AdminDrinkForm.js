@@ -389,6 +389,7 @@ const AdminDrinkForm = ({
     video: drink?.video || null,
     videoPublicId: drink?.videoPublicId || null,
     isAlcoholic: drink?.isAlcoholic ?? true,
+    accessLevel: drink?.accessLevel || "public",
     glass: drink?.glass ?? null, // null is better for Autocomplete default
     taste: drink?.taste || [],
     categories: drink?.categories || [],
@@ -808,6 +809,7 @@ const AdminDrinkForm = ({
           video: null,
           videoPublicId: null,
           isAlcoholic: true,
+          accessLevel: "public",
           glass: "",
           taste: [],
           categories: [],
@@ -1016,6 +1018,20 @@ const AdminDrinkForm = ({
               />
             }
             label="Contains Alcohol"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={formData.accessLevel === "subscriber"}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    accessLevel: e.target.checked ? "subscriber" : "public",
+                  })
+                }
+              />
+            }
+            label="Lock for Tipsyverse+ subscribers"
           />
         </Box>
       )}

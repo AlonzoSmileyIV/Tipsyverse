@@ -23,6 +23,13 @@ import {
 
 import XLSX from "xlsx";
 import mongoose from "mongoose";
+import { serializeDrinkForViewer, serializeDrinksForViewer } from "../../utils/libs/drinkAccess.js";
+
+async function resolveDrinkViewer(req) {
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) return null;
+  return User.findById(userId).select("role subscription").lean();
+}
 
 const escapeHtml = (value = "") =>
   String(value)
@@ -1012,6 +1019,7 @@ const drinkCtrl = {
         tools,
         garnishes,
         isAlcoholic,
+        accessLevel = "public",
         ingredients,
         instructions,
         datePublishStarts,
@@ -1119,6 +1127,7 @@ const drinkCtrl = {
         tools: normalizeStringArray(tools),
         garnishes: normalizeStringArray(garnishes),
         isAlcoholic,
+        accessLevel,
         ingredients: cleanIngredients,
         instructions,
         dates: {
@@ -1189,7 +1198,8 @@ const drinkCtrl = {
           .status(404)
           .json({ success: false, message: "Drinks not found." });
       }
-      return res.status(200).json({ success: true, data: drinks });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinksForViewer(drinks, viewer) });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }
@@ -1232,7 +1242,8 @@ const drinkCtrl = {
           .status(404)
           .json({ success: false, message: "Drink not found." });
       }
-      return res.status(200).json({ success: true, data: drink });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinkForViewer(drink, viewer) });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }
@@ -1252,7 +1263,8 @@ const drinkCtrl = {
           .status(404)
           .json({ success: false, message: "Drink not found." });
       }
-      return res.status(200).json({ success: true, data: drink });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinkForViewer(drink, viewer) });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }
@@ -1261,7 +1273,7 @@ const drinkCtrl = {
     try {
       const { slug } = req.params;
       const drink = await Drink.findOne({ slug })
-        .select("name slug description photo")
+        .select("name slug description photo accessLevel")
         .lean();
 
       const appBase =
@@ -1279,10 +1291,11 @@ const drinkCtrl = {
       }
 
       const title = `${drink.name} | Tipsyverse`;
-      const description = "Enjoy this drink!";
+      const isLockedPreview = drink.accessLevel === "subscriber";
+      const description = isLockedPreview ? "Exclusive Tipsyverse+ Original recipe." : "Enjoy this drink!";
       const image = cloudinaryPreviewUrl(
         absoluteUrl(
-          drink.photo ||
+          (!isLockedPreview && drink.photo) ||
             "https://res.cloudinary.com/dtbgyeyjq/image/upload/c_fill,w_1200,h_630,g_auto,f_jpg,q_auto/v1747893721/default/images/drink.png",
           shareBase
         )
@@ -1460,7 +1473,8 @@ const drinkCtrl = {
         },
       ]);
 
-      res.status(200).json({ success: true, data: trendingDrinks });
+      const viewer = await resolveDrinkViewer(req);
+      res.status(200).json({ success: true, data: serializeDrinksForViewer(trendingDrinks, viewer) });
     } catch (error) {
       console.error("🔥 Trending drinks error:", error);
       res
@@ -1825,7 +1839,7 @@ const drinkCtrl = {
 
       return res.status(200).json({
         success: true,
-        data: recent,
+        data: serializeDrinksForViewer(recent, await resolveDrinkViewer(req)),
       });
     } catch (err) {
       console.error("mostRecentDrinks failed:", err);
@@ -1852,7 +1866,8 @@ const drinkCtrl = {
         .limit(Number(limit))
         .lean();
 
-      return res.status(200).json({ success: true, data: drinks });
+      const viewer = await resolveDrinkViewer(req);
+      return res.status(200).json({ success: true, data: serializeDrinksForViewer(drinks, viewer) });
     } catch (e) {
       return res
         .status(500)

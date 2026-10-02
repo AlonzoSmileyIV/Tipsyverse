@@ -113,6 +113,15 @@ const drinkSchema = new mongoose.Schema(
       default: true,
     },
 
+    // Controls recipe visibility. Premium drinks remain discoverable, but
+    // protected recipe/photo fields are redacted unless the viewer has access.
+    accessLevel: {
+      type: String,
+      enum: ["public", "subscriber"],
+      default: "public",
+      index: true,
+    },
+
     ingredients: [ingredientSchema],
 
     instructions: [

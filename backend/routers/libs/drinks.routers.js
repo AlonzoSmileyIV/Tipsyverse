@@ -14,13 +14,13 @@ drinkRouter.post('/upload-video', auth, authEmployee, uploadVideo.single('video'
 drinkRouter.post('/create', auth, authEmployee, drinkCtrl.createDrink);
 
 // -------- READ --------
-drinkRouter.get('/', drinkCtrl.viewAllDrinks);
-drinkRouter.get('/top-trending', drinkCtrl.viewTopTrending); // ✅ Place BEFORE dynamic routes
-drinkRouter.get('/by-category', drinkCtrl.viewDrinksByCategory);
-drinkRouter.get('/recent', drinkCtrl.viewMostRecentDrinks);
+drinkRouter.get('/', optionalAuth, drinkCtrl.viewAllDrinks);
+drinkRouter.get('/top-trending', optionalAuth, drinkCtrl.viewTopTrending); // ✅ Place BEFORE dynamic routes
+drinkRouter.get('/by-category', optionalAuth, drinkCtrl.viewDrinksByCategory);
+drinkRouter.get('/recent', optionalAuth, drinkCtrl.viewMostRecentDrinks);
 drinkRouter.get('/recommended', auth, drinkCtrl.viewRecommendedDrinksForUser);
-drinkRouter.get("/id/:id", drinkCtrl.viewDrink);
-drinkRouter.get('/slug/:slug', drinkCtrl.viewDrinkbySlug);
+drinkRouter.get("/id/:id", optionalAuth, drinkCtrl.viewDrink);
+drinkRouter.get('/slug/:slug', optionalAuth, drinkCtrl.viewDrinkbySlug);
 
 // -------- UPDATE --------
 drinkRouter.put('/:id', auth, authEmployee, drinkCtrl.updateDrink);

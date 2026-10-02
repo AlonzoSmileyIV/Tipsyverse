@@ -34,6 +34,7 @@ import {
   RestaurantMenuOutlined as RestaurantMenuIcon,
   FormatListNumberedOutlined as FormatListNumberIcon,
   InfoOutlined as InfoIcon,
+  LockRounded as LockRoundedIcon,
 } from "@mui/icons-material";
 import HelmetHeader from "../../components/HelmetHeader/Helmet";
 import CommentSection from "../../components/CommentSection/CommentSection";
@@ -550,6 +551,56 @@ const DrinkDetailScreen = () => {
   };
 
   if (!drink) return null;
+
+  if (drink.isLocked) {
+    return (
+      <PublicLayout>
+        <Box
+          sx={{
+            minHeight: "65vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            px: 2,
+            py: 8,
+          }}
+        >
+          <Paper
+            elevation={0}
+            sx={{
+              width: "100%",
+              maxWidth: 560,
+              p: { xs: 3, sm: 5 },
+              textAlign: "center",
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 4,
+            }}
+          >
+            <LockRoundedIcon sx={{ fontSize: 72, mb: 2, color: "text.primary" }} />
+            <Typography variant="overline" sx={{ fontWeight: 800, letterSpacing: 1.4 }}>
+              TIPSYVERSE ORIGINAL
+            </Typography>
+            <Typography variant="h4" sx={{ fontWeight: 800, mt: 1 }}>
+              {drink.name}
+            </Typography>
+            <Typography color="text.secondary" sx={{ mt: 2 }}>
+              This exclusive recipe is available with Tipsyverse+. Unlock the full recipe,
+              measurements, instructions, and original cocktail collection for $5/month.
+            </Typography>
+            <Button
+              variant="contained"
+              size="large"
+              sx={{ mt: 4, bgcolor: "var(--primary-color)" }}
+              onClick={() => navigateOrReload(navigate, "/subscription")}
+            >
+              Unlock Tipsyverse+ · $5/month
+            </Button>
+          </Paper>
+        </Box>
+      </PublicLayout>
+    );
+  }
 
   return (
     <PublicLayout>
