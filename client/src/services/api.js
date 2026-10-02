@@ -57,7 +57,7 @@ const requestRefreshedAccessToken = async (attempt = 0) => {
     return await axios.post(
       `${process.env.REACT_APP_BASE_URL}/users/refresh-token`,
       {},
-      { withCredentials: true, __isRefreshCall: true }
+      { withCredentials: true, __isRefreshCall: true, timeout: 10000 }
     );
   } catch (error) {
     const isRotationOverlap =
