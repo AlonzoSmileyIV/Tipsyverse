@@ -105,9 +105,9 @@ export const OVERRIDE_REASONS = [
 ];
 
 export const CANCEL_REASONS = [
-  { value: "date_conflict", label: "Date conflict / scheduling change" },
+  { value: "date_changed", label: "Date conflict / scheduling change" },
   { value: "budget", label: "Budget / pricing concerns" },
-  { value: "found_other_vendor", label: "Booked another vendor" },
+  { value: "other_vendor", label: "Booked another vendor" },
   { value: "no_longer_needed", label: "Event postponed / no longer needed" },
   { value: "not_responding", label: "Client not responding" }, // ✅ you asked for this
   { value: "nonpayment", label: "Unpaid balance / nonpayment" },
