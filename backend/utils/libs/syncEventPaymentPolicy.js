@@ -60,7 +60,7 @@ export const syncEventPaymentPolicy = async (
   if (!mongoose.isValidObjectId(eventId)) return null;
 
   const event = await Event.findById(eventId)
-    .select("startAt timezone location.timezone createdAt updatedAt status payment billingOverride cancellation cancelReason")
+    .select("startAt timezone location.timezone createdAt updatedAt status payment billingOverride cancellation cancelReason __v")
     .lean();
   if (!event) return null;
 
