@@ -1,20 +1,32 @@
 import {
   EventModel as Event,
   PaymentModel as Payment,
+  PaymentMethodModel as PaymentMethod,
   PaymentRequestModel as PaymentRequest,
+  UserModel as User,
 } from "../../models/index.js";
-import { actorFromReq, shallowDiff } from "../../utils/index.js";
+import { actorFromReq, applyCouponToTotal, computeEventTotals, lookupCoupon, shallowDiff } from "../../utils/index.js";
 import Stripe from "stripe";
 import mongoose from "mongoose";
 import { syncEventPaymentPolicy } from "../../utils/libs/syncEventPaymentPolicy.js";
 import { getEventPaymentTotal } from "../../utils/libs/eventSummary.js";
+import { logger } from "../../utils/libs/logger.js";
 import {
   assertActivePaymentRequest,
   assertCollectibleEvent,
   eventBalanceSnapshot,
   netRecordedPayments,
 } from "../../utils/libs/paymentLedger.js";
+import {
+  getSavedCardCollection,
+  savedCardIdempotencyKey,
+} from "../../utils/libs/stripeEventPayments.js";
+import { resolveEventMainContact } from "../../utils/libs/eventMainContact.js";
 
+let stripeFactory = (secret) => new Stripe(secret);
+export const setPaymentStripeFactoryForTests = (factory) => {
+  stripeFactory = factory || ((secret) => new Stripe(secret));
+};
 const stripeClient = () => {
   if (
     String(process.env.STRIPE_ENABLED).toLowerCase() !== "true" ||
@@ -22,10 +34,17 @@ const stripeClient = () => {
   ) {
     return null;
   }
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
+  return stripeFactory(process.env.STRIPE_SECRET_KEY);
 };
 
 const isStaff = (user) => ["admin", "employee"].includes(user?.role);
+export const canApplyStripePaymentStatus = (currentStatus, nextStatus) => {
+  const current = String(currentStatus || "");
+  const next = String(nextStatus || "");
+  if (next === "recorded") return current !== "refunded";
+  if (["recorded", "refunded"].includes(current)) return false;
+  return ["processing", "requires_action", "failed"].includes(next);
+};
 
 const canViewEvent = async (user, eventId) => {
   if (isStaff(user)) return true;
@@ -56,6 +75,220 @@ const populatePayment = (query) =>
     .populate("editedBy", "fullName email role");
 
 const paymentCtrl = {
+  chargeSavedPaymentMethod: async (req, res) => {
+    const attemptContext = {};
+    try {
+      if (!isStaff(req.user)) return res.status(403).json({ message: "Not allowed" });
+      if (req.body?.customerAuthorized !== true) {
+        return res.status(400).json({
+          message: "Confirm the customer's authorization before charging a saved card.",
+        });
+      }
+      const stripe = stripeClient();
+      if (!stripe) return res.status(503).json({ message: "Card payments are unavailable." });
+
+      const event = await Event.findById(req.body?.eventId).lean();
+      if (!event) return res.status(404).json({ message: "Event not found" });
+      assertCollectibleEvent(event);
+      const owner = await resolveEventMainContact(event, {
+        includeStripeCustomer: true,
+      });
+      if (!owner?.stripeCustomerId) {
+        return res.status(409).json({ message: "The main contact does not have a Stripe customer account." });
+      }
+      const method = await PaymentMethod.findOne({
+        _id: req.body?.paymentMethodId,
+        owner: owner._id,
+        customerId: owner.stripeCustomerId,
+        provider: "stripe",
+        status: "active",
+      }).lean();
+      if (!method) return res.status(403).json({ message: "The selected payment method does not belong to the main contact." });
+
+      const computed = computeEventTotals({
+        ...event,
+        pricing: {
+          ...(event.pricing || {}),
+          publicFee: event.private === false ? event.pricing?.publicFee || 0 : 0,
+        },
+      });
+      const coupon = await lookupCoupon(req.body?.couponCode);
+      const { discountedTotal } = applyCouponToTotal(Number(computed.total) || 0, coupon);
+      const total = event.billingOverride?.enabled
+        ? Math.round((Number(event.billingOverride.amount) || 0) * 100) / 100
+        : Math.round((discountedTotal + Math.max(0, Number(event.options?.procurementActualCost) || 0)) * 100) / 100;
+      const paid = await netRecordedPayments(event._id);
+      const mode = req.body?.collectionType === "balance" ? "balance" : "initial";
+      const { collectible } = getSavedCardCollection({
+        total,
+        paid,
+        startAt: event.startAt,
+        collectionType: mode,
+      });
+      const amount = Math.round(collectible * 100);
+      if (!Number.isSafeInteger(amount) || amount < 50) {
+        return res.status(409).json({ message: "No collectible saved-card balance remains." });
+      }
+
+      const ledgerVersion = Number(event.payment?.ledgerVersion) || 0;
+      // Every collection attempt against the same ledger snapshot shares one
+      // key. Concurrent initial/balance requests therefore cannot both charge
+      // the balance they observed before either payment settled.
+      const idempotencyKey = savedCardIdempotencyKey(
+        event._id,
+        ledgerVersion
+      );
+      Object.assign(attemptContext, {
+        eventId: event._id,
+        amount: amount / 100,
+        ownerId: owner._id,
+        customerId: owner.stripeCustomerId,
+        collectedBy: req.user.id,
+        ledgerVersion,
+      });
+      const intent = await stripe.paymentIntents.create(
+        {
+          amount,
+          currency: "usd",
+          customer: owner.stripeCustomerId,
+          payment_method: method.externalId,
+          confirm: true,
+          off_session: true,
+          receipt_email: event.contact?.email || owner.email,
+          metadata: {
+            eventId: String(event._id),
+            paymentMethodRecordId: String(method._id),
+            collectionType: mode,
+            ledgerVersion: String(ledgerVersion),
+            customerAuthorizedBy: String(req.user.id),
+          },
+        },
+        { idempotencyKey }
+      );
+      const status = intent.status === "succeeded"
+        ? "recorded"
+        : intent.status === "processing"
+        ? "processing"
+        : intent.status === "requires_action"
+        ? "requires_action"
+        : "failed";
+      const payment = await Payment.findOneAndUpdate(
+        { "stripe.paymentIntentId": intent.id },
+        {
+          $setOnInsert: {
+            event: event._id,
+            amount: amount / 100,
+            method: "stripe",
+            receivedAt: new Date(),
+            collectedBy: req.user.id,
+            customerAuthorizedAt: new Date(),
+            customerAuthorizedBy: req.user.id,
+          },
+          $set: {
+            status,
+            reference: intent.latest_charge || intent.id,
+            "stripe.paymentIntentId": intent.id,
+            "stripe.chargeId": intent.latest_charge || "",
+            "stripe.customerId": intent.customer || owner.stripeCustomerId,
+          },
+        },
+        { upsert: true, new: true }
+      );
+      if (status === "recorded") {
+        await Event.updateOne(
+          {
+            _id: event._id,
+            $or: [
+              { "payment.ledgerVersion": ledgerVersion },
+              ...(ledgerVersion === 0
+                ? [
+                    { "payment.ledgerVersion": null },
+                    { "payment.ledgerVersion": { $exists: false } },
+                  ]
+                : []),
+            ],
+          },
+          { $inc: { "payment.ledgerVersion": 1 } }
+        );
+        await syncEventPaymentPolicy(event._id);
+        return res.status(201).json({ success: true, data: payment, paymentStatus: status });
+      }
+      if (status === "requires_action") {
+        return res.status(409).json({
+          code: "PAYMENT_REQUIRES_ACTION",
+          message: "Payment could not be processed: customer authentication is required. Send a secure payment link.",
+          paymentStatus: status,
+        });
+      }
+      return res.status(202).json({ success: true, data: payment, paymentStatus: status });
+    } catch (error) {
+      const declineCode = error?.decline_code || error?.raw?.decline_code || error?.code;
+      const safeReason =
+        declineCode === "insufficient_funds" ? "insufficient funds" :
+        declineCode === "expired_card" ? "expired card" :
+        error?.type === "StripeCardError" ? "card declined" :
+        "payment temporarily unavailable";
+      const stripeIntent = error?.payment_intent || error?.raw?.payment_intent;
+      const paymentIntentId =
+        typeof stripeIntent === "string" ? stripeIntent : stripeIntent?.id;
+      if (paymentIntentId && attemptContext.eventId) {
+        await Payment.findOneAndUpdate(
+          { "stripe.paymentIntentId": paymentIntentId },
+          {
+            $setOnInsert: {
+              event: attemptContext.eventId,
+              amount: attemptContext.amount,
+              method: "stripe",
+              receivedAt: new Date(),
+              collectedBy: attemptContext.collectedBy,
+              customerAuthorizedAt: new Date(),
+              customerAuthorizedBy: attemptContext.collectedBy,
+            },
+            $set: {
+              status: "failed",
+              reference: paymentIntentId,
+              failureCode: declineCode || "payment_failed",
+              failureMessage: safeReason,
+              "stripe.paymentIntentId": paymentIntentId,
+              "stripe.customerId": attemptContext.customerId || "",
+            },
+          },
+          { upsert: true }
+        ).then(async () => {
+          await Event.updateOne(
+            {
+              _id: attemptContext.eventId,
+              $or: [
+                { "payment.ledgerVersion": attemptContext.ledgerVersion },
+                ...(attemptContext.ledgerVersion === 0
+                  ? [
+                      { "payment.ledgerVersion": null },
+                      { "payment.ledgerVersion": { $exists: false } },
+                    ]
+                  : []),
+              ],
+            },
+            { $inc: { "payment.ledgerVersion": 1 } }
+          );
+        }).catch((persistenceError) => {
+          logger.error("failed_payment_attempt_persistence_failed", {
+            error: persistenceError?.message,
+            eventId: attemptContext.eventId,
+          });
+        });
+      }
+      logger.error("saved_card_payment_failed", {
+        error: error?.message,
+        code: declineCode,
+        eventId: req.body?.eventId,
+      });
+      return res.status(error.statusCode || 402).json({
+        code: "PAYMENT_FAILED",
+        message: `Payment could not be processed: ${safeReason}.`,
+      });
+    }
+  },
+
   createStripePaymentIntent: async (req, res) => {
     try {
       const stripe = stripeClient();
@@ -127,6 +360,57 @@ const paymentCtrl = {
     }
 
     try {
+      if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
+        const session = event.data.object;
+        const requestId = session.metadata?.paymentRequestId || session.client_reference_id;
+        const requestDoc = await PaymentRequest.findById(requestId).lean();
+        if (
+          requestDoc &&
+          String(requestDoc.event) === String(session.metadata?.eventId) &&
+          session.payment_status === "paid"
+        ) {
+          await Payment.updateOne(
+            { "stripe.checkoutSessionId": session.id },
+            {
+              $setOnInsert: {
+                event: requestDoc.event,
+                paymentRequest: requestDoc._id,
+                amount: Number(session.amount_total || 0) / 100,
+                method: "stripe",
+                reference: session.payment_intent || session.id,
+                receivedAt: new Date(),
+              },
+              $set: {
+                status: "recorded",
+                "stripe.checkoutSessionId": session.id,
+                "stripe.paymentIntentId": session.payment_intent || "",
+                "stripe.customerId": session.customer || "",
+              },
+            },
+            { upsert: true }
+          );
+          await PaymentRequest.updateOne(
+            { _id: requestDoc._id },
+            {
+              $set: {
+                status: "completed",
+                stripePaymentIntentId: session.payment_intent || "",
+              },
+            }
+          );
+          await syncEventPaymentPolicy(requestDoc.event);
+        }
+      }
+
+      if (["checkout.session.async_payment_failed", "checkout.session.expired"].includes(event.type)) {
+        const session = event.data.object;
+        const requestId = session.metadata?.paymentRequestId || session.client_reference_id;
+        await PaymentRequest.updateOne(
+          { _id: requestId, status: "sent" },
+          { $set: { status: event.type === "checkout.session.expired" ? "expired" : "failed" } }
+        );
+      }
+
       if (event.type === "payment_intent.succeeded") {
         const intent = event.data.object;
         // A processor success is real money even if cancellation/repricing won
@@ -135,13 +419,14 @@ const paymentCtrl = {
         const paymentRequest = await PaymentRequest.findById(
           intent.metadata?.paymentRequestId
         ).lean();
-        if (paymentRequest && String(paymentRequest.event) === intent.metadata?.eventId) {
+        const reconciledEventId = paymentRequest?.event || intent.metadata?.eventId;
+        if (reconciledEventId && (!paymentRequest || String(paymentRequest.event) === intent.metadata?.eventId)) {
           await Payment.updateOne(
             { "stripe.paymentIntentId": intent.id },
             {
               $setOnInsert: {
-                event: paymentRequest.event,
-                paymentRequest: paymentRequest._id,
+                event: reconciledEventId,
+                ...(paymentRequest ? { paymentRequest: paymentRequest._id } : {}),
                 amount: intent.amount_received / 100,
                 method: "stripe",
                 reference: intent.latest_charge || intent.id,
@@ -156,12 +441,54 @@ const paymentCtrl = {
             },
             { upsert: true }
           );
-          await PaymentRequest.updateOne(
-            { _id: paymentRequest._id },
-            { $set: { status: "completed" } }
-          );
-          await syncEventPaymentPolicy(paymentRequest.event);
+          if (paymentRequest) {
+            await PaymentRequest.updateOne(
+              { _id: paymentRequest._id },
+              { $set: { status: "completed" } }
+            );
+          }
+          const intentLedgerVersion = Number(intent.metadata?.ledgerVersion);
+          if (!paymentRequest && Number.isSafeInteger(intentLedgerVersion)) {
+            await Event.updateOne(
+              {
+                _id: reconciledEventId,
+                $or: [
+                  { "payment.ledgerVersion": intentLedgerVersion },
+                  ...(intentLedgerVersion === 0
+                    ? [
+                        { "payment.ledgerVersion": null },
+                        { "payment.ledgerVersion": { $exists: false } },
+                      ]
+                    : []),
+                ],
+              },
+              { $inc: { "payment.ledgerVersion": 1 } }
+            );
+          }
+          await syncEventPaymentPolicy(reconciledEventId);
         }
+      }
+
+      if (["payment_intent.processing", "payment_intent.requires_action", "payment_intent.payment_failed", "payment_intent.canceled"].includes(event.type)) {
+        const intent = event.data.object;
+        const status = event.type === "payment_intent.processing"
+          ? "processing"
+          : event.type === "payment_intent.requires_action"
+          ? "requires_action"
+          : "failed";
+        await Payment.updateOne(
+          {
+            "stripe.paymentIntentId": intent.id,
+            status: { $nin: ["recorded", "refunded"] },
+          },
+          {
+            $set: {
+              status,
+              failureCode: intent.last_payment_error?.decline_code || intent.last_payment_error?.code || "",
+              failureMessage: intent.last_payment_error?.message || "",
+            },
+          }
+        );
       }
 
       if (event.type === "charge.refunded") {
@@ -183,6 +510,37 @@ const paymentCtrl = {
         );
         if (refundedPayment?.event) {
           await syncEventPaymentPolicy(refundedPayment.event);
+        }
+      }
+      if (["refund.updated", "refund.failed"].includes(event.type)) {
+        const refund = event.data.object;
+        const payment = await Payment.findOne({
+          "refunds.providerRefundId": refund.id,
+        });
+        if (payment) {
+          const row = payment.refunds.find(
+            (item) => item.providerRefundId === refund.id
+          );
+          if (row) {
+            row.status = refund.status === "succeeded"
+              ? "succeeded"
+              : refund.status === "failed" || event.type === "refund.failed"
+              ? "failed"
+              : "pending";
+            row.failureReason = refund.failure_reason || "";
+          }
+          if (row?.status === "succeeded") {
+            payment.refundedAmount = Math.round(
+              payment.refunds
+                .filter((item) => item.status === "succeeded")
+                .reduce((sum, item) => sum + Number(item.amount || 0), 0) * 100
+            ) / 100;
+            payment.status = payment.refundedAmount >= Number(payment.amount) - 0.001
+              ? "refunded"
+              : "recorded";
+          }
+          await payment.save();
+          await syncEventPaymentPolicy(payment.event);
         }
       }
       return res.json({ received: true });
@@ -221,7 +579,7 @@ const paymentCtrl = {
       }
 
       const eventDoc = await Event.findById(event)
-        .select("_id status payment pricing")
+        .select("_id status payment pricing billingOverride")
         .lean();
       if (!eventDoc) return res.status(404).json({ message: "Event not found" });
       assertCollectibleEvent(eventDoc);
@@ -524,7 +882,9 @@ const paymentCtrl = {
 
       if (doc.status === "recorded") {
         const [eventDoc, paidRows] = await Promise.all([
-          Event.findById(doc.event).select("payment.total").lean(),
+          Event.findById(doc.event)
+            .select("payment.total billingOverride")
+            .lean(),
           Payment.aggregate([
             {
               $match: {
@@ -636,13 +996,24 @@ const paymentCtrl = {
 
   refundPayment: async (req, res) => {
     try {
-      if (!isStaff(req.user)) return res.status(403).json({ message: "Not allowed" });
+      if (req.user?.role !== "admin") {
+        return res.status(403).json({
+          message: "Administrator permission is required to issue refunds.",
+        });
+      }
 
       const doc = await Payment.findById(req.params.id);
       if (!doc) return res.status(404).json({ message: "Not found" });
 
       if (doc.status !== "recorded") {
         return res.status(400).json({ message: "Only a recorded payment can be refunded." });
+      }
+      const refundReason = String(req.body.reason || req.body.notes || "").trim();
+      if (!refundReason) {
+        return res.status(400).json({ message: "Refund reason is required." });
+      }
+      if (doc.refunds?.some((refund) => refund.status === "pending")) {
+        return res.status(409).json({ message: "A refund is already pending for this payment." });
       }
 
       const alreadyRefunded = Number(doc.refundedAmount) || 0;
@@ -668,42 +1039,9 @@ const paymentCtrl = {
         return res.status(400).json({ message: "Select how the customer was refunded." });
       }
 
-      const [eventDoc, paidRows] = await Promise.all([
-        Event.findById(doc.event)
-          .select("status payment.total cancellation.retainedAmount")
-          .lean(),
-        Payment.aggregate([
-          { $match: { event: doc.event, status: "recorded" } },
-          {
-            $group: {
-              _id: "$event",
-              total: {
-                $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] },
-              },
-            },
-          },
-        ]),
-      ]);
-      const eventTotal = getEventPaymentTotal(eventDoc);
-      const eventPaid = Number(paidRows[0]?.total) || 0;
-      const retainedAmount = Math.max(
-        0,
-        Number(eventDoc?.cancellation?.retainedAmount) || 0
-      );
-      const customerCredit = Math.max(
-        0,
-        Math.round(
-          (eventPaid - (eventDoc?.status === "canceled" ? retainedAmount : eventTotal)) * 100
-        ) / 100
-      );
-      if (requestedAmount > customerCredit + 0.001) {
-        return res.status(400).json({
-          message: `Refund cannot exceed the event's customer credit of $${customerCredit.toFixed(2)}.`,
-        });
-      }
-
       const before = doc.toObject();
       let providerRefundId = "";
+      let providerRefundStatus = "succeeded";
       if (doc.method === "stripe" && refundMethod === "credit_card") {
         const stripe = stripeClient();
         if (!stripe || !doc.stripe?.paymentIntentId) {
@@ -718,25 +1056,32 @@ const paymentCtrl = {
         );
         doc.stripe.refundId = refund.id;
         providerRefundId = refund.id;
+        providerRefundStatus = refund.status === "failed"
+          ? "failed"
+          : refund.status === "succeeded"
+          ? "succeeded"
+          : "pending";
       }
-      const nextRefundedAmount =
-        Math.round((alreadyRefunded + requestedAmount) * 100) / 100;
+      const nextRefundedAmount = providerRefundStatus === "succeeded"
+        ? Math.round((alreadyRefunded + requestedAmount) * 100) / 100
+        : alreadyRefunded;
       doc.refundedAmount = nextRefundedAmount;
       doc.refundMethod = refundMethod;
       doc.refunds.push({
         amount: requestedAmount,
-        notes: req.body.notes,
+        notes: refundReason,
         method: refundMethod,
         refundedAt: new Date(),
         refundedBy: req.user.id,
         providerRefundId,
+        status: providerRefundStatus,
       });
       doc.status = nextRefundedAmount >= Number(doc.amount) - 0.001
         ? "refunded"
         : "recorded";
       doc.editedAt = new Date();
       doc.editedBy = req.user.id;
-      if (req.body.notes) doc.notes = req.body.notes;
+      if (refundReason) doc.notes = refundReason;
       if (!doc.stripe) doc.stripe = {};
       await doc.save();
       await syncEventPaymentPolicy(doc.event);

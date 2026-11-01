@@ -20,6 +20,17 @@ test("the billed event total remains authoritative after pricing recalculation",
   assert.equal(getEventPaymentTotal({ pricing: { estimatedTotal: 500 } }, 600), 600);
 });
 
+test("an enabled audited billing override is authoritative for every ledger consumer", () => {
+  assert.equal(
+    getEventPaymentTotal({
+      billingOverride: { enabled: true, amount: 1 },
+      payment: { total: 495 },
+      pricing: { estimatedTotal: 495 },
+    }),
+    1
+  );
+});
+
 test("staffing uses the larger synchronized requirement for legacy mismatches", () => {
   assert.equal(
     getRequiredBartenderCount({

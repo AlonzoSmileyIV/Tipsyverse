@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Box, Button, CircularProgress, Paper, Typography } from "@mui/material";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import api from "../../services/api";
 
 const stripeEnabled =
@@ -59,6 +59,8 @@ function Checkout({ request }) {
 
 export default function PaymentRequestScreen() {
   const { paymentRequestId } = useParams();
+  const [searchParams] = useSearchParams();
+  const checkoutResult = searchParams.get("checkout");
   const [request, setRequest] = useState(null);
   const [clientSecret, setClientSecret] = useState("");
   const [error, setError] = useState("");
@@ -67,14 +69,15 @@ export default function PaymentRequestScreen() {
     if (!stripeEnabled) return undefined;
 
     let active = true;
-    Promise.all([
-      api.get(`/payment-requests/${paymentRequestId}`),
-      api.post("/payments/stripe/payment-intent", { paymentRequestId }),
-    ])
+    const requests = [api.get(`/payment-requests/${paymentRequestId}`)];
+    if (!checkoutResult) {
+      requests.push(api.post("/payments/stripe/payment-intent", { paymentRequestId }));
+    }
+    Promise.all(requests)
       .then(([requestResponse, intentResponse]) => {
         if (!active) return;
         setRequest(requestResponse.data?.data);
-        setClientSecret(intentResponse.data?.clientSecret || "");
+        setClientSecret(intentResponse?.data?.clientSecret || "");
       })
       .catch((err) => {
         if (active) setError(err.response?.data?.message || "This payment request is unavailable.");
@@ -82,7 +85,7 @@ export default function PaymentRequestScreen() {
     return () => {
       active = false;
     };
-  }, [paymentRequestId]);
+  }, [checkoutResult, paymentRequestId]);
 
   if (!stripeEnabled) {
     return (
@@ -100,13 +103,23 @@ export default function PaymentRequestScreen() {
   return (
     <Box sx={{ maxWidth: 620, mx: "auto", px: 2, py: 8 }}>
       <Paper elevation={2} sx={{ p: { xs: 3, md: 5 } }}>
+        {checkoutResult === "success" && (
+          <Alert severity="success">
+            Thank you. Stripe received your payment. Tipsyverse will update the event after payment confirmation.
+          </Alert>
+        )}
+        {checkoutResult === "cancelled" && (
+          <Alert severity="info">
+            Payment was not completed. You can use the secure link from your email when you are ready.
+          </Alert>
+        )}
         {error ? <Alert severity="error">{error}</Alert> : null}
-        {!error && (!request || !clientSecret) ? (
+        {!checkoutResult && !error && (!request || !clientSecret) ? (
           <Box sx={{ display: "flex", justifyContent: "center" }}>
             <CircularProgress />
           </Box>
         ) : null}
-        {request && clientSecret ? (
+        {!checkoutResult && request && clientSecret ? (
           <Elements stripe={stripePromise} options={{ clientSecret }}>
             <Checkout request={request} />
           </Elements>

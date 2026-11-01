@@ -10,6 +10,7 @@ paymentMethodRouter.post('/', auth, paymentMethodCtrl.createPaymentMethod);
 
 // VIEW 
 paymentMethodRouter.get('/', auth, paymentMethodCtrl.viewMyPaymentMethods);
+paymentMethodRouter.get('/event/:eventId', auth, paymentMethodCtrl.viewPaymentMethodsForEventContact);
 paymentMethodRouter.get('/:userId', auth, paymentMethodCtrl.viewPaymentMethodsByUser);
 
 // UPDATE

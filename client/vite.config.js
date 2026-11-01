@@ -38,6 +38,11 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       strictPort: true,
+      // Keep hot reload attached to the Vite server instead of inheriting a
+      // transient preview/debugger port from the browser environment.
+      hmr: {
+        clientPort: 3000,
+      },
     },
     preview: {
       port: 3000,

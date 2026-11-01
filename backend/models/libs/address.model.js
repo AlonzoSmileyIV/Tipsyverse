@@ -38,7 +38,9 @@ const AddressSchema = new mongoose.Schema(
 
     isPrimary: { type: Boolean, default: false },
 
-    location: { type: GeoPointSchema, required: true }, // GeoJSON [lng, lat]
+    // Billing addresses may be entered manually when Google Places is
+    // unavailable, so geocoding is enrichment rather than a requirement.
+    location: { type: GeoPointSchema, default: undefined }, // GeoJSON [lng, lat]
   },
   { timestamps: true }
 );

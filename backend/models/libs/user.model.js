@@ -336,6 +336,17 @@ const userSchema = new mongoose.Schema(
     fullName: { type: String, required: true, trim: true },
     passwordHash: { type: String, required: true, trim: true, select: false },
 
+    // One Stripe Customer is reused for every saved payment method owned by
+    // this user. It is an external identifier, never a credential or card
+    // number.
+    stripeCustomerId: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true,
+      select: false,
+    },
+
     resetPasswordToken: { type: String, default: null, select: false },
     resetPasswordExpires: { type: Date, default: null, select: false },
     activationTokenHash: { type: String, default: null, select: false },

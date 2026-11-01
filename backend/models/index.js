@@ -6,6 +6,7 @@ import DepartmentModel from "./libs/department.model.js";
 import PositionModel from './libs/position.model.js';
 
 import UserModel from './libs/user.model.js';
+import AddressModel from './libs/address.model.js';
 
 import NotificationModel from './libs/notification.model.js';
 
@@ -45,6 +46,7 @@ export {
     DepartmentModel,
     PositionModel,
     UserModel,
+    AddressModel,
 
     LiquorModel,
     MixerModel,

@@ -34,6 +34,7 @@ const PaymentRequestSchema = new mongoose.Schema({
 
   providerUrl: String,
   stripePaymentIntentId: { type: String, index: true },
+  stripeCheckoutSessionId: { type: String, index: true },
 
   sentTo: {
     fullName: String,
@@ -52,6 +53,7 @@ const PaymentRequestSchema = new mongoose.Schema({
       "draft",
       "sent",
       "expired",
+      "failed",
       "cancelled",
       "completed",
     ],

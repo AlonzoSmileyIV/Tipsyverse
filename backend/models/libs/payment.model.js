@@ -19,9 +19,13 @@ const PaymentSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["recorded", "voided", "refunded"],
+      enum: ["processing", "requires_action", "recorded", "failed", "voided", "refunded"],
       default: "recorded",
     },
+    failureCode: { type: String, trim: true },
+    failureMessage: { type: String, trim: true },
+    customerAuthorizedAt: Date,
+    customerAuthorizedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
     // Partial refunds remain attached to the original payment so the ledger
     // can retain the gross receipt while balance calculations use its net.
@@ -37,6 +41,12 @@ const PaymentSchema = new mongoose.Schema(
         refundedAt: { type: Date, default: Date.now },
         refundedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         providerRefundId: String,
+        status: {
+          type: String,
+          enum: ["pending", "succeeded", "failed"],
+          default: "succeeded",
+        },
+        failureReason: String,
       },
     ],
     refundMethod: {

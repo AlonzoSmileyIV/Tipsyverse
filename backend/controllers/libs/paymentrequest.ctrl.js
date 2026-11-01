@@ -4,6 +4,7 @@ import {
 } from "../../models/index.js";
 import {
   actorFromReq,
+  computeEventTotals,
   displayEventType,
   displayLabel,
   displayPaymentType,
@@ -11,6 +12,7 @@ import {
   sendEmail,
   validateEmail,
 } from "../../utils/index.js";
+import { getEventPaymentTotal } from "../../utils/libs/eventSummary.js";
 import { eventAccessLevel } from "../../utils/libs/eventAccess.js";
 import { formatDate, formatDateTime } from "../../utils/libs/dateTime.js";
 import {
@@ -19,6 +21,13 @@ import {
   netRecordedPayments,
 } from "../../utils/libs/paymentLedger.js";
 import { cancelStripePaymentIntents } from "../../utils/libs/cancelStripePaymentIntents.js";
+import { publicAppUrl } from "../../utils/libs/publicAppUrl.js";
+import Stripe from "stripe";
+
+const stripeClient = () =>
+  String(process.env.STRIPE_ENABLED).toLowerCase() === "true" && process.env.STRIPE_SECRET_KEY
+    ? new Stripe(process.env.STRIPE_SECRET_KEY)
+    : null;
 
 const isStaff = (user) => ["admin", "employee"].includes(user?.role);
 
@@ -156,6 +165,36 @@ const normalizeSentTo = (sentTo, fallbackContact) => {
 
 const assertRequestFitsBalance = async (event, amount) => {
   assertCollectibleEvent(event);
+  if (getEventPaymentTotal(event) <= 0) {
+    const totals = computeEventTotals({
+      ...event,
+      pricing: {
+        ...(event.pricing || {}),
+        publicFee:
+          event.private === false ? event.pricing?.publicFee || 0 : 0,
+      },
+    });
+    const computedTotal =
+      Math.round(
+        ((Number(totals.total) || 0) +
+          Math.max(0, Number(event.options?.procurementActualCost) || 0)) *
+          100
+      ) / 100;
+    if (computedTotal > 0) {
+      event.payment = { ...(event.payment || {}), total: computedTotal };
+      await Event.updateOne(
+        {
+          _id: event._id,
+          $or: [
+            { "payment.total": { $lte: 0 } },
+            { "payment.total": null },
+            { "payment.total": { $exists: false } },
+          ],
+        },
+        { $set: { "payment.total": computedTotal } }
+      );
+    }
+  }
   const summary = await eventBalanceSnapshot(event);
   if (summary.balance <= 0) {
     const error = new Error("This event has no balance due.");
@@ -212,9 +251,7 @@ const paymentRequestCtrl = {
         });
       }
 
-      const eventDoc = await Event.findById(event)
-        .select("_id shortCode type status startAt endAt timezone location contact payment pricing")
-        .lean();
+      const eventDoc = await Event.findById(event).lean();
       if (!eventDoc) return res.status(404).json({ message: "Event not found" });
       await assertRequestFitsBalance(eventDoc, requestAmount);
       const recipient = normalizeSentTo(sentTo, eventDoc.contact);
@@ -241,7 +278,47 @@ const paymentRequestCtrl = {
         emailId,
       });
       if (provider === "stripe") {
-        doc.providerUrl = `${process.env.PUBLIC_APP_URL.replace(/\/$/, "")}/pay/${doc._id}`;
+        const stripe = stripeClient();
+        if (!stripe) {
+          await doc.deleteOne();
+          return res.status(503).json({ message: "Online card payments are unavailable." });
+        }
+        const appBase = publicAppUrl();
+        const session = await stripe.checkout.sessions.create(
+          {
+            mode: "payment",
+            customer_email: String(recipient.email).trim(),
+            client_reference_id: String(doc._id),
+            line_items: [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "usd",
+                  unit_amount: Math.round(requestAmount * 100),
+                  product_data: {
+                    name: `Tipsyverse Event ${eventDoc.shortCode || event}`,
+                    description: `${paymentTypeLabel(paymentType)} payment`,
+                  },
+                },
+              },
+            ],
+            metadata: {
+              paymentRequestId: String(doc._id),
+              eventId: String(event),
+            },
+            payment_intent_data: {
+              metadata: {
+                paymentRequestId: String(doc._id),
+                eventId: String(event),
+              },
+            },
+            success_url: `${appBase}/pay/${doc._id}?checkout=success`,
+            cancel_url: `${appBase}/pay/${doc._id}?checkout=cancelled`,
+          },
+          { idempotencyKey: `checkout-payment-request-${doc._id}` }
+        );
+        doc.providerUrl = session.url;
+        doc.stripeCheckoutSessionId = session.id;
         await doc.save();
       }
 

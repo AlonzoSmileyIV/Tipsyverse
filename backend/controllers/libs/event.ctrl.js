@@ -2429,6 +2429,7 @@ const eventCtrl = {
         "paymentMethod",
         "status",
         "visibility",
+        "billingOverride",
         "pricing",
         "counts",
         "staffingException",
@@ -2453,6 +2454,7 @@ const eventCtrl = {
         "counts",
         "private",
         "options",
+        "billingOverride",
       ].some((key) => requestedKeys.has(key));
 
       // Guard immutables
@@ -2636,6 +2638,38 @@ const eventCtrl = {
           continue;
         }
 
+        if (key === "billingOverride") {
+          const incoming = body.billingOverride || {};
+          const enabled = incoming.enabled === true;
+          const amount = Math.round((Number(incoming.amount) || 0) * 100) / 100;
+          const reason = String(incoming.reason || "").trim();
+          const note = String(incoming.note || "").trim();
+          if (enabled && (!(amount > 0) || !reason)) {
+            return res.status(400).json({
+              success: false,
+              message: "A positive override amount and reason are required.",
+            });
+          }
+          patch.billingOverride = enabled
+            ? {
+                enabled: true,
+                amount,
+                reason,
+                note,
+                setBy: req.user.id,
+                setAt: new Date(),
+              }
+            : {
+                enabled: false,
+                amount: 0,
+                reason: "",
+                note: "",
+                setBy: req.user.id,
+                setAt: new Date(),
+              };
+          continue;
+        }
+
         if (key === "counts") {
           const incoming = body.counts || {};
           patch.counts = {
@@ -2735,7 +2769,7 @@ const eventCtrl = {
       // pricing delta from an adjustment.
       const currentPayment = beforeDoc.payment || {};
       const hasBilledSnapshot = Number(currentPayment.total) > 0;
-      if (hasBilledSnapshot && billingInputsChanged) {
+      if (hasBilledSnapshot && billingInputsChanged && !patch.billingOverride) {
         const billableTotals = (event) => {
           const computed = computeEventTotals({
             ...event,
@@ -2773,6 +2807,27 @@ const eventCtrl = {
           ),
           ledgerVersion: (Number(currentPayment.ledgerVersion) || 0) + 1,
         });
+      }
+
+      if (patch.billingOverride) {
+        const nextTotal = patch.billingOverride.enabled
+          ? patch.billingOverride.amount
+          : Math.max(
+              0,
+              Math.round(
+                (computeEventTotals(evt.toObject({ depopulate: true })).total +
+                  (Number(evt.options?.procurementActualCost) || 0)) *
+                  100
+              ) / 100
+            );
+        const paidTotal = Number(evt.payment?.paidTotal) || 0;
+        evt.set("payment.total", nextTotal);
+        evt.set("payment.balance", Math.max(0, nextTotal - paidTotal));
+        evt.set("payment.overpayment", Math.max(0, paidTotal - nextTotal));
+        evt.set(
+          "payment.ledgerVersion",
+          (Number(evt.payment?.ledgerVersion) || 0) + 1
+        );
       }
 
       // Validate temporal logic
@@ -3519,13 +3574,23 @@ const eventCtrl = {
       // 2) coupon lookup & apply (to TOTAL)
       const coupon = await lookupCoupon(couponCode);
       const { discountedTotal, applied } = applyCouponToTotal(total, coupon);
-      const billedTotal =
-        Math.round((discountedTotal + procurementActualCost) * 100) / 100;
+      const billedTotal = evt.billingOverride?.enabled
+        ? Math.round((Number(evt.billingOverride.amount) || 0) * 100) / 100
+        : Math.round((discountedTotal + procurementActualCost) * 100) / 100;
 
       // 3) compute deposit after coupon (or fixed deposit coupon)
+      const startsWithinSevenDays =
+        new Date(evt.startAt).getTime() - Date.now() <=
+        7 * 24 * 60 * 60 * 1000;
       const finalDeposit = calcDepositWithCoupon({
         totalAfterDiscount: billedTotal,
-        baseDepositPct: depositPct,
+        baseDepositPct:
+          Object.prototype.hasOwnProperty.call(req.body, "depositPct") &&
+          Number.isFinite(Number(depositPct))
+            ? Number(depositPct)
+            : startsWithinSevenDays
+            ? 1
+            : 0.3,
         baseDepositAmount: depositAmount,
         coupon,
       });
@@ -3548,6 +3613,14 @@ const eventCtrl = {
       const amountPaid =
         Math.round((Number(recordedPaymentRows[0]?.paidTotal) || 0) * 100) /
         100;
+      if (amountPaid + 0.001 < finalDeposit) {
+        return res.status(409).json({
+          success: false,
+          message: `A successful payment of at least $${finalDeposit.toFixed(
+            2
+          )} is required before moving this event to assignment.`,
+        });
+      }
       const balanceDue =
         Math.max(0, Math.round((billedTotal - amountPaid) * 100) / 100);
       const policyScheduledAt = new Date();

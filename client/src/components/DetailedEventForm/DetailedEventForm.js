@@ -76,6 +76,11 @@ import {
   parseTimeInput,
   timeValueToInput,
 } from "../../utils/timeInput";
+import {
+  DEFAULT_EVENT_PAYMENT_PROVIDER,
+  isSettledPayment,
+  selectDefaultPaymentMethodId,
+} from "../../utils/savedPaymentMethods";
 
 const MAX_IMAGE_SIZE_MB = 2;
 import {
@@ -1095,15 +1100,23 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const [promoCatalog, setPromoCatalog] = useState([]);
 
   // —— Pricing override ——
-  const [overrideEnabled, setOverrideEnabled] = useState(false);
+  const [overrideEnabled, setOverrideEnabled] = useState(
+    Boolean(event?.billingOverride?.enabled)
+  );
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
-  const [overrideReason, setOverrideReason] = useState("");
-  const [overrideNote, setOverrideNote] = useState("");
+  const [overrideReason, setOverrideReason] = useState(
+    event?.billingOverride?.reason || ""
+  );
+  const [overrideNote, setOverrideNote] = useState(
+    event?.billingOverride?.note || ""
+  );
   const isValidOverride =
     overrideReason &&
     (overrideReason !== "other" || overrideNote.trim().length >= 5);
 
-  const [overrideAmount, setOverrideAmount] = useState("0"); // dollars, string for TextField
+  const [overrideAmount, setOverrideAmount] = useState(
+    String(event?.billingOverride?.amount || 0)
+  ); // dollars, string for TextField
 
   // —— Cancel event ——
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -1290,16 +1303,25 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
   const depositDue =
     fromCents(minDepositC).toString() && overrideEnabled
       ? soonHours <= 168
-        ? (Number(overrideAmount) || 0) * 0.75
+        ? Number(overrideAmount) || 0
         : (Number(overrideAmount) || 0) * 0.3
       : fromCents(minDepositC);
 
-  const [paymentProvider, setPaymentProvider] = useState("paypal");
+  const [paymentProvider, setPaymentProvider] = useState(
+    DEFAULT_EVENT_PAYMENT_PROVIDER
+  );
   const [paymentType, setPaymentType] = useState("deposit");
   const [paymentRequest, setPaymentRequest] = useState(null);
   const [paymentRequests, setPaymentRequests] = useState([]);
+  const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
+  const [selectedSavedPaymentMethodId, setSelectedSavedPaymentMethodId] = useState("");
+  const [customerChargeAuthorized, setCustomerChargeAuthorized] = useState(false);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(false);
+  const [paymentMethodsError, setPaymentMethodsError] = useState("");
   const [customPaymentAmount, setCustomPaymentAmount] = useState("");
+  const [useNewCardPaymentLink, setUseNewCardPaymentLink] = useState(false);
+  const paymentRequestSectionRef = useRef(null);
 
   const [collectPaymentOpen, setCollectPaymentOpen] = useState(false);
   const [paymentActionOpen, setPaymentActionOpen] = useState(false);
@@ -1324,12 +1346,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     notes: "",
   });
 
-  const activePayments = payments.filter(
-    (payment) =>
-      !["voided", "refunded"].includes(
-        String(payment.status || "recorded").toLowerCase()
-      )
-  );
+  const activePayments = payments.filter(isSettledPayment);
   const eventSummaryPaidTotal =
     Number(event?.payment?.paidTotal) ||
     Number(event?.recordedPaidTotal) ||
@@ -1464,6 +1481,8 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     const loadPaymentActivity = async () => {
       try {
         setPaymentsLoading(true);
+        setPaymentMethodsLoading(true);
+        setPaymentMethodsError("");
         const [requestRes, paymentRes] = await Promise.all([
           api.get(`/payment-requests/event/${event._id}`),
           api.get(`/payments/event/${event._id}`),
@@ -1495,17 +1514,40 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
         setPaymentRequests(existingRequests);
         setPayments(displayPayments);
+        try {
+          const methodRes = await api.get(
+            `/payment-methods/event/${event._id}`
+          );
+          if (!ignore) {
+            const methods = methodRes.data?.data || [];
+            setSavedPaymentMethods(methods);
+            setSelectedSavedPaymentMethodId((current) =>
+              selectDefaultPaymentMethodId(methods, current)
+            );
+          }
+        } catch (methodError) {
+          if (!ignore) {
+            setSavedPaymentMethods([]);
+            setSelectedSavedPaymentMethodId("");
+            setPaymentMethodsError(
+              methodError?.response?.data?.message ||
+                "Saved payment methods could not be loaded."
+            );
+          }
+        } finally {
+          if (!ignore) setPaymentMethodsLoading(false);
+        }
 
         const collectableRequest = existingRequests.find(
           (request) =>
-            !["cancelled", "expired", "completed"].includes(
+            !["cancelled", "expired", "completed", "failed"].includes(
               String(request.status || "").toLowerCase()
             )
         );
 
         if (collectableRequest) {
           setPaymentRequest(collectableRequest);
-          setPaymentProvider(collectableRequest.provider || "paypal");
+          setPaymentProvider(collectableRequest.provider || "stripe");
           setPaymentType(collectableRequest.paymentType || "deposit");
           if (collectableRequest.paymentType === "custom") {
             setCustomPaymentAmount(
@@ -1523,7 +1565,10 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
           setAlertOpen(true);
         }
       } finally {
-        if (!ignore) setPaymentsLoading(false);
+        if (!ignore) {
+          setPaymentsLoading(false);
+          setPaymentMethodsLoading(false);
+        }
       }
     };
 
@@ -1713,7 +1758,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       cost.push("Total amount must be greater than $0");
 
     const payment = [];
-    if (!activePayments.length) payment.push("Record at least one payment");
+    if (
+      !activePayments.length &&
+      !(selectedSavedPaymentMethodId && customerChargeAuthorized)
+    ) {
+      payment.push("Record a payment, select an authorized saved card, or send a secure payment link");
+    }
 
     return {
       0: confirm,
@@ -1724,6 +1774,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     };
   }, [
     activePayments.length,
+    customerChargeAuthorized,
     discountedTotal,
     form.allowTipJars,
     form.barType,
@@ -1741,6 +1792,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     form.startAt,
     form.type,
     hasRequiredLocation,
+    selectedSavedPaymentMethodId,
     timeInputs.endAt,
     timeInputs.startAt,
   ]);
@@ -2335,6 +2387,12 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
         breakdownHours: Number(calcInput.breakdownHours) || 0,
         bartendersRequested: Number(form.bartendersRequested) || 1,
       },
+      billingOverride: {
+        enabled: overrideEnabled,
+        amount: overrideEnabled ? Number(overrideAmount) || 0 : 0,
+        reason: overrideEnabled ? overrideReason : "",
+        note: overrideEnabled ? overrideNote.trim() : "",
+      },
       counts: {
         ...(event?.counts || {}),
         recommendedBartenders:
@@ -2352,7 +2410,16 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       internalNotes: form.internalNotes,
       status: form.status,
     };
-  }, [form, calcInput, event, rushPctWhole]);
+  }, [
+    form,
+    calcInput,
+    event,
+    rushPctWhole,
+    overrideAmount,
+    overrideEnabled,
+    overrideNote,
+    overrideReason,
+  ]);
 
   const saveEvent = useCallback(async () => {
     setSaving(true);
@@ -2471,6 +2538,22 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
       const payload = buildEventPayload();
       await api.patch(`/events/${event._id}`, payload);
 
+      if (!activePayments.length && selectedSavedPaymentMethodId) {
+        const charge = await api.post("/payments/stripe/saved-method", {
+          eventId: event._id,
+          paymentMethodId: selectedSavedPaymentMethodId,
+          customerAuthorized: customerChargeAuthorized,
+          collectionType: "initial",
+          couponCode: coupons[0]?.code,
+        });
+        if (charge.data?.paymentStatus !== "recorded") {
+          throw new Error(
+            "Payment could not be processed: payment is still pending."
+          );
+        }
+        setPayments((current) => [...current, charge.data.data]);
+      }
+
       const res = await api.post(`/events/${event._id}/send-to-assign`, {
         couponCode: coupons[0]?.code,
       });
@@ -2554,6 +2637,9 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
 
   const handleSendPaymentRequest = async () => {
     try {
+      // Persist the current review values before the backend independently
+      // recalculates the collectible balance for the payment request.
+      await api.patch(`/events/${event._id}`, buildEventPayload());
       const payload = {
         event: event._id,
         provider: paymentProvider,
@@ -4429,30 +4515,147 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                   </Paper>
                 )}
 
-              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                Send Invoice / Payment Request
+              <TextField
+                select
+                fullWidth
+                label="Payment Method"
+                value={paymentProvider}
+                onChange={(event) => {
+                  setPaymentProvider(event.target.value);
+                  setUseNewCardPaymentLink(false);
+                }}
+                sx={{ mb: 2 }}
+              >
+                <MenuItem value="stripe">Credit / Debit Card</MenuItem>
+                <MenuItem value="paypal">PayPal</MenuItem>
+                <MenuItem value="venmo">Venmo</MenuItem>
+                <MenuItem value="cashapp">Cash App</MenuItem>
+                <MenuItem value="square">Square</MenuItem>
+                <MenuItem value="zelle">Zelle</MenuItem>
+              </TextField>
+
+              {paymentProvider === "stripe" && (
+                <>
+                  <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+                    Credit / Debit Card
+                  </Typography>
+              {paymentMethodsLoading ? (
+                <Box sx={{ mb: 2 }}>
+                  <LinearProgress />
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Loading the main contact&apos;s saved cards…
+                  </Typography>
+                </Box>
+              ) : paymentMethodsError ? (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {paymentMethodsError}
+                </Alert>
+              ) : savedPaymentMethods.length ? (
+                <Stack spacing={1.25} sx={{ mb: 2 }}>
+                  <RadioGroup
+                    value={selectedSavedPaymentMethodId}
+                    onChange={(event) => setSelectedSavedPaymentMethodId(event.target.value)}
+                  >
+                    {savedPaymentMethods.map((method) => (
+                      <Paper key={method._id} variant="outlined" sx={{ p: 1.5, mb: 1 }}>
+                        <FormControlLabel
+                          value={method._id}
+                          control={<Radio />}
+                          label={
+                            <Stack>
+                              <Stack direction="row" spacing={1} alignItems="center">
+                                <Typography fontWeight={700}>{method.nickname}</Typography>
+                                {method.isDefault && <Chip size="small" color="success" label="Default" />}
+                              </Stack>
+                              <Typography variant="body2" color="text.secondary">
+                                {String(method.brand || "Card").toUpperCase()} •••• {method.last4} · Expires {String(method.expMonth || "").padStart(2, "0")}/{method.expYear}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                Billing ZIP: {method.billingAddress?.zipcode || "Not available"}
+                              </Typography>
+                            </Stack>
+                          }
+                        />
+                      </Paper>
+                    ))}
+                  </RadioGroup>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={customerChargeAuthorized}
+                        onChange={(event) => setCustomerChargeAuthorized(event.target.checked)}
+                      />
+                    }
+                    label="I confirm the customer authorized this event payment and amount."
+                  />
+                  <Alert severity="info">
+                    If the card requires customer authentication, send a secure Stripe payment link instead. Do not collect raw card details by phone in this dashboard.
+                  </Alert>
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      setUseNewCardPaymentLink(true);
+                      setTimeout(
+                        () =>
+                          paymentRequestSectionRef.current?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          }),
+                        0
+                      );
+                    }}
+                    sx={{ alignSelf: { xs: "stretch", sm: "flex-start" } }}
+                  >
+                    Use a New Card
+                  </Button>
+                </Stack>
+              ) : (
+                <Stack spacing={1.25} sx={{ mb: 2 }}>
+                  <Alert severity="info">
+                    The main contact has no saved cards. Use a secure Stripe-hosted payment link or select another supported provider.
+                  </Alert>
+                  <Button
+                    variant="contained"
+                    onClick={() => {
+                      setUseNewCardPaymentLink(true);
+                      setTimeout(
+                        () =>
+                          paymentRequestSectionRef.current?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          }),
+                        0
+                      );
+                    }}
+                    sx={{ alignSelf: { xs: "stretch", sm: "flex-start" } }}
+                  >
+                    Use a New Card
+                  </Button>
+                </Stack>
+              )}
+                </>
+              )}
+
+              {(paymentProvider !== "stripe" || useNewCardPaymentLink) && (
+                <>
+              <Typography
+                ref={paymentRequestSectionRef}
+                variant="subtitle1"
+                fontWeight={700}
+                sx={{ mb: 1, scrollMarginTop: 96 }}
+              >
+                {paymentProvider === "stripe"
+                  ? "Send Secure Payment Link"
+                  : "Send Invoice / Payment Request"}
               </Typography>
 
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Choose the payment amount, paste the external payment link, then
-                send an invoice-style payment request to the client.
+                {paymentProvider === "stripe"
+                  ? "Choose the amount and email the main contact a secure Stripe-hosted link to enter a new card."
+                  : "Choose the payment amount and send an invoice-style payment request to the client."}
               </Typography>
 
               <Stack spacing={2} sx={{ mt: 2 }}>
-                <TextField
-                  select
-                  fullWidth
-                  label="Payment Provider"
-                  value={paymentProvider}
-                  onChange={(e) => setPaymentProvider(e.target.value)}
-                >
-                  <MenuItem value="paypal">PayPal</MenuItem>
-                  <MenuItem value="venmo">Venmo</MenuItem>
-                  <MenuItem value="cashapp">Cash App</MenuItem>
-                  <MenuItem value="square">Square</MenuItem>
-                  <MenuItem value="zelle">Zelle</MenuItem>
-                </TextField>
-
                 <TextField
                   select
                   fullWidth
@@ -4515,6 +4718,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                   }
                 />
 
+                {paymentProvider !== "stripe" && (
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
                   <TextField
                     fullWidth
@@ -4534,10 +4738,17 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                     Copy
                   </Button>
                 </Stack>
+                )}
 
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                   <Tooltip
-                    title={paymentRequestInvalid ? paymentRequestHelperText : "Send this invoice to the main contact."}
+                    title={
+                      paymentRequestInvalid
+                        ? paymentRequestHelperText
+                        : paymentProvider === "stripe"
+                        ? "Send a secure Stripe-hosted payment link to the main contact."
+                        : "Send this invoice to the main contact."
+                    }
                   >
                     <span>
                       <Button
@@ -4546,12 +4757,14 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                         onClick={handleSendPaymentRequest}
                         disabled={paymentRequestInvalid}
                       >
-                        Send Invoice
+                        {paymentProvider === "stripe"
+                          ? "Send Secure Payment Link"
+                          : "Send Invoice"}
                       </Button>
                     </span>
                   </Tooltip>
 
-                  <Tooltip
+                  {paymentProvider !== "stripe" && <Tooltip
                     title={
                       !paymentRequest
                         ? "Send an invoice first so this payment can be connected to a request."
@@ -4579,7 +4792,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                           : "Collect Payment"}
                       </Button>
                     </span>
-                  </Tooltip>
+                  </Tooltip>}
                 </Stack>
 
                 <Typography
@@ -4589,19 +4802,25 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                   {paymentRequestHelperText}
                 </Typography>
 
-                <RecordedPaymentsList
-                  payments={payments}
-                  formatMoney={fmtMoney}
-                  formatDate={(value) => moment(value).format("MMM D, YYYY")}
-                  onPaymentAction={openPaymentAction}
-                />
               </Stack>
+                </>
+              )}
+
+              <RecordedPaymentsList
+                payments={payments}
+                formatMoney={fmtMoney}
+                formatDate={(value) => moment(value).format("MMM D, YYYY")}
+                onPaymentAction={openPaymentAction}
+              />
             </Paper>
           </Grid>
 
           <Grid item xs={12}>
             <Alert severity="info">
-              Amount requested now: <strong>{fmtMoney(requestedAmount)}</strong>
+              {paymentProvider === "stripe" && !useNewCardPaymentLink
+                ? "Amount to charge after authorization: "
+                : "Amount requested now: "}
+              <strong>{fmtMoney(requestedAmount)}</strong>
             </Alert>
           </Grid>
         </Grid>

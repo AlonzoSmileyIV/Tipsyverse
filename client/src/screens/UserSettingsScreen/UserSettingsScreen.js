@@ -10,6 +10,7 @@ import {
   ManageAccountsOutlined,
   SupportAgentOutlined,
   HelpOutline,
+  PaymentOutlined,
 } from "@mui/icons-material";
 import PublicLayout from "../../components/PublicLayout/PublicLayout";
 import ProfileForm from "../../components/ProfileForm/ProfileForm";
@@ -20,6 +21,7 @@ import SettingAccountForm from "../../components/SettingAccountForm/SettingAccou
 import SupportTicketsForm from "../../components/SupportTicketsForm/SupportTicketsForm";
 import HowToGuide from "../../components/HowToGuide/HowToGuide";
 import LoadingSkeleton from "../../components/LoadingSkeleton/LoadingSkeleton";
+import PaymentMethodsTab from "../../components/PaymentsMethodsTab/PaymentsMethodsTab";
 import HelmetHeader from "../../components/HelmetHeader/Helmet";
 import { useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -37,11 +39,11 @@ const UserSettingsScreen = () => {
     const tabFromPath = React.useMemo(() => {
   if (location.pathname.includes("/settings/preferences")) return 1;
   if (location.pathname.includes("/settings/activity")) return 2;
-  // if (location.pathname.includes("/settings/payment-methods")) return 3;
-  if (location.pathname.includes("/settings/security")) return 3;
-  if (location.pathname.includes("/settings/how-to")) return 4;
-  if (location.pathname.includes("/settings/support")) return 5;
-  if (location.pathname.includes("/settings/account")) return 6;
+  if (location.pathname.includes("/settings/payment-method")) return 3;
+  if (location.pathname.includes("/settings/security")) return 4;
+  if (location.pathname.includes("/settings/how-to")) return 5;
+  if (location.pathname.includes("/settings/support")) return 6;
+  if (location.pathname.includes("/settings/account")) return 7;
   return 0;
 }, [location.pathname]);
   
@@ -60,7 +62,7 @@ const UserSettingsScreen = () => {
   { label: "Profile", icon: <PersonOutline />, route: "/settings" },
   { label: "Preferences", icon: <TuneOutlined />, route: "/settings/preferences" },
   { label: "Activity", icon: <FavoriteBorderOutlined />, route: "/settings/activity" },
-  // { label: "Payment Method", icon: <PaymentOutlined />, route: "/settings/payment-methods" },
+  { label: "Pay Methods", icon: <PaymentOutlined />, route: "/settings/payment-method" },
   { label: "Security", icon: <SecurityOutlined />, route: "/settings/security" },
   { label: "How To", icon: <HelpOutline />, route: "/settings/how-to" },
   { label: "Support", icon: <SupportAgentOutlined />, route: "/settings/support" },
@@ -143,11 +145,11 @@ const UserSettingsScreen = () => {
             <TabPanel value={tabFromPath} index={0}><ProfileForm user={user} /></TabPanel>
             <TabPanel value={tabFromPath} index={1}><PreferencesForm user={user} /></TabPanel>
             <TabPanel value={tabFromPath} index={2}><ActivityForm user={user} /></TabPanel>
-            {/* <TabPanel value={tabIndex} index={3}><PaymentMethodsTab user={user} /></TabPanel> */}
-            <TabPanel value={tabFromPath} index={3}><SecurityForm user={user} /></TabPanel>
-            <TabPanel value={tabFromPath} index={4}><HowToGuide audience="customer" /></TabPanel>
-            <TabPanel value={tabFromPath} index={5}><SupportTicketsForm /></TabPanel>
-            <TabPanel value={tabFromPath} index={6}><SettingAccountForm user={user} onNavigateToSettings={goToSettingsRoute} /></TabPanel>
+            <TabPanel value={tabFromPath} index={3}><PaymentMethodsTab user={user} /></TabPanel>
+            <TabPanel value={tabFromPath} index={4}><SecurityForm user={user} /></TabPanel>
+            <TabPanel value={tabFromPath} index={5}><HowToGuide audience="customer" /></TabPanel>
+            <TabPanel value={tabFromPath} index={6}><SupportTicketsForm /></TabPanel>
+            <TabPanel value={tabFromPath} index={7}><SettingAccountForm user={user} onNavigateToSettings={goToSettingsRoute} /></TabPanel>
           </Box>
         </Box>
       )}

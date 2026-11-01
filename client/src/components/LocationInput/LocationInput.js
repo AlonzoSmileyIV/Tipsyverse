@@ -268,6 +268,7 @@ export default function LocationStep({
   serviceArea = "indiana", // "indy" | "indiana" | "midwest" | "us"
   touched,
   setTouched,
+  showInstructions = true,
 }) {
   const { ready: placesReady, error: placesLoadError } = useGooglePlaces(googlePlacesApiKey);
 
@@ -642,8 +643,8 @@ export default function LocationStep({
         label="Country"
         value={value.country || "US"}
         onChange={handleCountryChange}
-        error={!!errors.country}
-        helperText={errors.country}
+        error={!!showError("country")}
+        helperText={showError("country") ? errors.country : ""}
       >
         {COUNTRIES.map((c) => (
           <MenuItem key={c.code} value={c.code}>
@@ -652,7 +653,7 @@ export default function LocationStep({
         ))}
       </TextField>
 
-      <TextField
+      {showInstructions && <TextField
         fullWidth
         multiline
         minRows={2}
@@ -661,7 +662,7 @@ export default function LocationStep({
         value={value.instructions}
         onChange={(e) => onChange({ instructions: e.target.value })}
         helperText="Gate codes, load-in details, parking, etc."
-      />
+      />}
     </Stack>
   );
 }

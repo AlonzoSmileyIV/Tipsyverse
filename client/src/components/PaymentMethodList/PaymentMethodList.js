@@ -18,11 +18,10 @@ const PaymentMethodList = ({
   ownerId,
   selected,
   onChange,
-  onAddClick,
   refreshKey = 0,
   onEdit,
   onRemove,
-  allowAdd = true,
+  onSetDefault,
   allowEdit = true,
   allowDelete = true,
 }) => {
@@ -35,7 +34,7 @@ const PaymentMethodList = ({
       setLoading(true);
       try {
         // Use your preferred endpoint. If you support /payment-methods?owner=ownerId, switch to that.
-        const res = await api.get(`/payment-methods/${ownerId}`);
+        const res = await api.get("/payment-methods");
         setMethods(res.data?.data || res.data || []);
       } catch {
         setMethods([]);
@@ -175,6 +174,11 @@ const PaymentMethodList = ({
         </Stack>
 
         <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
+          {!m.isDefault && allowEdit && (
+            <Button size="small" variant="text" onClick={() => onSetDefault?.(m)}>
+              Set default
+            </Button>
+          )}
           {allowEdit && (
             <Button size="small" variant="outlined" onClick={() => onEdit?.(m)}>
               Edit
@@ -197,24 +201,13 @@ const PaymentMethodList = ({
 
   return (
     <>
-      {/* Horizontal, responsive list */}
       <Box
         role="list"
         sx={{
           display: "flex",
+          flexDirection: "column",
           gap: 2,
-          overflowX: "auto",
-          pb: 1,
-          px: 0.5,
-          scrollSnapType: "x mandatory",
-          // nice-ish scrollbar
-          "::-webkit-scrollbar": { height: 8 },
-          "::-webkit-scrollbar-thumb": {
-            backgroundColor: "divider",
-            borderRadius: 8,
-          },
-          // ensure children snap
-          "& > *": { scrollSnapAlign: "start" },
+          width: "100%",
         }}
       >
         {methods.map((m) => (
@@ -222,64 +215,13 @@ const PaymentMethodList = ({
             key={m._id}
             role="listitem"
             sx={{
-              flex: "0 0 auto",
-              width: { xs: "92%", sm: 420, md: 520 }, // responsive card width
-              maxWidth: "100%",
+              width: "100%",
             }}
           >
             {Card(m)}
           </Box>
         ))}
 
-        {/* Add tile */}
-        {allowAdd && (
-          <Box
-            role="listitem"
-            sx={{ flex: "0 0 auto", width: { xs: "92%", sm: 420, md: 520 } }}
-          >
-            <Paper
-              variant="outlined"
-              onClick={onAddClick}
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                height: "100%",
-                minHeight: 120,
-                borderStyle: "dashed",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                "&:hover": { borderColor: "var(--primary-color)" },
-              }}
-            >
-              <Box
-                sx={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: "50%",
-                  border: "2px dashed",
-                  borderColor: "divider",
-                  display: "grid",
-                  placeItems: "center",
-                  fontSize: 28,
-                  color: "text.secondary",
-                  flex: "0 0 auto",
-                }}
-              >
-                +
-              </Box>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="subtitle1">
-                  Add a payment method
-                </Typography>
-                <Typography variant="body2" color="text.secondary" noWrap>
-                  Save a new card or bank account
-                </Typography>
-              </Box>
-            </Paper>
-          </Box>
-        )}
       </Box>
     </>
   );

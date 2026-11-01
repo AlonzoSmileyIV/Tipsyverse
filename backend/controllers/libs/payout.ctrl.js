@@ -19,7 +19,7 @@ const getEventHours = (event) => {
   if (!start || !end || end <= start) return 0;
   return (end.getTime() - start.getTime()) / (60 * 60 * 1000);
 };
-const getExpectedAssignmentPay = (event) => {
+export const getExpectedAssignmentPay = (event) => {
   const pricing = event?.pricing || {};
   const hours =
     getEventHours(event) +

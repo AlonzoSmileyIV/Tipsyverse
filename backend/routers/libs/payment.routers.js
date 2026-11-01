@@ -13,6 +13,12 @@ paymentRouter.post(
   paymentDedupe,
   paymentCtrl.createStripePaymentIntent
 );
+paymentRouter.post(
+  "/stripe/saved-method",
+  auth,
+  paymentDedupe,
+  paymentCtrl.chargeSavedPaymentMethod
+);
 
 // READ
 paymentRouter.get("/", auth, paymentCtrl.viewPayments);

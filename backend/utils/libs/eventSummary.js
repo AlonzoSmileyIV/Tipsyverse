@@ -23,6 +23,9 @@ export const getRecommendedBartenderCount = (event = {}, minimum = 0) => {
 export const getRequiredBartenderCount = getApprovedBartenderCount;
 
 export const getEventPaymentTotal = (event = {}, fallbackTotal = 0) => {
+  if (event?.billingOverride?.enabled) {
+    return Math.max(0, numberOrZero(event.billingOverride.amount));
+  }
   const billedTotal = numberOrZero(
     event?.payment?.total ??
       event?.payment?.totalAfterDiscount ??

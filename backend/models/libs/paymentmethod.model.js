@@ -19,8 +19,10 @@ const PaymentMethodSchema = new mongoose.Schema(
     expMonth: { type: Number, min: 1, max: 12 },
     expYear:  { type: Number, min: 2000, max: 2100 },
 
-    // NEW: friendly alias for the user
-    nickname: { type: String, trim: true },  // e.g., "Mom's Card", "Credit Card #1"
+    nickname: { type: String, trim: true, required: true, maxlength: 80 },
+    // Normalized value provides deterministic case-insensitive uniqueness
+    // without depending on a deployment's collection collation.
+    nicknameKey: { type: String, required: true, select: false },
 
     isDefault: { type: Boolean, default: false },
 
@@ -46,18 +48,19 @@ PaymentMethodSchema.index(
 );
 
 // Optional: avoid duplicate nicknames per owner (nice UX; helps with auto-name retries)
-PaymentMethodSchema.index({ owner: 1, nickname: 1 }, { unique: true, sparse: true });
+PaymentMethodSchema.index(
+  { owner: 1, nicknameKey: 1 },
+  { unique: true, name: "payment_method_owner_nickname_ci" }
+);
 
 /**
  * Auto-nickname: if none provided, set to "Credit Card #N" for this owner.
  * We keep it simple + resilient (retry on unique error once).
  */
 
-PaymentMethodSchema.pre("validate", async function () {
-  if (!this.nickname && this.owner) {
-    const count = await this.constructor.countDocuments({ owner: this.owner });
-    this.nickname = `Credit Card #${count + 1}`;
-  }
+PaymentMethodSchema.pre("validate", function () {
+  this.nickname = String(this.nickname || "").trim();
+  this.nicknameKey = this.nickname.toLocaleLowerCase("en-US");
 });
 
 export const PaymentMethodModel = mongoose.model("PaymentMethod", PaymentMethodSchema);

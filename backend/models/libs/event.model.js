@@ -386,6 +386,19 @@ const EventSchema = new mongoose.Schema(
       bidDeadlineAt: { type: Date },
     },
 
+    billingOverride: {
+      enabled: { type: Boolean, default: false },
+      amount: { type: Number, min: 0, default: 0 },
+      reason: { type: String, trim: true, default: "" },
+      note: { type: String, trim: true, default: "" },
+      setBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      setAt: { type: Date, default: null },
+    },
+
     pricing: {
       bookingFee: { type: Number, min: 0, default: null },
       hourlyRate: { type: Number, min: 0, default: null },

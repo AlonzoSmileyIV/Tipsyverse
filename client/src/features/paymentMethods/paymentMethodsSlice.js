@@ -19,7 +19,7 @@ export const fetchPaymentMethodsByUser = createAsyncThunk(
   "paymentMethods/fetchByUser",
   async (userId, { rejectWithValue }) => {
     try {
-      const res = await api.get(`payment-methods/${userId}`);
+      const res = await api.get(`/payment-methods/${userId}`);
       return { userId, payload: res.data }; // { data: [...] }
     } catch (e) {
       return rejectWithValue({ userId, message: e.response?.data?.message || e.message });

@@ -1,6 +1,7 @@
 // components/PaymentMethodsTab/PaymentMethodsTab.jsx
 import React, { useRef, useState } from "react";
-import { Stack, Divider, Typography, Alert, Collapse } from "@mui/material";
+import { Stack, Divider, Typography, Alert, Collapse, Button } from "@mui/material";
+import { Add } from "@mui/icons-material";
 import PaymentMethodList from "../PaymentMethodList/PaymentMethodList";
 import PaymentMethodForm from "../PaymentMethodForm/PaymentMethodForm";
 import DeleteConfirmPaymentDialog from "../DeleteConfirmPaymentDialog/DeleteConfirmPaymentDialog";
@@ -63,15 +64,17 @@ const PaymentMethodsTab = ({ user }) => {
           ownerId: user._id,
           setupIntentId: payload.setupIntentId,
           nickname: payload.nickname,
+          billingName: payload.billingName,
+          billingAddress: payload.billingAddress,
           setDefault: !!payload.setDefault,
         });
         showAlert("success", "Card added successfully.");
       } else if (formMode === "edit" && editTarget?._id) {
         await api.patch(`/payment-methods/${editTarget._id}`, {
-          billingName: payload.name,
-          expMonth: Number(payload.expMonth),
-          expYear: 2000 + Number(payload.expYear),
+          billingName: payload.billingName,
+          billingAddress: payload.billingAddress,
           nickname: payload.nickname,
+          setDefault: !!payload.setDefault,
         });
         showAlert("success", "Card updated successfully.");
       }
@@ -108,6 +111,16 @@ const PaymentMethodsTab = ({ user }) => {
     }
   };
 
+  const handleSetDefault = async (pm) => {
+    try {
+      await api.patch(`/payment-methods/${pm._id}/set-default`);
+      showAlert("success", "Default payment method updated.");
+      setPmRefreshKey((key) => key + 1);
+    } catch (err) {
+      showAlert("error", err?.response?.data?.message || "Failed to set the default card.");
+    }
+  };
+
   if (!stripeEnabled) {
     return (
       <Alert severity="info">
@@ -119,9 +132,24 @@ const PaymentMethodsTab = ({ user }) => {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h6" fontWeight={700}>
-        Your Payment Methods
-      </Typography>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        justifyContent="space-between"
+      >
+        <Typography variant="h6" fontWeight={700}>
+          Your Payment Methods
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<Add />}
+          onClick={openCreate}
+          disabled={showForm && formMode === "create"}
+        >
+          Add payment method
+        </Button>
+      </Stack>
 
       {/* Closeable Alert */}
       <Collapse in={alert.open}>
@@ -139,9 +167,9 @@ const PaymentMethodsTab = ({ user }) => {
         selected={selectedPaymentMethod}
         onChange={setSelectedPaymentMethod}
         refreshKey={pmRefreshKey}
-        onAddClick={openCreate}
         onEdit={openEdit}
         onRemove={(pm) => setDeleteTarget(pm)}
+        onSetDefault={handleSetDefault}
       />
 
       <Divider />
@@ -159,6 +187,7 @@ const PaymentMethodsTab = ({ user }) => {
                 setEditTarget(null);
               }}
               submitting={submitting}
+              ownerId={user?._id}
             />
           </Elements>
         ) : (
