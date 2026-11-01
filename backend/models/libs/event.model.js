@@ -112,6 +112,8 @@ const PaymentSnapshotSchema = new mongoose.Schema(
     fees: { type: Number, min: 0, default: 0 },
     gratuity: { type: Number, min: 0, default: 0 },
     total: { type: Number, min: 0, default: 0 },
+    grossPaidTotal: { type: Number, min: 0, default: 0 },
+    refundedTotal: { type: Number, min: 0, default: 0 },
     paidTotal: { type: Number, min: 0, default: 0 },
     balance: { type: Number, min: 0, default: 0 },
     overpayment: { type: Number, min: 0, default: 0 },
@@ -160,6 +162,8 @@ const PaymentSnapshotSchema = new mongoose.Schema(
     },
     arrangementNotes: { type: String, trim: true, default: null },
     ledgerVersion: { type: Number, min: 0, default: 0 },
+    ledgerFingerprint: { type: String, default: "" },
+    ledgerSyncedAt: { type: Date, default: null },
   },
   { _id: false }
 );

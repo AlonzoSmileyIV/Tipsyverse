@@ -2,12 +2,34 @@ import mongoose from "mongoose";
 import { PaymentModel as Payment } from "../../models/index.js";
 import { getEventPaymentTotal } from "./eventSummary.js";
 
+const cents = (value) => Math.max(0, Math.round((Number(value) || 0) * 100));
+const money = (value) => Math.round(Number(value) || 0) / 100;
+
+export const summarizePaymentRows = (rows = []) => {
+  let grossCents = 0;
+  let refundedCents = 0;
+
+  for (const row of rows) {
+    if (!["recorded", "refunded"].includes(row?.status)) continue;
+    const rowGross = cents(row.amount);
+    const rowRefunded = Math.min(rowGross, cents(row.refundedAmount));
+    grossCents += rowGross;
+    refundedCents += rowRefunded;
+  }
+
+  return {
+    grossPaid: money(grossCents),
+    refunded: money(refundedCents),
+    paid: money(grossCents - refundedCents),
+  };
+};
+
 export const inactiveEventStatuses = new Set(["canceled", "completed", "closed"]);
 
 export const netRecordedPayments = async (eventId, { session, paymentRequest } = {}) => {
   const match = {
     event: new mongoose.Types.ObjectId(String(eventId)),
-    status: "recorded",
+    status: { $in: ["recorded", "refunded"] },
     ...(paymentRequest
       ? { paymentRequest: new mongoose.Types.ObjectId(String(paymentRequest)) }
       : {}),

@@ -21,7 +21,8 @@
     "migrate:compliance": "node scripts/libs/migrateBartenderCompliance.script.js",
     "migrate:event-timezones": "node scripts/libs/migrateEventTimezones.script.js",
     "migrate:payment-requests": "node scripts/libs/migratePaymentRequestConsistency.script.js",
-    "migrate:payment-methods": "node scripts/libs/migratePaymentMethods.script.js"
+    "migrate:payment-methods": "node scripts/libs/migratePaymentMethods.script.js",
+    "reconcile:event-payments": "node scripts/libs/reconcileEventPaymentLedgers.script.js"
   },
   "author": "",
   "type": "module",

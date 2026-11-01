@@ -2,6 +2,28 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getExpectedAssignmentPay } from "../controllers/libs/payout.ctrl.js";
 import { getSavedCardCollection } from "../utils/libs/stripeEventPayments.js";
+import { summarizePaymentRows } from "../utils/libs/paymentLedger.js";
+
+test("event ledger summaries keep gross charges, refunds, and net paid synchronized", () => {
+  assert.deepEqual(
+    summarizePaymentRows([
+      { status: "recorded", amount: 100.1, refundedAmount: 25.05 },
+      { status: "refunded", amount: 50, refundedAmount: 50 },
+      { status: "processing", amount: 999, refundedAmount: 0 },
+      { status: "failed", amount: 999, refundedAmount: 0 },
+    ]),
+    { grossPaid: 150.1, refunded: 75.05, paid: 75.05 }
+  );
+});
+
+test("refund totals are capped at the original successful transaction", () => {
+  assert.deepEqual(
+    summarizePaymentRows([
+      { status: "recorded", amount: 10, refundedAmount: 12 },
+    ]),
+    { grossPaid: 10, refunded: 10, paid: 0 }
+  );
+});
 
 test("Finance net receipts exclude failed and pending Stripe attempts", () => {
   const payments = [

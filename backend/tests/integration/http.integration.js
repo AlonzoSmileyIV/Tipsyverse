@@ -470,6 +470,8 @@ test("only staff can record a payment and the event balance synchronizes", async
   recordedPaymentId = response.body.data._id;
   const synchronized = await EventModel.findById(event._id).lean();
   assert.equal(synchronized.payment.total, 500);
+  assert.equal(synchronized.payment.grossPaidTotal, 200);
+  assert.equal(synchronized.payment.refundedTotal, 0);
   assert.equal(synchronized.payment.paidTotal, 200);
   assert.equal(synchronized.payment.balance, 300);
   assert.equal(synchronized.payment.status, "partially_paid");
@@ -494,6 +496,8 @@ test("payment edits reject invalid amounts and resynchronize the balance", async
 
   const synchronized = await EventModel.findById(event._id).lean();
   assert.equal(synchronized.payment.paidTotal, 150);
+  assert.equal(synchronized.payment.grossPaidTotal, 150);
+  assert.equal(synchronized.payment.refundedTotal, 0);
   assert.equal(synchronized.payment.balance, 350);
   assert.equal(
     await PaymentModel.countDocuments({ event: event._id, status: "recorded" }),
