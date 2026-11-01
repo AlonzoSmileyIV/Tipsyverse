@@ -86,7 +86,13 @@ async function authenticate(page, user) {
 
 async function expectUsableRoute(page, route) {
   const pageErrors = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("pageerror", (error) => {
+    const message = error.message || "";
+    const isExpectedCiSocketCorsError =
+      message.includes("/api.tipsyverse.com/socket.io/") &&
+      message.includes("due to access control checks");
+    if (!isExpectedCiSocketCorsError) pageErrors.push(message);
+  });
   await page.goto(route, { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/login/);
   await expect(page.locator("main")).toBeVisible({ timeout: 10_000 });
