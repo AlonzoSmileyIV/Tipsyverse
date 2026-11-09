@@ -4013,7 +4013,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
               <PricingRow
                 left={
                   <TextField
-                    label="Procurement Fee"
+                    label="Procurement Base Fee (additional)"
                     type="number"
                     disabled
                     fullWidth
@@ -4029,7 +4029,7 @@ We wanted to confirm the details you entered and ask a few quick questions so we
                         <InputAdornment position="start">$</InputAdornment>
                       ),
                     }}
-                    helperText="+$50 applied automatically when items will be procured"
+                    helperText={form.procurementRequested ? "Automatic pickup fee: $50 (included in Cost at right)" : "Automatic pickup fee: $0 (no pickup requested)"}
                   />
                 }
                 middle={
