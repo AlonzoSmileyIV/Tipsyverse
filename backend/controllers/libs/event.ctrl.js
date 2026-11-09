@@ -2503,6 +2503,8 @@ const eventCtrl = {
         "bartenderNotes",
         "internalNotes",
         "timezone",
+        "recalculateInvoice",
+        "couponCode",
       ]);
 
       const body = req.body || {};
@@ -2898,7 +2900,7 @@ const eventCtrl = {
 
       // Keep submitted-event invoices in sync with the pricing editor when saved.
       // A coupon preview alone is never an invoice: the code is persisted here.
-      if (evt.status === "submitted" && (billingInputsChanged || Object.prototype.hasOwnProperty.call(body, "couponCode"))) {
+      if (evt.status === "submitted" && body.recalculateInvoice === true) {
         const updated = evt.toObject({ depopulate: true });
         const computed = computeEventTotals({
           ...updated,
