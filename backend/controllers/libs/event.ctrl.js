@@ -536,7 +536,39 @@ function money(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
 }
 
-function buildCurrentInvoiceEmailHtml({ evt, totals }) {
+function buildInvoicePricingRows(evt, totals) {
+  const p = evt.pricing || {};
+  const o = evt.options || {};
+  const computed = computeEventTotals(evt);
+  const moneyRound = (v) => Math.round((Number(v) || 0) * 100) / 100;
+  const receipt = moneyRound(o.procurementActualCost);
+  const subtotal = moneyRound(computed.flatSubtotal);
+  const lines = [
+    ["Bartending", `${computed.bartenders} bartender(s) × ${computed.totalHours.toFixed(2)} hours × ${money(p.hourlyRate)}/hr`, computed.lineItems.hourlyLabor],
+    ["Booking fee", "Flat fee", computed.lineItems.bookingFee],
+    ["Procurement fee", o.procurementRequested ? "Procurement requested" : "Flat fee", computed.lineItems.procurementFee],
+    ["Pickup receipt total", "Purchased items", receipt],
+    ["Holiday fee", "Holiday surcharge", computed.lineItems.holidayFee],
+    ["Public event fee", "Public event surcharge", computed.lineItems.publicFee],
+    ["Flat subtotal", "", subtotal],
+    ["Gratuity", `${moneyRound(Number(p.gratuityPct) * 100)}% of flat subtotal`, computed.lineItems.gratuity],
+    ["Rush fee", `${moneyRound(Number(p.rushPct) * 100)}% of flat subtotal`, computed.lineItems.rush],
+    ["Tax", `${moneyRound(Number(p.taxPct) * 100)}% of flat subtotal`, computed.lineItems.tax],
+  ];
+  const beforeAdjustments = moneyRound(computed.total + receipt);
+  // The saved payment total is authoritative; expose any historical coupon,
+  // billing override or other adjustment instead of silently inventing a discount.
+  const adjustment = moneyRound(totals.total - beforeAdjustments);
+  if (Math.abs(adjustment) >= 0.01) {
+    lines.push(["Discounts / saved billing adjustments", "Difference from itemized base charges", adjustment]);
+  }
+  lines.push(["Invoice total", "", totals.total]);
+  return lines.map(([label, detail, amount]) =>
+    `<tr><td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(label)}${detail ? `<div style="color:#666;font-size:12px;">${escapeHtml(detail)}</div>` : ""}</td><td align="right" style="padding:8px;border-bottom:1px solid #eee;white-space:nowrap;">${amount < 0 ? "-" : ""}${money(Math.abs(amount))}</td></tr>`
+  ).join("");
+}
+
+function buildCurrentInvoiceEmailHtml({ evt, totals, fullDetail = true }) {
   const eventType = formatEventType(evt.type);
   const barType = formatEventType(evt.options?.barType || "unknown");
   const when = `${formatEventDateTime(evt.startAt, evt)} - ${formatEventDateTime(
@@ -585,6 +617,7 @@ function buildCurrentInvoiceEmailHtml({ evt, totals }) {
           : ""
       }
 
+      ${fullDetail ? `<h3>Detailed Pricing Breakdown</h3><table style="border-collapse:collapse;width:100%;max-width:620px;"><tbody>${buildInvoicePricingRows(evt, totals)}</tbody></table>` : ""}
       <h3>Invoice Summary</h3>
       <table style="border-collapse:collapse;width:100%;max-width:520px;">
         <tbody>
@@ -695,6 +728,7 @@ const eventCtrl = {
         title: `Current Invoice for Event #${evt.shortCode || evt._id}`,
         html: buildCurrentInvoiceEmailHtml({
           evt,
+          fullDetail: req.body?.fullDetail !== false,
           totals: { total, paid, balance },
         }),
       });
