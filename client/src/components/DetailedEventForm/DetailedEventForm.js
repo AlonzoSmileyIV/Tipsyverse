@@ -2387,6 +2387,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
         breakdownHours: Number(calcInput.breakdownHours) || 0,
         bartendersRequested: Number(form.bartendersRequested) || 1,
       },
+      couponCode: coupons[0]?.code || "",
       billingOverride: {
         enabled: overrideEnabled,
         amount: overrideEnabled ? Number(overrideAmount) || 0 : 0,
@@ -2414,6 +2415,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
     form,
     calcInput,
     event,
+    coupons,
     rushPctWhole,
     overrideAmount,
     overrideEnabled,
