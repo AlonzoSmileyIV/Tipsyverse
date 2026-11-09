@@ -28,7 +28,10 @@ function computeEventTotals(evt) {
   const breakdownHours = toNum(p.breakdownHours);
 
   // IMPORTANT: schema uses procurementServiceFee, UI might send procurementFee
-  const procurementFee = toNum(p.procurementServiceFee ?? p.procurementFee ?? 0);
+  const procurementBaseFee = toNum(p.procurementServiceFee ?? p.procurementFee ?? 0);
+  // Match the pricing editor: pickup service adds a fixed $50 fee.
+  // Purchased items (procurementActualCost) are billed separately.
+  const procurementFee = procurementBaseFee + (o.procurementRequested ? 50 : 0);
   const publicFee = toNum(p.publicFee ?? 0);
 
   // your schema currently treats holidayFee like a Number (not necessarily %).
