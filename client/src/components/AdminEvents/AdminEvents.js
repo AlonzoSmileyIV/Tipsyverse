@@ -674,11 +674,17 @@ const AdminEvents = () => {
                   event={selected}
                   readOnly={false}
                   onClose={handleCloseDetails}
-                  onSaved={(updated) => {
-                    // Keep successful edits visible while synchronizing the
-                    // table cards and filters with the saved server state.
-                    if (updated) {
-                      setSelected(updated);
+                  onSaved={async (updated) => {
+                    // Re-read the persisted invoice snapshot after every save,
+                    // rather than trusting a locally computed draft or stale row.
+                    if (updated?._id) {
+                      try {
+                        const saved = await dispatch(fetchEventById(updated._id)).unwrap();
+                        setSelected(saved);
+                      } catch {
+                        setSelected(updated);
+                        setAlert({ message: "Saved, but unable to refresh the balance. Reopen the event before invoicing.", severity: "warning" });
+                      }
                     } else {
                       setSelected(null);
                     }
