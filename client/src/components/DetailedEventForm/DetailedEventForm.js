@@ -2387,6 +2387,7 @@ const DetailedEventForm = ({ event, readOnly = true, onClose, onSaved }) => {
         breakdownHours: Number(calcInput.breakdownHours) || 0,
         bartendersRequested: Number(form.bartendersRequested) || 1,
       },
+      recalculateInvoice: true,
       couponCode: coupons[0]?.code || "",
       billingOverride: {
         enabled: overrideEnabled,
