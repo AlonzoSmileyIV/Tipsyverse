@@ -112,6 +112,8 @@ const PaymentSnapshotSchema = new mongoose.Schema(
     fees: { type: Number, min: 0, default: 0 },
     gratuity: { type: Number, min: 0, default: 0 },
     total: { type: Number, min: 0, default: 0 },
+    couponCode: { type: String, default: '' },
+    couponDiscount: { type: Number, min: 0, default: 0 },
     grossPaidTotal: { type: Number, min: 0, default: 0 },
     refundedTotal: { type: Number, min: 0, default: 0 },
     paidTotal: { type: Number, min: 0, default: 0 },
