@@ -660,6 +660,35 @@ const eventCtrl = {
     }
   },
 
+  previewCurrentInvoice: async (req, res) => {
+    try {
+      const evt = await Event.findById(req.params.id).lean();
+      if (!evt) return res.status(404).json({ success: false, message: "Not found" });
+      const isAssigned = req.user?.role === "bartender"
+        ? Boolean(await Assignment.exists({ event: evt._id, bartenderUser: req.user?.id }))
+        : false;
+      if (eventAccessLevel({ event: evt, user: req.user, isAssigned }) !== "full") {
+        return res.status(403).json({ success: false, message: "Not authorized" });
+      }
+      const computed = computeEventTotals(evt);
+      const recorded = await Payment.aggregate([
+        { $match: { event: evt._id, status: "recorded" } },
+        { $group: { _id: "$event", paid: { $sum: { $subtract: ["$amount", { $ifNull: ["$refundedAmount", 0] }] } } } },
+      ]);
+      const cents = (n) => Math.round((Number(n) || 0) * 100);
+      const totalC = cents(Number(evt.payment?.total) || computed.total);
+      const paidC = cents(recorded[0]?.paid);
+      return res.json({ success: true, data: {
+        total: totalC / 100, paid: paidC / 100,
+        balance: Math.max(0, totalC - paidC) / 100,
+        adjustment: (totalC - cents(computed.total + (Number(evt.options?.procurementActualCost) || 0))) / 100,
+        pricingUpdatedAt: evt.updatedAt,
+      } });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: "Unable to load current invoice." });
+    }
+  },
+
   sendCurrentInvoice: async (req, res) => {
     try {
       const { id } = req.params;
