@@ -221,6 +221,7 @@ const AdminEvents = () => {
   const [sendingInvoice, setSendingInvoice] = useState(false);
   const [invoiceFullDetail, setInvoiceFullDetail] = useState(true);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoicePreview, setInvoicePreview] = useState(null);
   const [search, setSearch] = useState("");
 
   // Selectors normally return an array, but normalizing here keeps the admin
@@ -281,12 +282,16 @@ const AdminEvents = () => {
   const handleOpenInvoiceDialog = async (row) => {
     if (!row?._id) return;
     setInvoiceFullDetail(true);
+    setInvoicePreview(null);
     setInvoiceEvent(row);
     setInvoiceLoading(true);
     try {
       // Refresh the event rather than relying on a potentially stale table row.
       const fullEvent = await dispatch(fetchEventById(row._id)).unwrap();
       setInvoiceEvent(fullEvent);
+      const previewResponse = await api.get(`/events/${row._id}/invoice-preview`);
+      if (!previewResponse.data?.success || !previewResponse.data?.data) throw new Error('Invoice preview unavailable');
+      setInvoicePreview(previewResponse.data.data);
     } catch {
       setAlert({ message: "Unable to refresh invoice details. Please try again.", severity: "error" });
       setInvoiceEvent(null);
@@ -302,6 +307,12 @@ const AdminEvents = () => {
     try {
       // The server renders and sends the authoritative invoice. The client
       // intentionally sends no calculated totals.
+      const current = await api.get(`/events/${invoiceEvent._id}/invoice-preview`);
+      const preview = current.data?.data;
+      if (!preview || !invoicePreview || Math.round(preview.total * 100) !== Math.round(invoicePreview.total * 100) || Math.round(preview.paid * 100) !== Math.round(invoicePreview.paid * 100)) {
+        setInvoicePreview(preview || null);
+        throw new Error('Invoice amounts changed. Review the updated totals before sending.');
+      }
       const res = await api.post(`/events/${invoiceEvent._id}/send-invoice`, { fullDetail: invoiceFullDetail });
       setAlert({
         message: res?.data?.message || "Invoice sent successfully.",
@@ -311,7 +322,7 @@ const AdminEvents = () => {
       fetchAllData();
     } catch (err) {
       setAlert({
-        message: err?.response?.data?.message || "Failed to send invoice.",
+        message: err?.response?.data?.message || err?.message || "Failed to send invoice.",
         severity: "error",
       });
     } finally {
@@ -701,11 +712,19 @@ const AdminEvents = () => {
                 "No main contact email found"}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Remaining balance:{" "}
-              <strong>
-                ${getPaymentBalance(invoiceEvent || {}).toFixed(2)}
-              </strong>
+              Invoice total: <strong>{invoicePreview ? fmtMoney(invoicePreview.total) : "Loading..."}</strong>
             </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Total paid (net of refunds): <strong>{invoicePreview ? fmtMoney(invoicePreview.paid) : "Loading..."}</strong>
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Remaining balance: <strong>{invoicePreview ? fmtMoney(invoicePreview.balance) : "Loading..."}</strong>
+            </Typography>
+            {invoicePreview && Math.abs(invoicePreview.adjustment) >= 0.01 && (
+              <Typography variant="caption" color="text.secondary">
+                Saved invoice includes {fmtMoney(invoicePreview.adjustment)} in discounts or billing adjustments relative to base charges.
+              </Typography>
+            )}
             <FormControlLabel
               control={<Checkbox checked={invoiceFullDetail} onChange={(e) => setInvoiceFullDetail(e.target.checked)} />}
               label="Give out full detail (itemized prices, fees, discounts, and payment summary)"
@@ -724,7 +743,7 @@ const AdminEvents = () => {
           <Button
             variant="contained"
             onClick={handleSendInvoice}
-            disabled={sendingInvoice || invoiceLoading || !invoiceEvent?.contact?.email}
+            disabled={sendingInvoice || invoiceLoading || !invoicePreview || !invoiceEvent?.contact?.email}
             sx={{
               backgroundColor: "var(--primary-color)",
               "&:hover": { backgroundColor: "#5f001f" },
