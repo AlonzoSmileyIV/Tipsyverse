@@ -45,6 +45,7 @@ eventRouter.post('/reminders/run', auth, authEmployee, eventCtrl.sendDueEventRem
 eventRouter.get('/:id', auth, eventCtrl.viewEventById);
 // Mutations (staff-only)
 eventRouter.patch('/:id', auth, authEmployee, eventCtrl.updateEvent);
+eventRouter.get('/:id/invoice-preview', auth, authEmployee, eventCtrl.previewCurrentInvoice);
 eventRouter.post('/:id/send-invoice', auth, authEmployee, sensitiveActionDedupe, eventCtrl.sendCurrentInvoice);
 eventRouter.post('/:id/procurement-receipt', auth, authEmployee, uploadImage.single('photo'), eventCtrl.uploadProcurementReceipt);
 eventRouter.post('/:id/contact-attempts', auth, authEmployee, eventCtrl.logContactAttempt);
