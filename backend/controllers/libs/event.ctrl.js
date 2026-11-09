@@ -2893,6 +2893,35 @@ const eventCtrl = {
         );
       }
 
+      // Keep submitted-event invoices in sync with the pricing editor when saved.
+      // A coupon preview alone is never an invoice: the code is persisted here.
+      if (evt.status === "submitted" && (billingInputsChanged || Object.prototype.hasOwnProperty.call(body, "couponCode"))) {
+        const updated = evt.toObject({ depopulate: true });
+        const computed = computeEventTotals({
+          ...updated,
+          pricing: { ...(updated.pricing || {}), publicFee: updated.private === false ? updated.pricing?.publicFee || 0 : 0 },
+        });
+        const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
+        const couponCode = String(body.couponCode ?? evt.payment?.couponCode ?? "").trim();
+        const coupon = couponCode ? await lookupCoupon(couponCode) : null;
+        if (couponCode && !coupon) return res.status(400).json({ success: false, message: "Coupon is invalid or expired." });
+        const discounted = applyCouponToTotal(round(computed.total), coupon);
+        const receipt = round(updated.options?.procurementActualCost);
+        const baseTotal = round(computed.total);
+        const newTotal = updated.billingOverride?.enabled
+          ? round(updated.billingOverride.amount)
+          : round(discounted.discountedTotal + receipt);
+        const paid = round(evt.payment?.paidTotal);
+        evt.set("payment.subtotal", round(computed.flatSubtotal + receipt));
+        evt.set("payment.gratuity", round(computed.lineItems.gratuity));
+        evt.set("payment.total", newTotal);
+        evt.set("payment.couponCode", couponCode);
+        evt.set("payment.couponDiscount", round(baseTotal - discounted.discountedTotal));
+        evt.set("payment.balance", Math.max(0, round(newTotal - paid)));
+        evt.set("payment.overpayment", Math.max(0, round(paid - newTotal)));
+        evt.set("payment.ledgerVersion", (Number(evt.payment?.ledgerVersion) || 0) + 1);
+      }
+
       // Validate temporal logic
       if (evt.startAt && evt.endAt && evt.endAt <= evt.startAt) {
         return res
