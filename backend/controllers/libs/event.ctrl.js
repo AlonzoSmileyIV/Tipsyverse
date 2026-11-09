@@ -556,9 +556,12 @@ function buildInvoicePricingRows(evt, totals) {
     ["Tax", `${moneyRound(Number(p.taxPct) * 100)}% of flat subtotal`, computed.lineItems.tax],
   ];
   const beforeAdjustments = moneyRound(computed.total + receipt);
+  if (evt.payment?.couponCode && Number(evt.payment?.couponDiscount) > 0) {
+    lines.push([`Coupon ${evt.payment.couponCode}`, "Applied discount", -moneyRound(evt.payment.couponDiscount)]);
+  }
   // The saved payment total is authoritative; expose any historical coupon,
   // billing override or other adjustment instead of silently inventing a discount.
-  const adjustment = moneyRound(totals.total - beforeAdjustments);
+  const adjustment = moneyRound(totals.total - beforeAdjustments + (Number(evt.payment?.couponDiscount) || 0));
   if (Math.abs(adjustment) >= 0.01) {
     lines.push(["Discounts / saved billing adjustments", "Difference from itemized base charges", adjustment]);
   }
