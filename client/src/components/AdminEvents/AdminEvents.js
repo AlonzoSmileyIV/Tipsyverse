@@ -19,6 +19,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
+  Checkbox,
   CircularProgress,
   Stack,
 } from "@mui/material";
@@ -217,6 +219,8 @@ const AdminEvents = () => {
   const [activeStat, setActiveStat] = useState("all");
   const [invoiceEvent, setInvoiceEvent] = useState(null);
   const [sendingInvoice, setSendingInvoice] = useState(false);
+  const [invoiceFullDetail, setInvoiceFullDetail] = useState(true);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [search, setSearch] = useState("");
 
   // Selectors normally return an array, but normalizing here keeps the admin
@@ -274,9 +278,21 @@ const AdminEvents = () => {
     setSelected(fullEvent);
   };
 
-  const handleOpenInvoiceDialog = (row) => {
+  const handleOpenInvoiceDialog = async (row) => {
     if (!row?._id) return;
+    setInvoiceFullDetail(true);
     setInvoiceEvent(row);
+    setInvoiceLoading(true);
+    try {
+      // Refresh the event rather than relying on a potentially stale table row.
+      const fullEvent = await dispatch(fetchEventById(row._id)).unwrap();
+      setInvoiceEvent(fullEvent);
+    } catch {
+      setAlert({ message: "Unable to refresh invoice details. Please try again.", severity: "error" });
+      setInvoiceEvent(null);
+    } finally {
+      setInvoiceLoading(false);
+    }
   };
 
   const handleSendInvoice = async () => {
@@ -286,7 +302,7 @@ const AdminEvents = () => {
     try {
       // The server renders and sends the authoritative invoice. The client
       // intentionally sends no calculated totals.
-      const res = await api.post(`/events/${invoiceEvent._id}/send-invoice`);
+      const res = await api.post(`/events/${invoiceEvent._id}/send-invoice`, { fullDetail: invoiceFullDetail });
       setAlert({
         message: res?.data?.message || "Invoice sent successfully.",
         severity: "success",
@@ -690,6 +706,11 @@ const AdminEvents = () => {
                 ${getPaymentBalance(invoiceEvent || {}).toFixed(2)}
               </strong>
             </Typography>
+            <FormControlLabel
+              control={<Checkbox checked={invoiceFullDetail} onChange={(e) => setInvoiceFullDetail(e.target.checked)} />}
+              label="Give out full detail (itemized prices, fees, discounts, and payment summary)"
+            />
+            {invoiceLoading && <Typography variant="body2">Refreshing invoice information...</Typography>}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -703,7 +724,7 @@ const AdminEvents = () => {
           <Button
             variant="contained"
             onClick={handleSendInvoice}
-            disabled={sendingInvoice || !invoiceEvent?.contact?.email}
+            disabled={sendingInvoice || invoiceLoading || !invoiceEvent?.contact?.email}
             sx={{
               backgroundColor: "var(--primary-color)",
               "&:hover": { backgroundColor: "#5f001f" },
